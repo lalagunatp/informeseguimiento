@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reporte de seguimiento · La Laguna</title>
+<style>
+  :root{
+    --bg:#eef1f5; --panel:#ffffff; --ink:#101a26; --muted:#5d6b7a;  
+    --line:#d8dee6; --line2:#eaeef3;
+    --azul:#123a5e; --azul2:#1d5b8f; --rojo:#c8102e;
+    --v-bg:#d9f0e3; --v-tx:#0e6b45;
+    --a-bg:#fdf1cf; --a-tx:#8a6300;
+    --r-bg:#fbdfdd; --r-tx:#a91e14;
+    --gris:#e9edf2;
+  }
+  *{box-sizing:border-box} 
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px; line-height:1.35;
+  }
+  /* ... resto de estilos ... */
+
+  <script>
+  // ... resto del script JavaScript ...  
+
+  function pintarSemanal(datos){
+    if (!datos || !datos.length) return "Sin datos aún.";
+    datos = datos[datos.length - 1];
+    let filas = [
+      ["","Actual","Meta","Var","Prom","ARPU"],
+      ["Ventas",datos.ventasValidadas,17500,datos.ventasValidadas - 17500,0,Math.round(datos.arpu / 1.16)],
+      ["Instalaciones",datos.instalacionesConcluidas,15750,datos.instalacionesConcluidas - 15750,0,0]
+    ];
+    return tablaSimple(filas);
+  }
+  
+  function pintarMensual(datos){
+    if (!datos || !datos.length) return "Sin datos aún.";
+    datos = datos[datos.length - 1];
+    let filas = [
+      ["","Actual","Meta","Var","Prom","ARPU"],  
+      ["Ventas",datos.ventasValidadas,70000,datos.ventasValidadas - 70000,0,Math.round(datos.arpu / 1.16)],
+      ["Instalaciones",datos.instalacionesConcluidas,63000,datos.instalacionesConcluidas - 63000,0,0]
+    ];
+    return tablaSimple(filas);
+  }
+
+  // ... resto del script JavaScript ...
+  </script>
+</body>
+</html>
