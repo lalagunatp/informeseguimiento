@@ -2768,6 +2768,13 @@ function conteoPeriodo(claves, fn, metrica){
 function diagTecnico(clavePeriodo, fn){
   let enPeriodo = 0, conCodigo = 0, conEquipo = 0;
   const ejBase = [];
+
+  // códigos de la columna D de PLANTILLA, para saber si cada renglón del periodo cruza
+  const codigosPlantilla = {};
+  PLANTILLA.forEach(function(p){ if (p.numero) codigosPlantilla[normaliza(p.numero)] = true; });
+
+  let sinCruce = 0;
+  const ejSinCruce = [];
   FILAS.forEach(function(f){
     if (normaliza(f.subcanal).indexOf("VENTA TECNICO") < 0) return;
     if (!f.fOp || fn(f.fOp) !== clavePeriodo) return;
@@ -2775,12 +2782,16 @@ function diagTecnico(clavePeriodo, fn){
     if (f.codTec){
       conCodigo++;
       if (ejBase.length < 3) ejBase.push(f.codTec);
+      if (!codigosPlantilla[normaliza(f.codTec)]){
+        sinCruce++;
+        if (ejSinCruce.indexOf(f.codTec) < 0 && ejSinCruce.length < 5) ejSinCruce.push(f.codTec);
+      }
     }
     if (f.lider) conEquipo++;
   });
   if (!enPeriodo) return "";
 
-  // ¿cuántos de esos códigos existen en la plantilla?
+  // ¿cuántos de esos códigos existen en la plantilla, en general (diagnóstico de respaldo)?
   const codigos = {};
   TEC_FILAS.forEach(function(par){ codigos[normaliza(par[1])] = true; });
   let enPlantilla = 0;
@@ -2792,16 +2803,28 @@ function diagTecnico(clavePeriodo, fn){
     }
   });
 
-  if (conEquipo && enPlantilla) return "";   // todo bien, no hace falta el aviso
+  if (conEquipo && enPlantilla && !sinCruce) return "";   // todo bien, no hace falta el aviso
 
+  if (!(conEquipo && enPlantilla)){
+    // cruce totalmente roto
+    return '<section class="panel"><div class="aviso error">' +
+      "<b>Venta técnico no está cruzando.</b><br>" +
+      enPeriodo + " renglones de venta técnico en el periodo · " + conCodigo +
+      " con código de técnico · " + conEquipo + " con equipo asignado.<br>" +
+      "Códigos de VENTA TECNICO que existen en la columna D de PLANTILLA: <b>" + enPlantilla + "</b>" +
+      (ejPlant.length ? "<br>Ejemplos que sí cruzan: " + ejPlant.join(" · ") : "") +
+      (ejBase.length ? "<br>Códigos que trae la base: " + ejBase.join(" · ") : "") +
+      "<br>Si el número de arriba es 0, los códigos de la columna F de VENTA TECNICO no aparecen en la columna D de PLANTILLA." +
+      "</div></section>";
+  }
+
+  // cruce parcialmente roto: algunos códigos del periodo no están en PLANTILLA,
+  // esos renglones no se suman al vendedor correcto en "Vendedores en 0"
   return '<section class="panel"><div class="aviso error">' +
-    "<b>Venta técnico no está cruzando.</b><br>" +
-    enPeriodo + " renglones de venta técnico en el periodo · " + conCodigo +
-    " con código de técnico · " + conEquipo + " con equipo asignado.<br>" +
-    "Códigos de VENTA TECNICO que existen en la columna D de PLANTILLA: <b>" + enPlantilla + "</b>" +
-    (ejPlant.length ? "<br>Ejemplos que sí cruzan: " + ejPlant.join(" · ") : "") +
-    (ejBase.length ? "<br>Códigos que trae la base: " + ejBase.join(" · ") : "") +
-    "<br>Si el número de arriba es 0, los códigos de la columna F de VENTA TECNICO no aparecen en la columna D de PLANTILLA." +
+    "<b>Venta técnico cruza solo parcialmente (" + sinCruce + " de " + conCodigo +
+    " renglones con código no aparecen en la columna D de PLANTILLA).</b><br>" +
+    "Esos renglones no se suman al total del vendedor en “Vendedores en 0”." +
+    (ejSinCruce.length ? "<br>Códigos que no cruzan: " + ejSinCruce.join(" · ") : "") +
     "</div></section>";
 }
 
