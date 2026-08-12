@@ -2627,9 +2627,11 @@ function proyectarSemana(diasArr, pesos, grupo, dias){
   const ratioSat = histLunVie > 0 ? prom[5] / histLunVie : 0;
   const ratioDom = histLunVie > 0 ? prom[6] / histLunVie : 0;
 
-  const diasLunVie = Math.min(dias, 5);
-  const sumLunVie = diasArr[0] + diasArr[1] + diasArr[2] + diasArr[3] + diasArr[4];
-  const ritmoLunVie = diasLunVie >= 0.5 ? sumLunVie / diasLunVie : histLunVie;
+  // ritmo = solo con los días Lun-Vie YA CERRADOS; el día en curso (a medias) no cuenta,
+  // ni para el ritmo ni sumado aparte, para no diluir el promedio con un día apenas empezando
+  const diasCerrados = Math.floor(Math.min(dias, 5));
+  const sumCerrados = diasArr.slice(0, diasCerrados).reduce(function(a, b){ return a + b; }, 0);
+  const ritmoLunVie = diasCerrados > 0 ? sumCerrados / diasCerrados : histLunVie;
 
   const proyLunVie = ritmoLunVie * 5;
   const satHecho = dias >= 6, domHecho = dias >= 7;
