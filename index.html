@@ -249,7 +249,9 @@
 
 <div class="wrap oculto" id="app">
 
-  <section class="panel">
+  <div class="aviso" id="estado">Cargando la base…</div>
+
+  <section class="panel" id="panelConsulta">
     <h2>Qué quieres ver <span class="sub" id="rango"></span></h2>
     <div class="controles" id="controlesGenerales">
       <label class="campo">Semana
@@ -286,6 +288,9 @@
       <label class="campo" id="cajaOS">Número de OS
         <input type="text" id="osBuscar" placeholder="OS-12345678 y Enter">
       </label>
+      <label class="campo oculto" id="cajaBuscaDup">Número de cuenta u oportunidad
+        <input type="text" id="buscaDup" placeholder="Cuenta u oportunidad y Enter">
+      </label>
       <label class="campo" id="cajaPeriodo0">Periodo
         <select id="periodo0">
           <option value="sem" selected>Por semana</option>
@@ -319,7 +324,7 @@
         </select>
       </label>
     </div>
-    <div class="acciones">
+    <div class="acciones" id="accionesGenerales">
       <button id="btnRecargar" class="sec">Actualizar datos</button>
       <button id="btnCsv" class="sec">Descargar CSV</button>
     </div>
@@ -452,7 +457,6 @@
         <button id="btnRevisarEq" class="sec">Revisar plantilla y rankings</button>
       </div>
       <div id="revision" class="aviso oculto"></div>
-      <div class="aviso" id="estado">Cargando la base…</div>
     </details>
   </section>
 
@@ -2319,10 +2323,11 @@ function filaEnPeriodoDupli(f){
 }
 
 function cuentasDuplicadasHtml(){
+  // primero se agrupa TODA la base (sin importar periodo); el periodo solo decide
+  // qué cuentas duplicadas se muestran, no qué renglones cuentan dentro del grupo
   const grupos = {};
   FILAS.forEach(function(f){
     if (!enAlcance(f)) return;
-    if (!filaEnPeriodoDupli(f)) return;
     const llave = llaveCuentaDup(f);
     if (!llave) return;
     if (!grupos[llave]) grupos[llave] = [];
@@ -2330,13 +2335,30 @@ function cuentasDuplicadasHtml(){
   });
 
   const sinDomicilio = FILAS.filter(function(f){
-    return enAlcance(f) && filaEnPeriodoDupli(f) && normaliza(f.cliente) && !llaveCuentaDup(f);
+    return enAlcance(f) && normaliza(f.cliente) && !llaveCuentaDup(f);
   }).length;
 
-  const dup = Object.keys(grupos)
+  const tipoPeriodo = el("dupliTipo").value;
+  let dup = Object.keys(grupos)
     .map(function(k){ return grupos[k]; })
-    .filter(function(g){ return g.length > 1; })
-    .sort(function(a, b){ return b.length - a.length || (a[0].cliente || "").localeCompare(b[0].cliente || "", "es"); });
+    .filter(function(g){ return g.length > 1; });
+
+  // con periodo activo: se queda la cuenta completa si AL MENOS uno de sus renglones
+  // se vendió/validó en el periodo elegido; se muestran todos sus renglones, de cualquier mes
+  if (tipoPeriodo){
+    dup = dup.filter(function(g){ return g.some(filaEnPeriodoDupli); });
+  }
+
+  const busca = normaliza(el("buscaDup").value).trim();
+  if (busca){
+    dup = dup.filter(function(g){
+      return g.some(function(f){
+        return normaliza(f.cuenta).indexOf(busca) >= 0 || normaliza(f.oportunidad).indexOf(busca) >= 0;
+      });
+    });
+  }
+
+  dup.sort(function(a, b){ return b.length - a.length || (a[0].cliente || "").localeCompare(b[0].cliente || "", "es"); });
 
   if (!dup.length){
     return '<section class="panel"><h2>Cuentas duplicadas</h2><div class="aviso">No se encontraron cuentas duplicadas con los filtros actuales' +
@@ -2349,8 +2371,10 @@ function cuentasDuplicadasHtml(){
     renglones += grupo.length;
     grupo.sort(function(a, b){ return (a.fOp && b.fOp) ? a.fOp - b.fOp : 0; });
     grupo.forEach(function(f, i){
-      const estiloGrupo = (i === 0 && gi > 0) ? ' style="border-top:2px solid var(--azul2)"' : "";
-      filas += "<tr" + estiloGrupo + ">" +
+      const bordeGrupo = (i === 0 && gi > 0) ? "border-top:2px solid var(--azul2);" : "";
+      const destaca = (tipoPeriodo && filaEnPeriodoDupli(f)) ? "background:var(--v-bg);" : "";
+      const estilo = (bordeGrupo || destaca) ? ' style="' + bordeGrupo + destaca + '"' : "";
+      filas += "<tr" + estilo + ">" +
         "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
         "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td>" +
         "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
@@ -2371,7 +2395,9 @@ function cuentasDuplicadasHtml(){
 
   return '<section class="panel"><h2>Cuentas duplicadas <span class="sub">' + dup.length +
     " cuenta(s) duplicada(s) · " + renglones + " renglones" +
-    (sinDomicilio ? " · " + sinDomicilio + " sin dirección, no comparables" : "") + "</span></h2>" +
+    (sinDomicilio ? " · " + sinDomicilio + " sin dirección, no comparables" : "") +
+    (tipoPeriodo ? " · en verde, el/los renglón(es) del periodo elegido; se muestran también sus otros renglones, de cualquier fecha" : "") +
+    "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
     "<th>N° cuenta</th><th>N° oportunidad</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
@@ -4329,11 +4355,13 @@ function ajustaCajasDia(){
   const dt = document.querySelector("details.ajustes");
   if (dt) dt.style.display = (esOS || esDupli) ? "none" : "";
   el("cajaOS").style.display = esOS ? "" : "none";
+  el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
   const soloOS = PERFIL && PERFIL.acceso === "os";
-  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || soloOS) ? "none" : "";
+  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || soloOS) ? "none" : "";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
+
   el("cajaDupliFiltros").classList.toggle("oculto", !esDupli);
   if (esDupli){
     const porMes = el("dupliPeriodo").value === "mes";
@@ -4401,6 +4429,8 @@ el("osBuscar").addEventListener("keydown", function(ev){
   if (ev.key === "Enter"){ OS_BUSCADA = el("osBuscar").value.trim(); pintar(); }
 });
 el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar").value.trim(); pintar(); });
+el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
+el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
