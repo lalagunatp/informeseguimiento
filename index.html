@@ -1658,7 +1658,7 @@ function matrizHtml(sem, fn, etqPeriodo){
 
 /* ---------- plantilla, rankings y metas por coach ---------- */
 
-let PLANTILLA = [];      // {numero, nombre, puesto, coach, lider, vacante}
+let PLANTILLA = [];      // {numero, nombre, puesto, coach, lider, vacante, fechaAlta}
 let PLANT_CRUDO = { enc:[], filas:[] };   // renglones tal cual, para buscar el código del técnico
 let MAPA_TEC_PERSONA = new Map();         // código de técnico -> {nombre, lider, coach}
 let COACHES_TEC = new Set();              // coaches de venta técnico, para el alcance del canal
@@ -1889,6 +1889,8 @@ async function cargarEquipos(){
     let cPue = buscaCol(enc, ["NOMBRE DEL PUESTO"]);
     if (cPue < 0) cPue = buscaCol(enc, ["PUESTO"], ["ID", "LR", "LINEA"]);
     if (cPue < 0) cPue = buscaCol(enc, ["POSICION"], ["ID", "LR", "LINEA"]);
+    let cFecha = buscaCol(enc, ["FECHA DE ALTA", "FECHA ALTA", "FECHA INGRESO"]);
+    if (cFecha < 0) cFecha = letraAIndice("G");
 
     function llenosP(col){
       let n = 0;
@@ -1899,7 +1901,7 @@ async function cargarEquipos(){
       return n;
     }
     if (llenosP(cNum) === 0 && llenosP(1) > 0) cNum = 1;
-    INFO_EQ.colsPlantilla = { num:indiceLetra(cNum), coach:indiceLetra(cCoa), nombre:indiceLetra(cNom) };
+    INFO_EQ.colsPlantilla = { num:indiceLetra(cNum), coach:indiceLetra(cCoa), nombre:indiceLetra(cNom), fecha:indiceLetra(cFecha) };
 
     PLANT_CRUDO = { enc:enc, filas:[], iEnc:iEnc, rows:rows };
     const crudos = [];
@@ -1913,6 +1915,7 @@ async function cargarEquipos(){
         nombre: nombre,
         puesto: cPue >= 0 ? v[cPue] : "",
         jefe: jefe,
+        fechaAlta: cFecha >= 0 ? limpiaValor(v[cFecha]) : "",
         vacante: /VACANTE/i.test(normaliza(nombre)) || /VACANTE/i.test(normaliza(v[cPue] || ""))
       });
     }
@@ -1936,7 +1939,7 @@ async function cargarEquipos(){
       const lider = jefeDe(coach) || "SIN LÍDER";
       PLANTILLA.push({
         numero: p.numero, nombre: p.nombre, puesto: p.puesto,
-        coach: coach, lider: lider, vacante: p.vacante
+        coach: coach, lider: lider, vacante: p.vacante, fechaAlta: p.fechaAlta
       });
     });
     COACHES_TEC = new Set();
@@ -2252,20 +2255,37 @@ function equiposHtml(){
   const filtroLider = MULTI.lider && MULTI.lider.sel.size && !MULTI.lider.sel.has("\u0000")
     ? MULTI.lider.sel : null;
 
+  DET_EQ = {};
+  let detN = 0;
+  function regDet(lista){
+    if (!lista || !lista.length) return "";
+    const id = "eq" + (detN++);
+    DET_EQ[id] = lista;
+    return id;
+  }
+  function celdaDet(n, lista, extra){
+    const id = regDet(lista);
+    if (!id) return celdaNum(n, extra);
+    return '<td class="' + (extra || "") + ' clicable" data-det="' + id + '">' + num(n) + "</td>";
+  }
+
   const lideres = {};
   PLANTILLA.forEach(function(p){
-    if (!personaEnAlcance(p)) return;
     if (!personaEnAlcance(p)) return;
     if (filtroLider && !filtroLider.has(p.lider)) return;
     if (filtroCoachEq && !filtroCoachEq.has(p.coach)) return;
     const metal = metalDe(p);
     if (!lideres[p.lider]) lideres[p.lider] = {};
-    if (!lideres[p.lider][p.coach]) lideres[p.lider][p.coach] = { total:0 };
+    if (!lideres[p.lider][p.coach]) lideres[p.lider][p.coach] = { total:0, porMetal:{}, personas:[] };
     const c = lideres[p.lider][p.coach];
     c[metal] = (c[metal] || 0) + 1;
     c.total++;
     if (!c.gente) c.gente = [];
     c.gente.push(p.nombre + " · " + metal);
+    const ficha = { nombre:p.nombre, coach:p.coach, lider:p.lider, ranking:metal, fechaAlta:p.fechaAlta };
+    if (!c.porMetal[metal]) c.porMetal[metal] = [];
+    c.porMetal[metal].push(ficha);
+    c.personas.push(ficha);
   });
 
   const nombres = Object.keys(lideres).sort(function(a,b){ return a.localeCompare(b, "es"); });
@@ -2286,21 +2306,27 @@ function equiposHtml(){
 
   nombres.forEach(function(L){
     const coaches = Object.keys(lideres[L]).sort(function(a,b){ return a.localeCompare(b, "es"); });
-    const tot = { total:0 };
+    const tot = { total:0, porMetal:{}, personas:[] };
     let filas = "";
     coaches.forEach(function(co){
       const c = lideres[L][co];
-      ORDEN_METAL.forEach(function(m){ tot[m] = (tot[m] || 0) + (c[m] || 0); });
+      ORDEN_METAL.forEach(function(m){
+        tot[m] = (tot[m] || 0) + (c[m] || 0);
+        if (c.porMetal[m] && c.porMetal[m].length){
+          tot.porMetal[m] = (tot.porMetal[m] || []).concat(c.porMetal[m]);
+        }
+      });
       tot.total += c.total;
+      tot.personas = tot.personas.concat(c.personas);
       const ms = metaSemanal(c);
       filas += "<tr><td>" + co + '<span class="mini">' + (c.gente || []).join(" \u00b7 ") + "</span></td>" +
-        ORDEN_METAL.map(function(m){ return celdaNum(c[m] || 0); }).join("") +
-        celdaNum(c.total, "tot") + celdaNum(ms) + celdaNum(Math.round(ms * semMes)) + "</tr>";
+        ORDEN_METAL.map(function(m){ return celdaDet(c[m] || 0, c.porMetal[m], ""); }).join("") +
+        celdaDet(c.total, c.personas, "tot") + celdaNum(ms) + celdaNum(Math.round(ms * semMes)) + "</tr>";
     });
     const msT = metaSemanal(tot);
     filas += '<tr class="total"><td>Total del líder</td>' +
-      ORDEN_METAL.map(function(m){ return celdaNum(tot[m] || 0); }).join("") +
-      celdaNum(tot.total, "tot") + celdaNum(msT) + celdaNum(Math.round(msT * semMes)) + "</tr>";
+      ORDEN_METAL.map(function(m){ return celdaDet(tot[m] || 0, tot.porMetal[m], ""); }).join("") +
+      celdaDet(tot.total, tot.personas, "tot") + celdaNum(msT) + celdaNum(Math.round(msT * semMes)) + "</tr>";
     resumen[L] = { tot:tot, ms:msT, coaches:coaches.length };
 
     html += '<section class="panel"><h2>' + L + ' <span class="sub">' + coaches.length +
@@ -2310,26 +2336,45 @@ function equiposHtml(){
 
   // resumen general
   let filasR = "";
-  const gran = { total:0 };
+  const gran = { total:0, porMetal:{}, personas:[] };
   nombres.forEach(function(L){
     const t = resumen[L].tot;
-    ORDEN_METAL.forEach(function(m){ gran[m] = (gran[m] || 0) + (t[m] || 0); });
+    ORDEN_METAL.forEach(function(m){
+      gran[m] = (gran[m] || 0) + (t[m] || 0);
+      if (t.porMetal[m] && t.porMetal[m].length){
+        gran.porMetal[m] = (gran.porMetal[m] || []).concat(t.porMetal[m]);
+      }
+    });
     gran.total += t.total;
+    gran.personas = gran.personas.concat(t.personas);
     filasR += "<tr><td>" + L + "</td>" +
-      ORDEN_METAL.map(function(m){ return celdaNum(t[m] || 0); }).join("") +
-      celdaNum(t.total, "tot") + celdaNum(resumen[L].ms) + celdaNum(Math.round(resumen[L].ms * semMes)) + "</tr>";
+      ORDEN_METAL.map(function(m){ return celdaDet(t[m] || 0, t.porMetal[m], ""); }).join("") +
+      celdaDet(t.total, t.personas, "tot") + celdaNum(resumen[L].ms) + celdaNum(Math.round(resumen[L].ms * semMes)) + "</tr>";
   });
   const msG = ORDEN_METAL.reduce(function(s, m){ return s + (gran[m] || 0) * metaDe(m); }, 0);
   filasR += '<tr class="total"><td>Total</td>' +
-    ORDEN_METAL.map(function(m){ return celdaNum(gran[m] || 0); }).join("") +
-    celdaNum(gran.total, "tot") + celdaNum(msG) + celdaNum(Math.round(msG * semMes)) + "</tr>";
+    ORDEN_METAL.map(function(m){ return celdaDet(gran[m] || 0, gran.porMetal[m], ""); }).join("") +
+    celdaDet(gran.total, gran.personas, "tot") + celdaNum(msG) + celdaNum(Math.round(msG * semMes)) + "</tr>";
 
   const cab = '<section class="panel"><h2>Resumen por líder <span class="sub">meta semanal por metal: ' +
     el("metasRanking").value + " \u00b7 mensual = semanal \u00d7 " + semMes + "</span></h2>" +
     '<div class="scroll"><table class="compacta">' + enc.replace(">Coach<", ">Líder<") +
     "<tbody>" + filasR + "</tbody></table></div></section>";
 
-  return cab + html;
+  return cab + html + detalleEquipoHtml();
+}
+
+function detalleEquipoHtml(){
+  if (!DET_SEL || !DET_EQ[DET_SEL]) return "";
+  const lista = DET_EQ[DET_SEL].slice().sort(function(a, b){ return a.nombre.localeCompare(b.nombre, "es"); });
+  return '<section class="panel"><h2>Detalle del equipo <span class="sub">' + lista.length +
+    " persona(s), toca otro numero para cambiar o el mismo para cerrar</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Vendedor</th><th>Coach</th><th>Lider</th><th>Ranking</th><th>Fecha de alta</th></tr></thead><tbody>" +
+    lista.map(function(x){
+      return "<tr><td>" + (x.nombre || "-") + "</td><td>" + (x.coach || "-") + "</td><td>" +
+        (x.lider || "-") + "</td><td>" + (x.ranking || "-") + "</td><td>" + (x.fechaAlta || "-") + "</td></tr>";
+    }).join("") + "</tbody></table></div></section>";
 }
 
 function revisarEquipos(){
@@ -2845,6 +2890,7 @@ function diagTecnico(clavePeriodo, fn){
 
 let DET_V0 = {};        // clave -> lista de personas
 let DET_SEL = "";       // cubeta abierta
+let DET_EQ = {};        // clave -> lista de personas del equipo (sección Equipos)
 
 function vendedores0Html(){
   if (INFO_EQ.estado === "cargando" || CARGANDO_EQ){
