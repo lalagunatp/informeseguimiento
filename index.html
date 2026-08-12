@@ -251,7 +251,7 @@
 
   <section class="panel">
     <h2>Qué quieres ver <span class="sub" id="rango"></span></h2>
-    <div class="controles">
+    <div class="controles" id="controlesGenerales">
       <label class="campo">Semana
         <select id="semana"></select>
       </label>
@@ -454,6 +454,31 @@
       <div id="revision" class="aviso oculto"></div>
       <div class="aviso" id="estado">Cargando la base…</div>
     </details>
+  </section>
+
+  <section class="panel oculto" id="cajaDupliFiltros">
+    <h2>Periodo de venta o validación</h2>
+    <div class="controles">
+      <label class="campo">Filtrar por
+        <select id="dupliTipo">
+          <option value="" selected>Todo el histórico</option>
+          <option value="vendido">Vendido (fecha de oportunidad)</option>
+          <option value="validado">Validado (fecha de validación)</option>
+        </select>
+      </label>
+      <label class="campo">Periodo
+        <select id="dupliPeriodo">
+          <option value="semana" selected>Semana</option>
+          <option value="mes">Mes</option>
+        </select>
+      </label>
+      <label class="campo" id="cajaDupliSemana">Semana
+        <select id="dupliSemana"></select>
+      </label>
+      <label class="campo oculto" id="cajaDupliMes">Mes
+        <select id="dupliMes"></select>
+      </label>
+    </div>
   </section>
 
   <div id="salida"></div>
@@ -1017,6 +1042,28 @@ function llenarSelectores(){
     sem.appendChild(o);
   });
   sem.value = (previo && SEMANAS.indexOf(previo) >= 0) ? previo : (FECHA_MAX ? isoSemana(FECHA_MAX) : SEMANAS[SEMANAS.length - 1]);
+
+  const ds = el("dupliSemana");
+  const previoDs = ds.value;
+  ds.innerHTML = "";
+  SEMANAS.slice().reverse().forEach(function(k){
+    const o = document.createElement("option");
+    o.value = k;
+    o.textContent = "Semana " + etiquetaSemana(k) + "  ·  " + fCorta(lunesDe(k)) + " al " + fCorta(new Date(lunesDe(k).getFullYear(), lunesDe(k).getMonth(), lunesDe(k).getDate() + 6));
+    ds.appendChild(o);
+  });
+  ds.value = (previoDs && SEMANAS.indexOf(previoDs) >= 0) ? previoDs : sem.value;
+
+  const dm = el("dupliMes");
+  const previoDm = dm.value;
+  dm.innerHTML = "";
+  MESES.slice().reverse().forEach(function(m){
+    const o = document.createElement("option");
+    o.value = m.clave;
+    o.textContent = m.etq;
+    dm.appendChild(o);
+  });
+  dm.value = (previoDm && MESES.some(function(m){ return m.clave === previoDm; })) ? previoDm : (MESES.length ? MESES[MESES.length - 1].clave : "");
 
   llenarMulti("director");
   llenarMulti("lider");
@@ -2258,17 +2305,33 @@ function llaveCuentaDup(f){
   return [cliente, direccion, normaliza(f.numExt), colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
 }
 
+function filaEnPeriodoDupli(f){
+  const tipo = el("dupliTipo").value;
+  if (!tipo) return true;
+  const fecha = tipo === "vendido" ? f.fOp : f.fVal;
+  if (!fecha) return false;
+  if (el("dupliPeriodo").value === "mes"){
+    const mes = el("dupliMes").value;
+    return !mes || claveMes(fecha) === mes;
+  }
+  const sem = el("dupliSemana").value;
+  return !sem || isoSemana(fecha) === sem;
+}
+
 function cuentasDuplicadasHtml(){
   const grupos = {};
   FILAS.forEach(function(f){
-    if (!pasaFiltros(f)) return;
+    if (!enAlcance(f)) return;
+    if (!filaEnPeriodoDupli(f)) return;
     const llave = llaveCuentaDup(f);
     if (!llave) return;
     if (!grupos[llave]) grupos[llave] = [];
     grupos[llave].push(f);
   });
 
-  const sinDomicilio = FILAS.filter(function(f){ return pasaFiltros(f) && normaliza(f.cliente) && !llaveCuentaDup(f); }).length;
+  const sinDomicilio = FILAS.filter(function(f){
+    return enAlcance(f) && filaEnPeriodoDupli(f) && normaliza(f.cliente) && !llaveCuentaDup(f);
+  }).length;
 
   const dup = Object.keys(grupos)
     .map(function(k){ return grupos[k]; })
@@ -2287,7 +2350,13 @@ function cuentasDuplicadasHtml(){
     grupo.sort(function(a, b){ return (a.fOp && b.fOp) ? a.fOp - b.fOp : 0; });
     grupo.forEach(function(f, i){
       const estiloGrupo = (i === 0 && gi > 0) ? ' style="border-top:2px solid var(--azul2)"' : "";
-      filas += "<tr" + estiloGrupo + "><td>" + (f.cliente || "—") + "</td>" +
+      filas += "<tr" + estiloGrupo + ">" +
+        "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
+        "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td>" +
+        "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
+        "<td>" + (f.canal || "—") + "</td>" +
+        "<td>" + (f.cliente || "—") + "</td>" +
+        "<td>" + (f.cuenta || "—") + "</td>" +
         "<td>" + (f.oportunidad || "—") + "</td>" +
         '<td class="envuelve">' + (f.direccion || "—") + "</td>" +
         "<td>" + (f.numExt || "—") + "</td>" +
@@ -2296,8 +2365,7 @@ function cuentasDuplicadasHtml(){
         "<td>" + (f.cp || "—") + "</td>" +
         "<td>" + (f.vendedor || "—") + "</td>" +
         "<td>" + (f.coach || "—") + "</td>" +
-        "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
-        "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td></tr>";
+        "<td>" + (f.lider || "—") + "</td></tr>";
     });
   });
 
@@ -2305,8 +2373,9 @@ function cuentasDuplicadasHtml(){
     " cuenta(s) duplicada(s) · " + renglones + " renglones" +
     (sinDomicilio ? " · " + sinDomicilio + " sin dirección, no comparables" : "") + "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Cliente</th><th>N° oportunidad</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
-    "<th>Vendedor</th><th>Coach</th><th>Fecha oportunidad</th><th>Fecha validación</th></tr></thead><tbody>" +
+    "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
+    "<th>N° cuenta</th><th>N° oportunidad</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
+    "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
 }
 
@@ -4249,21 +4318,28 @@ const OPCIONES_AGRUPAR = [
 
 function ajustaCajasDia(){
   const esOS = VISTA === "os";
-  Array.prototype.forEach.call(document.querySelectorAll(".controles label.campo"), function(l){
-    l.style.display = esOS ? "none" : "";
+  const esDupli = VISTA === "dupli";
+  Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
+    l.style.display = (esOS || esDupli) ? "none" : "";
   });
   const acc = document.querySelector(".panel > .acciones");
   if (acc) acc.style.display = "";
   const soloOS0 = PERFIL && PERFIL.acceso === "os";
   el("btnCsv").style.display = (esOS || soloOS0) ? "none" : "";
   const dt = document.querySelector("details.ajustes");
-  if (dt) dt.style.display = esOS ? "none" : "";
+  if (dt) dt.style.display = (esOS || esDupli) ? "none" : "";
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
   const soloOS = PERFIL && PERFIL.acceso === "os";
   el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || soloOS) ? "none" : "";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
+  el("cajaDupliFiltros").classList.toggle("oculto", !esDupli);
+  if (esDupli){
+    const porMes = el("dupliPeriodo").value === "mes";
+    el("cajaDupliSemana").classList.toggle("oculto", porMes);
+    el("cajaDupliMes").classList.toggle("oculto", !porMes);
+  }
 
   // atención a clientes: sin filtros de plan ni de histórico, y sin ajustes
   if (soloOS){
@@ -4334,6 +4410,10 @@ el("btnRevisarEq").addEventListener("click", revisarEquipos);
 ["metasRanking","semanasMes","umbralPlatino","origenPromedio","metaConversion"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "equipos") pintar(); });
 });
+["dupliTipo","dupliSemana","dupliMes"].forEach(function(id){
+  el(id).addEventListener("change", function(){ if (VISTA === "dupli") pintar(); });
+});
+el("dupliPeriodo").addEventListener("change", function(){ ajustaCajasDia(); if (VISTA === "dupli") pintar(); });
 ["lideresLocales","plazasLocales","cruceCampo","clavesTecnico","palabrasAdicional"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (FILAS.length) reclasificarCanal(); });
 });
@@ -4540,7 +4620,7 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (PERFIL.acceso === "os") permitidas = ["os", "dias30"];
+  if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os"];
 
   if (permitidas){
