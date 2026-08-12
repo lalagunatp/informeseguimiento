@@ -2305,6 +2305,30 @@ function llaveCuentaDup(f){
   return [cliente, direccion, normaliza(f.numExt), colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
 }
 
+// vendedor/coach/líder "corregidos": para venta técnico SLK/CRC salen del código
+// en VENTA TECNICOS cruzado con la plantilla, no de las columnas de la base
+function vendedorDeFila(f){
+  if (f.codTec){
+    const per = MAPA_TEC_PERSONA.get(f.codTec);
+    return f.codTec + (per && per.nombre ? " · " + per.nombre : "");
+  }
+  return f.vendedor;
+}
+function coachDeFila(f){
+  if (f.codTec){
+    const per = MAPA_TEC_PERSONA.get(f.codTec);
+    if (per && per.coach) return per.coach;
+  }
+  return f.coach;
+}
+function liderDeFila(f){
+  if (f.codTec){
+    const per = MAPA_TEC_PERSONA.get(f.codTec);
+    if (per && per.lider) return per.lider;
+  }
+  return f.lider;
+}
+
 function filaEnPeriodoDupli(f){
   const tipo = el("dupliTipo").value;
   if (!tipo) return true;
@@ -2345,6 +2369,14 @@ function cuentasDuplicadasHtml(){
     dup = dup.filter(function(g){ return g.some(filaEnPeriodoDupli); });
   }
 
+  // líder de ventas: ve la cuenta duplicada completa (todos sus renglones, de cualquier
+  // coach/vendedor) siempre que él mismo aparezca como líder en al menos un renglón
+  // (usa el mismo líder "corregido" por código técnico que se muestra en la tabla)
+  if (puestoEs("LIDER VENTAS", "LIDER DE VENTAS")){
+    const miNombre = normaliza(PERFIL.nombre);
+    dup = dup.filter(function(g){ return g.some(function(f){ return normaliza(liderDeFila(f)) === miNombre; }); });
+  }
+
   const busca = normaliza(el("buscaDup").value).trim();
   if (busca){
     dup = dup.filter(function(g){
@@ -2361,6 +2393,10 @@ function cuentasDuplicadasHtml(){
       (sinDomicilio ? " (" + sinDomicilio + " renglón(es) sin dirección no se pudieron comparar)" : "") + ".</div></section>";
   }
 
+  // dirección y núm. exterior solo para Director y Líder de Ventas; el resto de
+  // los puestos ve todas las cuentas duplicadas pero sin ese dato de domicilio
+  const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
+
   let filas = "";
   let renglones = 0;
   dup.forEach(function(grupo, gi){
@@ -2370,6 +2406,7 @@ function cuentasDuplicadasHtml(){
       const bordeGrupo = (i === 0 && gi > 0) ? "border-top:2px solid var(--azul2);" : "";
       const destaca = (tipoPeriodo && filaEnPeriodoDupli(f)) ? "background:var(--v-bg);" : "";
       const estilo = (bordeGrupo || destaca) ? ' style="' + bordeGrupo + destaca + '"' : "";
+      const vendedor = vendedorDeFila(f), coach = coachDeFila(f), lider = liderDeFila(f);
       filas += "<tr" + estilo + ">" +
         "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
         "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td>" +
@@ -2378,14 +2415,13 @@ function cuentasDuplicadasHtml(){
         "<td>" + (f.cliente || "—") + "</td>" +
         "<td>" + (f.cuenta || "—") + "</td>" +
         "<td>" + (f.oportunidad || "—") + "</td>" +
-        '<td class="envuelve">' + (f.direccion || "—") + "</td>" +
-        "<td>" + (f.numExt || "—") + "</td>" +
+        (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (f.numExt || "—") + "</td>" : "") +
         "<td>" + (f.colonia || "—") + "</td>" +
         "<td>" + (f.ciudad || "—") + "</td>" +
         "<td>" + (f.cp || "—") + "</td>" +
-        "<td>" + (f.vendedor || "—") + "</td>" +
-        "<td>" + (f.coach || "—") + "</td>" +
-        "<td>" + (f.lider || "—") + "</td></tr>";
+        "<td>" + (vendedor || "—") + "</td>" +
+        "<td>" + (coach || "—") + "</td>" +
+        "<td>" + (lider || "—") + "</td></tr>";
     });
   });
 
@@ -2396,7 +2432,7 @@ function cuentasDuplicadasHtml(){
     "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
-    "<th>N° cuenta</th><th>N° oportunidad</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
+    "<th>N° cuenta</th><th>N° oportunidad</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
 }
