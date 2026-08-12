@@ -237,6 +237,7 @@
     <button type="button" data-vista="dias30">Últimos 30 días</button>
     <button type="button" data-vista="vend0">Vendedores en 0</button>
     <button type="button" data-vista="os">Seguimiento OS</button>
+    <button type="button" data-vista="dupli">Cuentas duplicadas</button>
     <button type="button" data-vista="equipos">Equipos</button>
   </div>
 </nav>
@@ -606,17 +607,18 @@ function normaliza(s){
 
 /* ---------- estado ---------- */
 
-const COLUMNAS = "A,C,D,E,F,G,H,I,K,M,N,O,P,Q,R,S,T,U,AC,AF,AG,AH";
+const COLUMNAS = "A,C,D,E,F,G,H,I,K,M,N,O,P,Q,R,S,T,U,AA,AB,AC,AD,AE,AF,AG,AH";
 const IDX_SELECT = { os:0, cluster:1, creacion:2, validacion:3, activacion:4, cliente:5, canal:6, subcanal:7, estatus:8, estatus2:9, cuenta:10, plan:11, oportunidad:12, vendedor:13, pl:14, pp:15, addon:16, numvendedor:17, colonia:18, director:19, lider:20, coach:21, comentario:-1 };
 // posiciones reales A..AH, por si hay que leer la hoja completa
-const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, estatus2:12, cuenta:13, plan:14, oportunidad:15, vendedor:16, pl:17, pp:18, addon:19, numvendedor:20, comentario:22, colonia:28, director:31, lider:32, coach:33 };
+const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, estatus2:12, cuenta:13, plan:14, oportunidad:15, vendedor:16, pl:17, pp:18, addon:19, numvendedor:20, comentario:22, direccion:26, numExt:27, colonia:28, ciudad:29, cp:30, director:31, lider:32, coach:33 };
 let IDX = IDX_SELECT;
 
 const LETRA_CAMPO = {
   A:"os", C:"cluster", D:"creacion", E:"validacion", F:"activacion", G:"cliente",
   H:"canal", I:"subcanal", K:"estatus", M:"estatus2", N:"cuenta", O:"plan",
   P:"oportunidad", Q:"vendedor", R:"pl", S:"pp", T:"addon", U:"numvendedor",
-  W:"comentario", AC:"colonia", AF:"director", AG:"lider", AH:"coach"
+  W:"comentario", AA:"direccion", AB:"numExt", AC:"colonia", AD:"ciudad", AE:"cp",
+  AF:"director", AG:"lider", AH:"coach"
 };
 
 // el proxy dice qué columnas manda y en qué orden
@@ -905,7 +907,11 @@ async function cargar(){
     const reg = {
       os:       texto(celda(c, IDX.os)),
       cliente:  texto(celda(c, IDX.cliente)),
+      direccion: texto(celda(c, IDX.direccion)),
+      numExt:   texto(celda(c, IDX.numExt)),
       colonia:  texto(celda(c, IDX.colonia)),
+      ciudad:   texto(celda(c, IDX.ciudad)),
+      cp:       texto(celda(c, IDX.cp)),
       comentario: (celda(c, IDX.comentario) || {}).v != null ? String(celda(c, IDX.comentario).v).trim() : "",
       cluster:  texto(celda(c, IDX.cluster)),
       canalBase: texto(celda(c, IDX.canal)),
@@ -2239,6 +2245,68 @@ function metalDe(p){
 
   if (metal === "Oro" && promedioInst(p) >= Number(el("umbralPlatino").value || 20) - 0.001) metal = "Platino";
   return metal;
+}
+
+/* ---------- cuentas duplicadas ---------- */
+// misma cuenta = mismo cliente y domicilio (direccion, num exterior, colonia, ciudad, C.P.)
+// repetido en dos o mas renglones de la base
+function llaveCuentaDup(f){
+  const cliente = normaliza(f.cliente);
+  const direccion = normaliza(f.direccion);
+  const colonia = normaliza(f.colonia);
+  if (!cliente || (!direccion && !colonia)) return "";
+  return [cliente, direccion, normaliza(f.numExt), colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
+}
+
+function cuentasDuplicadasHtml(){
+  const grupos = {};
+  FILAS.forEach(function(f){
+    if (!pasaFiltros(f)) return;
+    const llave = llaveCuentaDup(f);
+    if (!llave) return;
+    if (!grupos[llave]) grupos[llave] = [];
+    grupos[llave].push(f);
+  });
+
+  const sinDomicilio = FILAS.filter(function(f){ return pasaFiltros(f) && normaliza(f.cliente) && !llaveCuentaDup(f); }).length;
+
+  const dup = Object.keys(grupos)
+    .map(function(k){ return grupos[k]; })
+    .filter(function(g){ return g.length > 1; })
+    .sort(function(a, b){ return b.length - a.length || (a[0].cliente || "").localeCompare(b[0].cliente || "", "es"); });
+
+  if (!dup.length){
+    return '<section class="panel"><h2>Cuentas duplicadas</h2><div class="aviso">No se encontraron cuentas duplicadas con los filtros actuales' +
+      (sinDomicilio ? " (" + sinDomicilio + " renglón(es) sin dirección no se pudieron comparar)" : "") + ".</div></section>";
+  }
+
+  let filas = "";
+  let renglones = 0;
+  dup.forEach(function(grupo, gi){
+    renglones += grupo.length;
+    grupo.sort(function(a, b){ return (a.fOp && b.fOp) ? a.fOp - b.fOp : 0; });
+    grupo.forEach(function(f, i){
+      const estiloGrupo = (i === 0 && gi > 0) ? ' style="border-top:2px solid var(--azul2)"' : "";
+      filas += "<tr" + estiloGrupo + "><td>" + (f.cliente || "—") + "</td>" +
+        '<td class="envuelve">' + (f.direccion || "—") + "</td>" +
+        "<td>" + (f.numExt || "—") + "</td>" +
+        "<td>" + (f.colonia || "—") + "</td>" +
+        "<td>" + (f.ciudad || "—") + "</td>" +
+        "<td>" + (f.cp || "—") + "</td>" +
+        "<td>" + (f.vendedor || "—") + "</td>" +
+        "<td>" + (f.coach || "—") + "</td>" +
+        "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
+        "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td></tr>";
+    });
+  });
+
+  return '<section class="panel"><h2>Cuentas duplicadas <span class="sub">' + dup.length +
+    " cuenta(s) duplicada(s) · " + renglones + " renglones" +
+    (sinDomicilio ? " · " + sinDomicilio + " sin dirección, no comparables" : "") + "</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Cliente</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
+    "<th>Vendedor</th><th>Coach</th><th>Fecha oportunidad</th><th>Fecha validación</th></tr></thead><tbody>" +
+    filas + "</tbody></table></div></section>";
 }
 
 function equiposHtml(){
@@ -3845,6 +3913,8 @@ function pintar(){
     if (SEG_TODOS.estado === "sin cargar") cargarSeguimientoTodos();
     // atención a clientes solo ve el detalle de pendientes
     html = (PERFIL && PERFIL.acceso === "os" ? "" : dias30Html()) + pendientesHtml();
+  } else if (VISTA === "dupli"){
+    html = cuentasDuplicadasHtml();
   } else if (VISTA === "equipos"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     html = equiposHtml();
@@ -4132,7 +4202,7 @@ function descargarCsv(){
   });
 
   if (!filas.length) return;   // nada que exportar
-  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vendedores_en_0", os:"seguimiento_os", equipos:"equipos" };
+  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vendedores_en_0", os:"seguimiento_os", dupli:"cuentas_duplicadas", equipos:"equipos" };
   const csv = "\ufeff" + filas.map(function(f){
     return f.map(function(x){ return '"' + String(x === undefined || x === null ? "" : x).replace(/"/g, '""') + '"'; }).join(",");
   }).join("\n");
