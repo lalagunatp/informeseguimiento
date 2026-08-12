@@ -2604,10 +2604,13 @@ function pesosSemana(sem, tipo){
 
 // qué proporción de una semana normal representan los días ya transcurridos
 function coberturaDias(pesos, grupo, dias){
-  if (dias >= 7) return 1;
-  if (dias <= 0) return 0;
+  const sumaArr = function(arr){ return arr.reduce(function(a, b){ return a + b; }, 0); };
+  const nPropio = pesos.acc[grupo] ? sumaArr(pesos.acc[grupo]) : 0;
+  const nGlobal = sumaArr(pesos.tot);
+  if (dias >= 7) return { cob:1, fuente:"completa", n:0 };
+  if (dias <= 0) return { cob:0, fuente:"sin datos", n:0 };
   function parte(arr){
-    const suma = arr.reduce(function(a, b){ return a + b; }, 0);
+    const suma = sumaArr(arr);
     if (suma < 7) return null;
     let corrido = 0;
     const enteros = Math.floor(dias);
@@ -2619,16 +2622,19 @@ function coberturaDias(pesos, grupo, dias){
   }
   const propio = pesos.acc[grupo] ? parte(pesos.acc[grupo]) : null;
   const global = parte(pesos.tot);
-  let cob = propio || global || (dias / 7);          // sin historia: reparto parejo
-  if (cob > 0.98) cob = 0.98;                        // la semana no puede estar completa
-  if (cob < 0.03) cob = dias / 7;
-  return cob;
+  let fuente = "propio", n = nPropio;
+  let cob = propio;
+  if (cob === null){ cob = global; fuente = "global"; n = nGlobal; }
+  if (cob === null){ cob = dias / 7; fuente = "sin historia"; n = 0; }
+  if (cob > 0.98){ cob = 0.98; fuente += " (tope)"; }
+  if (cob < 0.03){ cob = dias / 7; fuente = "sin historia suficiente"; n = 0; }
+  return { cob:cob, fuente:fuente, n:n };
 }
 
 function proyectar(total, pesos, grupo, dias){
-  const cob = coberturaDias(pesos, grupo, dias);
-  if (!cob) return total;
-  return Math.round(total / cob);
+  const info = coberturaDias(pesos, grupo, dias);
+  const valor = info.cob ? Math.round(total / info.cob) : total;
+  return { valor:valor, cob:info.cob, fuente:info.fuente, n:info.n };
 }
 
 function perfilDia(pesos, grupo){
@@ -3889,10 +3895,22 @@ function claseSemaforo(v, valores){
 }
 
 function num(n){ return n ? n.toLocaleString("es-MX") : "0"; }
-function celdaNum(n, extra){
-  return '<td class="' + (extra||"") + (n ? "" : " cero") + '">' + num(n) + "</td>";
+function celdaNum(n, extra, titulo){
+  return '<td class="' + (extra||"") + (n ? "" : " cero") + '"' +
+    (titulo ? ' title="' + titulo.replace(/"/g, "'") + '"' : "") + ">" + num(n) + "</td>";
 }
 function pct(x){ return (x === null || !isFinite(x)) ? "—" : Math.round(x * 100) + "%"; }
+
+// texto corto para el title="" de la celda PROY: de dónde salió el % de cobertura usado
+function tituloProy(info, grupoTexto){
+  if (!info) return "";
+  const fuente = { propio:"historial propio", global:"promedio global (poco historial propio)",
+    "sin historia":"sin historial, reparto parejo", "sin historia suficiente":"historial insuficiente, reparto parejo",
+    completa:"semana ya cerrada" }[info.fuente] || info.fuente;
+  let t = "Proyección de " + grupoTexto + ": cobertura " + pct(info.cob) + " · " + fuente;
+  if (info.n) t += " (" + info.n + " evento(s) en las últimas 5 semanas cerradas)";
+  return t;
+}
 
 function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   const difs = grupos.map(function(g){
@@ -3920,19 +3938,21 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   let filas = "", metaTot = 0;
   grupos.forEach(function(g, i){
     const A = (ant[g] || vacio())[b.tipo], C = (act[g] || vacio())[b.tipo];
-    const proy = enCurso && dias > 0 ? proyectar(C.t, pesos, g, dias) : C.t;
+    const info = enCurso && dias > 0 ? proyectar(C.t, pesos, g, dias) : null;
+    const proy = info ? info.valor : C.t;
     const m = celdasMeta(g, C.t, proy);
     if (m.meta) metaTot += m.meta;
     filas += "<tr><td>" + g + "</td>" + celdaNum(A.t, "sem") +
              C.d.map(function(n, j){ return celdaNum(n, j === 0 ? "sem" : ""); }).join("") +
              celdaNum(C.t, "tot") +
              '<td class="dif' + claseSemaforo(difs[i], difs) + '">' + pct(difs[i]) + "</td>" +
-             celdaNum(proy) + m.html + "</tr>";
+             celdaNum(proy, "", tituloProy(info, g)) + m.html + "</tr>";
   });
 
   const TA = sumar(ant, b.tipo), TC = sumar(act, b.tipo);
   const difT = TA.t ? (TC.t - TA.t) / TA.t : null;
-  const proyT = enCurso && dias > 0 ? proyectar(TC.t, pesos, "\u0000total", dias) : TC.t;
+  const infoT = enCurso && dias > 0 ? proyectar(TC.t, pesos, "\u0000total", dias) : null;
+  const proyT = infoT ? infoT.valor : TC.t;
   let metaHtml = "";
   if (hayMeta){
     const av = metaTot ? TC.t / metaTot : null;
@@ -3942,7 +3962,8 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   }
   filas += '<tr class="total"><td>Total</td>' + celdaNum(TA.t, "sem") +
            TC.d.map(function(n, j){ return celdaNum(n, j === 0 ? "sem" : ""); }).join("") +
-           celdaNum(TC.t, "tot") + '<td class="dif">' + pct(difT) + "</td>" + celdaNum(proyT) + metaHtml + "</tr>";
+           celdaNum(TC.t, "tot") + '<td class="dif">' + pct(difT) + "</td>" +
+           celdaNum(proyT, "", tituloProy(infoT, "Total")) + metaHtml + "</tr>";
 
   return '<section class="panel"><h2>' + b.titulo.toUpperCase() +
          ' <span class="sub">' + b.nota + (hayMeta ? " · meta semanal del equipo" : "") +
