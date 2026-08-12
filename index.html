@@ -676,8 +676,8 @@ const el = function(id){ return document.getElementById(id); };
 
 function avisar(txt, esError){
   const a = el("estado");
-  a.innerHTML = txt;
-  a.className = "aviso" + (esError ? " error" : "");
+  a.innerHTML = txt || "";
+  a.className = "aviso" + (esError ? " error" : "") + (txt ? "" : " oculto");
   if (esError){
     const dt = document.querySelector("details.ajustes");
     if (dt) dt.open = true;
@@ -1016,21 +1016,17 @@ async function cargar(){
     return;
   }
 
-  let nota = "";
-  if (INFO_TECNICO.estado === "ok"){
-    nota = "<br>Venta técnico cruzado con <b>" + el("hojaTecnico").value.trim() + "</b> (" + INFO_TECNICO.n.toLocaleString("es-MX") + " referencias)";
-    if (INFO_TECNICO.sinCruce) nota += " · <b>" + INFO_TECNICO.sinCruce + "</b> ventas técnico sin cruce, se van a “Venta técnico otros”";
-  } else if (INFO_TECNICO.estado === "pestaña equivocada"){
-    nota = "<br><b>Google devolvió otra pestaña</b>: en las columnas " + el("colLlave").value + " y " + el("colClave").value +
+  // solo se avisa si algo salió mal con el cruce de venta técnico; el resumen
+  // de renglones cargados ya no se muestra (era ruido técnico para el usuario)
+  if (INFO_TECNICO.estado === "pestaña equivocada"){
+    avisar("<b>Google devolvió otra pestaña</b>: en las columnas " + el("colLlave").value + " y " + el("colClave").value +
            " llegaron fechas, no oportunidades. Abre la pestaña VENTA TECNICO en Google Sheets, copia el <b>gid</b> de la barra de direcciones " +
-           "(la parte gid=…) y pégalo en Ajustes en lugar del nombre.";
-  } else if (INFO_TECNICO.estado !== "sin cruce"){
-    nota = "<br>No se pudo leer la pestaña de venta técnico (" + INFO_TECNICO.estado + "): esas ventas salen como “Venta técnico otros”.";
+           "(la parte gid=…) y pégalo en Ajustes en lugar del nombre.", true);
+  } else if (INFO_TECNICO.estado !== "sin cruce" && INFO_TECNICO.estado !== "ok"){
+    avisar("No se pudo leer la pestaña de venta técnico (" + INFO_TECNICO.estado + "): esas ventas salen como “Venta técnico otros”.", true);
+  } else {
+    avisar("");
   }
-
-  avisar("<b>" + FILAS.length.toLocaleString("es-MX") + "</b> registros con fecha, de " + filas.length.toLocaleString("es-MX") + " renglones · fechas en formato " +
-         (orden === "mdy" ? "mes/día/año" : "día/mes/año") +
-         (max ? " · último movimiento el <b>" + fCorta(max) + "</b> (semana " + etiquetaSemana(isoSemana(max)) + ")" : "") + nota);
   el("btnRecargar").disabled = false;
   pintar();
 }
@@ -4351,7 +4347,9 @@ function ajustaCajasDia(){
   const acc = document.querySelector(".panel > .acciones");
   if (acc) acc.style.display = "";
   const soloOS0 = PERFIL && PERFIL.acceso === "os";
-  el("btnCsv").style.display = (esOS || soloOS0) ? "none" : "";
+  const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
+  const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
+  el("btnCsv").style.display = (esOS || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
   const dt = document.querySelector("details.ajustes");
   if (dt) dt.style.display = (esOS || esDupli) ? "none" : "";
   el("cajaOS").style.display = esOS ? "" : "none";
@@ -4362,8 +4360,10 @@ function ajustaCajasDia(){
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
 
-  el("cajaDupliFiltros").classList.toggle("oculto", !esDupli);
-  if (esDupli){
+  // atención a clientes: en Cuentas duplicadas solo busca por cuenta/oportunidad,
+  // sin el panel de periodo (ese es para operaciones/supervisión)
+  el("cajaDupliFiltros").classList.toggle("oculto", !esDupli || esAnalistaAC);
+  if (esDupli && !esAnalistaAC){
     const porMes = el("dupliPeriodo").value === "mes";
     el("cajaDupliSemana").classList.toggle("oculto", porMes);
     el("cajaDupliMes").classList.toggle("oculto", !porMes);
@@ -4487,6 +4487,17 @@ function personaEnAlcance(p){
 
   const n = normaliza(PERFIL.nombre);
   return normaliza(p.lider) === n || normaliza(p.coach) === n || normaliza(p.nombre) === n;
+}
+
+// ¿el puesto de quien entró coincide con alguno de estos nombres?
+function puestoEs(){
+  if (!PERFIL) return false;
+  const p = normaliza(PERFIL.puesto);
+  if (!p) return false;
+  return Array.prototype.some.call(arguments, function(n){
+    const nn = normaliza(n);
+    return p.indexOf(nn) >= 0 || nn.indexOf(p) >= 0;
+  });
 }
 
 function accesoDe(puesto){
