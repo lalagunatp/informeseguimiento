@@ -2602,40 +2602,46 @@ function pesosSemana(sem, tipo){
   return { acc:acc, tot:tot, semanas:Object.keys(claves).sort() };
 }
 
-// qué proporción de una semana normal representan los días ya transcurridos
-function coberturaDias(pesos, grupo, dias){
-  const sumaArr = function(arr){ return arr.reduce(function(a, b){ return a + b; }, 0); };
-  const nPropio = pesos.acc[grupo] ? sumaArr(pesos.acc[grupo]) : 0;
-  const nGlobal = sumaArr(pesos.tot);
-  if (dias >= 7) return { cob:1, fuente:"completa", n:0 };
-  if (dias <= 0) return { cob:0, fuente:"sin datos", n:0 };
-  function parte(arr){
-    const suma = sumaArr(arr);
-    if (suma < 7) return null;
-    let corrido = 0;
-    const enteros = Math.floor(dias);
-    for (let i = 0; i < enteros; i++) corrido += arr[i];
-    // fracción del día en curso
-    const frac = dias - enteros;
-    if (frac > 0 && enteros < arr.length) corrido += arr[enteros] * frac;
-    return corrido / suma;
-  }
-  const arrPropio = pesos.acc[grupo] || null;
-  const propio = arrPropio ? parte(arrPropio) : null;
-  const global = parte(pesos.tot);
-  let fuente = "propio", n = nPropio, arr = arrPropio;
-  let cob = propio;
-  if (cob === null){ cob = global; fuente = "global"; n = nGlobal; arr = pesos.tot; }
-  if (cob === null){ cob = dias / 7; fuente = "sin historia"; n = 0; arr = null; }
-  if (cob > 0.98){ cob = 0.98; fuente += " (tope)"; }
-  if (cob < 0.03){ cob = dias / 7; fuente = "sin historia suficiente"; n = 0; arr = null; }
-  return { cob:cob, fuente:fuente, n:n, arr:arr };
+// promedio por día de la semana (Lun..Dom) de un arreglo acumulado sobre varias semanas
+function promedioDiario(arr, semanas){
+  if (!arr || !semanas) return null;
+  return arr.map(function(x){ return x / semanas; });
 }
 
-function proyectar(total, pesos, grupo, dias){
-  const info = coberturaDias(pesos, grupo, dias);
-  const valor = info.cob ? Math.round(total / info.cob) : total;
-  return { valor:valor, cob:info.cob, fuente:info.fuente, n:info.n, arr:info.arr };
+// proyección de la semana: Lun-Vie a línea recta con el ritmo real de esta semana;
+// Sáb y Dom con la razón histórica (Sáb u Dom vs. promedio Lun-Vie) de las últimas semanas cerradas
+function proyectarSemana(diasArr, pesos, grupo, dias){
+  const total = diasArr.reduce(function(a, b){ return a + b; }, 0);
+  if (dias >= 7) return { valor:total, fuente:"completa", n:0 };
+  if (dias <= 0) return { valor:total, fuente:"sin datos", n:0 };
+
+  const nSemanas = (pesos.semanas || []).length;
+  const arrPropio = pesos.acc[grupo] || null;
+  const sumaPropia = arrPropio ? arrPropio.reduce(function(a, b){ return a + b; }, 0) : 0;
+  let prom = (arrPropio && sumaPropia >= 7) ? promedioDiario(arrPropio, nSemanas) : null;
+  let fuente = "propio";
+  if (!prom){ prom = promedioDiario(pesos.tot, nSemanas); fuente = "global"; }
+  if (!prom){ prom = [1, 1, 1, 1, 1, 0, 0]; fuente = "sin historia"; }
+
+  const histLunVie = (prom[0] + prom[1] + prom[2] + prom[3] + prom[4]) / 5;
+  const ratioSat = histLunVie > 0 ? prom[5] / histLunVie : 0;
+  const ratioDom = histLunVie > 0 ? prom[6] / histLunVie : 0;
+
+  const diasLunVie = Math.min(dias, 5);
+  const sumLunVie = diasArr[0] + diasArr[1] + diasArr[2] + diasArr[3] + diasArr[4];
+  const ritmoLunVie = diasLunVie >= 0.5 ? sumLunVie / diasLunVie : histLunVie;
+
+  const proyLunVie = ritmoLunVie * 5;
+  const satHecho = dias >= 6, domHecho = dias >= 7;
+  const proySat = satHecho ? diasArr[5] : ritmoLunVie * ratioSat;
+  const proyDom = domHecho ? diasArr[6] : ritmoLunVie * ratioDom;
+
+  return {
+    valor: Math.round(proyLunVie + proySat + proyDom),
+    fuente: fuente, n: nSemanas,
+    ritmoLunVie: ritmoLunVie, ratioSat: ratioSat, ratioDom: ratioDom,
+    proyLunVie: proyLunVie, proySat: proySat, proyDom: proyDom
+  };
 }
 
 function perfilDia(pesos, grupo){
@@ -3902,31 +3908,34 @@ function celdaNum(n, extra, titulo){
 }
 function pct(x){ return (x === null || !isFinite(x)) ? "—" : Math.round(x * 100) + "%"; }
 
-// texto corto para el title="" de la celda PROY: de dónde salió el % de cobertura usado
+// texto corto para el title="" de la celda PROY: cómo se armó Lun-Vie + Sáb + Dom
 function tituloProy(info, grupoTexto){
-  if (!info) return "";
-  const fuente = { propio:"historial propio", global:"promedio global (poco historial propio)",
-    "sin historia":"sin historial, reparto parejo", "sin historia suficiente":"historial insuficiente, reparto parejo",
-    completa:"semana ya cerrada" }[info.fuente] || info.fuente;
-  let t = "Proyección de " + grupoTexto + ": cobertura " + pct(info.cob) + " · " + fuente;
-  if (info.n) t += " (" + info.n + " evento(s) en las últimas 5 semanas cerradas)";
-  return t;
+  if (!info || info.ritmoLunVie === undefined) return "";
+  const fuente = { propio:"historial propio de " + grupoTexto, global:"promedio global (poco historial propio)",
+    "sin historia":"sin historial suficiente" }[info.fuente] || info.fuente;
+  return "Proyección de " + grupoTexto + ": Lun-Vie a " + info.ritmoLunVie.toFixed(1) + "/día (≈" +
+    Math.round(info.proyLunVie) + ") + Sáb " + Math.round(info.proySat) + " (" + pct(info.ratioSat) +
+    " de un día hábil) + Dom " + Math.round(info.proyDom) + " (" + pct(info.ratioDom) + ") · " + fuente +
+    (info.n ? " (" + info.n + " semana(s) de historial)" : "");
 }
 
 // una fila para el log de diagnóstico (consola del navegador, no visible en pantalla)
 function filaDiag(grupo, total, proy, info){
-  const fila = { grupo:grupo, acumulado:total, proyeccion:proy, cobertura:pct(info.cob), fuente:info.fuente, eventos_historicos:info.n };
-  if (info.arr){
-    DIAS_LARGOS.forEach(function(d, i){ fila[d] = info.arr[i]; });
-  }
-  return fila;
+  return {
+    grupo: grupo, acumulado: total, proyeccion: proy,
+    ritmo_lun_vie_dia: info.ritmoLunVie != null ? Number(info.ritmoLunVie.toFixed(2)) : null,
+    proy_lun_vie: info.proyLunVie != null ? Math.round(info.proyLunVie) : null,
+    ratio_sabado: pct(info.ratioSat), proy_sabado: info.proySat != null ? Math.round(info.proySat) : null,
+    ratio_domingo: pct(info.ratioDom), proy_domingo: info.proyDom != null ? Math.round(info.proyDom) : null,
+    fuente: info.fuente, semanas_historicas: info.n
+  };
 }
 
-// vuelca en consola (console.table), sin tocar la UI, de dónde sale cada % de cobertura
+// vuelca en consola (console.table), sin tocar la UI, de dónde sale cada proyección
 function logDiagProyeccion(titulo, sem, dias, pesos, filas){
   if (!window.console || !console.table) return;
   console.groupCollapsed("[proyección] " + titulo + " · semana " + sem + " · " + dias + " día(s) transcurridos");
-  console.log("semanas usadas como historial (5 últimas cerradas):", pesos.semanas);
+  console.log("semanas usadas como historial (últimas cerradas):", pesos.semanas);
   console.table(filas);
   console.groupEnd();
 }
@@ -3958,7 +3967,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   let filas = "", metaTot = 0;
   grupos.forEach(function(g, i){
     const A = (ant[g] || vacio())[b.tipo], C = (act[g] || vacio())[b.tipo];
-    const info = enCurso && dias > 0 ? proyectar(C.t, pesos, g, dias) : null;
+    const info = enCurso && dias > 0 ? proyectarSemana(C.d, pesos, g, dias) : null;
     const proy = info ? info.valor : C.t;
     const m = celdasMeta(g, C.t, proy);
     if (m.meta) metaTot += m.meta;
@@ -3972,7 +3981,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
 
   const TA = sumar(ant, b.tipo), TC = sumar(act, b.tipo);
   const difT = TA.t ? (TC.t - TA.t) / TA.t : null;
-  const infoT = enCurso && dias > 0 ? proyectar(TC.t, pesos, "\u0000total", dias) : null;
+  const infoT = enCurso && dias > 0 ? proyectarSemana(TC.d, pesos, "\u0000total", dias) : null;
   const proyT = infoT ? infoT.valor : TC.t;
   if (infoT) diag.push(filaDiag("TOTAL", TC.t, proyT, infoT));
   if (diag.length) logDiagProyeccion(b.titulo, sem, dias, pesos, diag);
