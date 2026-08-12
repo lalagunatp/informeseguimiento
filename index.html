@@ -2288,6 +2288,7 @@ function cuentasDuplicadasHtml(){
     grupo.forEach(function(f, i){
       const estiloGrupo = (i === 0 && gi > 0) ? ' style="border-top:2px solid var(--azul2)"' : "";
       filas += "<tr" + estiloGrupo + "><td>" + (f.cliente || "—") + "</td>" +
+        "<td>" + (f.oportunidad || "—") + "</td>" +
         '<td class="envuelve">' + (f.direccion || "—") + "</td>" +
         "<td>" + (f.numExt || "—") + "</td>" +
         "<td>" + (f.colonia || "—") + "</td>" +
@@ -2304,7 +2305,7 @@ function cuentasDuplicadasHtml(){
     " cuenta(s) duplicada(s) · " + renglones + " renglones" +
     (sinDomicilio ? " · " + sinDomicilio + " sin dirección, no comparables" : "") + "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Cliente</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
+    "<th>Cliente</th><th>N° oportunidad</th><th>Dirección</th><th>Núm. ext.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th>" +
     "<th>Vendedor</th><th>Coach</th><th>Fecha oportunidad</th><th>Fecha validación</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
 }
