@@ -2599,7 +2599,7 @@ function pesosSemana(sem, tipo){
     acc[g][i]++;
     tot[i]++;
   }
-  return { acc:acc, tot:tot };
+  return { acc:acc, tot:tot, semanas:Object.keys(claves).sort() };
 }
 
 // qué proporción de una semana normal representan los días ya transcurridos
@@ -2620,21 +2620,22 @@ function coberturaDias(pesos, grupo, dias){
     if (frac > 0 && enteros < arr.length) corrido += arr[enteros] * frac;
     return corrido / suma;
   }
-  const propio = pesos.acc[grupo] ? parte(pesos.acc[grupo]) : null;
+  const arrPropio = pesos.acc[grupo] || null;
+  const propio = arrPropio ? parte(arrPropio) : null;
   const global = parte(pesos.tot);
-  let fuente = "propio", n = nPropio;
+  let fuente = "propio", n = nPropio, arr = arrPropio;
   let cob = propio;
-  if (cob === null){ cob = global; fuente = "global"; n = nGlobal; }
-  if (cob === null){ cob = dias / 7; fuente = "sin historia"; n = 0; }
+  if (cob === null){ cob = global; fuente = "global"; n = nGlobal; arr = pesos.tot; }
+  if (cob === null){ cob = dias / 7; fuente = "sin historia"; n = 0; arr = null; }
   if (cob > 0.98){ cob = 0.98; fuente += " (tope)"; }
-  if (cob < 0.03){ cob = dias / 7; fuente = "sin historia suficiente"; n = 0; }
-  return { cob:cob, fuente:fuente, n:n };
+  if (cob < 0.03){ cob = dias / 7; fuente = "sin historia suficiente"; n = 0; arr = null; }
+  return { cob:cob, fuente:fuente, n:n, arr:arr };
 }
 
 function proyectar(total, pesos, grupo, dias){
   const info = coberturaDias(pesos, grupo, dias);
   const valor = info.cob ? Math.round(total / info.cob) : total;
-  return { valor:valor, cob:info.cob, fuente:info.fuente, n:info.n };
+  return { valor:valor, cob:info.cob, fuente:info.fuente, n:info.n, arr:info.arr };
 }
 
 function perfilDia(pesos, grupo){
@@ -3912,6 +3913,24 @@ function tituloProy(info, grupoTexto){
   return t;
 }
 
+// una fila para el log de diagnóstico (consola del navegador, no visible en pantalla)
+function filaDiag(grupo, total, proy, info){
+  const fila = { grupo:grupo, acumulado:total, proyeccion:proy, cobertura:pct(info.cob), fuente:info.fuente, eventos_historicos:info.n };
+  if (info.arr){
+    DIAS_LARGOS.forEach(function(d, i){ fila[d] = info.arr[i]; });
+  }
+  return fila;
+}
+
+// vuelca en consola (console.table), sin tocar la UI, de dónde sale cada % de cobertura
+function logDiagProyeccion(titulo, sem, dias, pesos, filas){
+  if (!window.console || !console.table) return;
+  console.groupCollapsed("[proyección] " + titulo + " · semana " + sem + " · " + dias + " día(s) transcurridos");
+  console.log("semanas usadas como historial (5 últimas cerradas):", pesos.semanas);
+  console.table(filas);
+  console.groupEnd();
+}
+
 function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   const difs = grupos.map(function(g){
     const a = (ant[g] || vacio())[b.tipo].t, c = (act[g] || vacio())[b.tipo].t;
@@ -3935,6 +3954,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
     };
   }
 
+  const diag = [];
   let filas = "", metaTot = 0;
   grupos.forEach(function(g, i){
     const A = (ant[g] || vacio())[b.tipo], C = (act[g] || vacio())[b.tipo];
@@ -3942,6 +3962,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
     const proy = info ? info.valor : C.t;
     const m = celdasMeta(g, C.t, proy);
     if (m.meta) metaTot += m.meta;
+    if (info) diag.push(filaDiag(g, C.t, proy, info));
     filas += "<tr><td>" + g + "</td>" + celdaNum(A.t, "sem") +
              C.d.map(function(n, j){ return celdaNum(n, j === 0 ? "sem" : ""); }).join("") +
              celdaNum(C.t, "tot") +
@@ -3953,6 +3974,8 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   const difT = TA.t ? (TC.t - TA.t) / TA.t : null;
   const infoT = enCurso && dias > 0 ? proyectar(TC.t, pesos, "\u0000total", dias) : null;
   const proyT = infoT ? infoT.valor : TC.t;
+  if (infoT) diag.push(filaDiag("TOTAL", TC.t, proyT, infoT));
+  if (diag.length) logDiagProyeccion(b.titulo, sem, dias, pesos, diag);
   let metaHtml = "";
   if (hayMeta){
     const av = metaTot ? TC.t / metaTot : null;
