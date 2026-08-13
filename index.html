@@ -2415,6 +2415,38 @@ function nuevoUnionFind(n){
   return { raiz: raiz, unir: unir };
 }
 
+// mismo criterio de la sección Cuentas duplicadas (nombre+domicilio completo, o solo
+// domicilio cuando no es genérico), pero sin los filtros de periodo/búsqueda/puesto:
+// aquí solo interesa saber si el renglón pertenece a alguna cuenta duplicada o no
+function filasEnCuentaDuplicada(){
+  const candidatos = FILAS.filter(function(f){ return enAlcance(f); });
+  const uf = nuevoUnionFind(candidatos.length);
+  const porCompleta = {};
+  const porDomicilio = {};
+  candidatos.forEach(function(f, i){
+    const k1 = llaveCuentaDup(f);
+    if (k1){ if (!porCompleta[k1]) porCompleta[k1] = []; porCompleta[k1].push(i); }
+    const k2 = llaveDomicilioDup(f);
+    if (k2){ if (!porDomicilio[k2]) porDomicilio[k2] = []; porDomicilio[k2].push(i); }
+  });
+  [porCompleta, porDomicilio].forEach(function(mapa){
+    Object.keys(mapa).forEach(function(k){
+      const idxs = mapa[k];
+      for (let i = 1; i < idxs.length; i++) uf.unir(idxs[0], idxs[i]);
+    });
+  });
+  const tamRaiz = {};
+  candidatos.forEach(function(f, i){
+    const r = uf.raiz(i);
+    tamRaiz[r] = (tamRaiz[r] || 0) + 1;
+  });
+  const set = new Set();
+  candidatos.forEach(function(f, i){
+    if (tamRaiz[uf.raiz(i)] > 1) set.add(f);
+  });
+  return set;
+}
+
 // vendedor/coach/líder "corregidos": para venta técnico SLK/CRC salen del código
 // en VENTA TECNICOS cruzado con la plantilla, no de las columnas de la base
 function vendedorDeFila(f){
@@ -3953,6 +3985,7 @@ function resumenSeguimiento(osNorm){
 function pendientesRows(){
   const r = rango30();
   const salida = [];
+  const dupSet = filasEnCuentaDuplicada();
   FILAS.forEach(function(f){
     if (!pasaFiltros(f)) return;
     if (!esValidada(f) || !f.fVal) return;
@@ -3972,8 +4005,9 @@ function pendientesRows(){
 
     salida.push({
       lider: lider || "SIN LÍDER", coach: coach || "SIN COACH", vendedor: vendedor || "—",
-      os: f.os, validacion: fCorta(f.fVal), dias: dias,
+      os: f.os, oportunidad: f.oportunidad, validacion: fCorta(f.fVal), dias: dias,
       cliente: f.cliente, colonia: f.colonia, cluster: f.cluster, plan: f.plan, canal: f.canal,
+      duplicidad: dupSet.has(f) ? "SI" : "NO",
       asignaciones: a.asignaciones, inicios: a.inicios, desasignaciones: a.desasignaciones,
       motivoDes: a.motivoDes, motivoDet: a.motivoDet, tecnico: a.ultimoTecnico, estadoFinal: a.estadoFinal,
       segVeces: s2.veces, segRescatada: s2.rescatada, segVisita: s2.visita,
@@ -3989,8 +4023,9 @@ function pendientesRows(){
 
 const COLS_PEND = [
   ["lider","Líder"], ["coach","Coach"], ["vendedor","Vendedor"], ["os","OS"],
+  ["oportunidad","Oportunidad"],
   ["validacion","Validación"], ["dias","Días"], ["cliente","Cliente"], ["colonia","Colonia"],
-  ["cluster","Cluster"], ["plan","Plan"], ["canal","Canal"],
+  ["cluster","Cluster"], ["plan","Plan"], ["canal","Canal"], ["duplicidad","Duplicidad"],
   ["asignaciones","Asignada"], ["inicios","Iniciada"], ["desasignaciones","Desasignada"],
   ["motivoDes","Último motivo desasignación"], ["motivoDet","Último motivo detención"],
   ["tecnico","Último técnico"], ["estadoFinal","Estado final"],
