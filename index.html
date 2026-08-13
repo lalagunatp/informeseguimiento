@@ -2533,6 +2533,7 @@ function cuentasDuplicadasHtml(){
       const estilo = (bordeGrupo || destaca) ? ' style="' + bordeGrupo + destaca + '"' : "";
       const vendedor = vendedorDeFila(f), coach = coachDeFila(f), lider = liderDeFila(f);
       filas += "<tr" + estilo + ">" +
+        "<td>" + (gi + 1) + "</td>" +
         "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
         "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td>" +
         "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
@@ -2557,7 +2558,7 @@ function cuentasDuplicadasHtml(){
     (tipoPeriodo ? " · en verde, el/los renglón(es) del periodo elegido; se muestran también sus otros renglones, de cualquier fecha" : "") +
     "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
+    "<th>#</th><th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
     "<th>N° cuenta</th><th>N° oportunidad</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Comentario</th>" +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
