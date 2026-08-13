@@ -2382,11 +2382,19 @@ function llaveCuentaDup(f){
 
 // segunda forma de detectar duplicado: mismo domicilio (dirección + núm. exterior +
 // ciudad), aunque cambien colonia, C.P. o el nombre del cliente
+// direcciones/números genéricos: muchas cuentas distintas los comparten (calles sin
+// nombre oficial, sin número exterior), así que ahí NO alcanza con que coincida el
+// domicilio solo; en esos casos se exige también que coincida el cliente (llaveCuentaDup)
+const DIRECCION_GENERICA = ["SIN NOMBRE", "CALLE SIN NOMBRE", "C SIN NOMBRE", "UNNAMED ROAD", "S/N", "DOMICILIO CONOCIDO"];
+const NUMEXT_GENERICO = ["S/N", "SIN NUMERO", "SN"];
+
 function llaveDomicilioDup(f){
   const direccion = normaliza(f.direccion);
   const ciudad = normaliza(f.ciudad);
+  const numExt = normaliza(f.numExt);
   if (!direccion || !ciudad) return "";
-  return [direccion, normaliza(f.numExt), ciudad].join("|");
+  if (DIRECCION_GENERICA.indexOf(direccion) >= 0 || NUMEXT_GENERICO.indexOf(numExt) >= 0) return "";
+  return [direccion, numExt, ciudad].join("|");
 }
 
 // conjuntos disjuntos: junta renglones que coincidan por CUALQUIERA de las dos llaves
