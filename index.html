@@ -1643,17 +1643,88 @@ function planesPeriodoHtml(claves, etqs, fn, rotulo){
     '<th class="tot">Total</th></tr></thead><tbody>' + cuerpo + "</tbody></table></div></section>";
 }
 
+// arma el detalle por vendedor a partir de los renglones de la base detr\u00e1s de una celda
+function fichasPorVendedor(lista){
+  const map = {};
+  lista.forEach(function(f){
+    const key = normaliza(f.vendedor) || " ";
+    if (!map[key]){
+      map[key] = { nombre: f.vendedor || "SIN VENDEDOR", coach: f.coach || "", lider: f.lider || "", canales:{}, oports:[], planes:{}, n:0 };
+    }
+    const m = map[key];
+    m.n++;
+    if (f.canal) m.canales[f.canal] = true;
+    if (f.oportunidad) m.oports.push(String(f.oportunidad));
+    const p = f.plan || "SIN PLAN";
+    m.planes[p] = (m.planes[p] || 0) + 1;
+  });
+  return Object.keys(map).map(function(k){
+    const m = map[k];
+    return {
+      nombre: m.nombre, coach: m.coach, lider: m.lider,
+      canal: Object.keys(m.canales).join(", "),
+      oportunidad: m.oports.join(", "),
+      planes: Object.keys(m.planes).map(function(p){ return p + " (" + m.planes[p] + ")"; }).join(", "),
+      n: m.n
+    };
+  }).sort(function(a, b){ return b.n - a.n || a.nombre.localeCompare(b.nombre, "es"); });
+}
+
+function detalleMatrizHtml(){
+  if (!DET_SEL || !DET_MTZ[DET_SEL]) return "";
+  const nombre = el("matrizMetrica").options[el("matrizMetrica").selectedIndex].text;
+  const lista = fichasPorVendedor(DET_MTZ[DET_SEL]);
+  return '<section class="panel"><h2>Detalle \u00b7 ' + nombre + ' <span class="sub">' + lista.length +
+    " vendedor(es) \u00b7 toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Vendedor</th><th>Coach</th><th>L\u00edder</th><th>Canal</th><th>Oportunidad</th><th>Planes</th>" +
+    '<th class="tot">Operaciones</th></tr></thead><tbody>' +
+    lista.map(function(x){
+      return "<tr><td>" + (x.nombre || "\u2014") + "</td><td>" + (x.coach || "\u2014") + "</td><td>" +
+        (x.lider || "\u2014") + "</td><td>" + (x.canal || "\u2014") + "</td>" +
+        '<td class="envuelve">' + (x.oportunidad || "\u2014") + "</td>" +
+        '<td class="envuelve">' + (x.planes || "\u2014") + "</td>" +
+        celdaNum(x.n, "tot") + "</tr>";
+    }).join("") + "</tbody></table></div></section>";
+}
+
 function matrizHtml(sem, fn, etqPeriodo){
   fn = fn || isoSemana;
   etqPeriodo = etqPeriodo || ("semana " + etiquetaSemana(sem));
   const metrica = el("matrizMetrica").value;
   const nombre = el("matrizMetrica").options[el("matrizMetrica").selectedIndex].text;
 
+  DET_MTZ = {};
+  let detN = 0;
+  function regDet(lista){
+    if (!lista || !lista.length) return "";
+    const id = "mtz" + (detN++);
+    DET_MTZ[id] = lista;
+    return id;
+  }
+  function celda(n, base, clase, lista){
+    const id = regDet(lista);
+    if (!n) return '<td class="' + (clase || "") + ' cero">0</td>';
+    return "<td" + (clase || id ? ' class="' + ((clase || "") + (id ? " clicable" : "")).trim() + '"' : "") +
+           (id ? ' data-det="' + id + '"' : "") + ">" + num(n) +
+           '<span class="mini">' + (base ? Math.round(n / base * 100) + "%" : "\u2014") + "</span></td>";
+  }
+  function celdaTot(n, clase, lista){
+    const id = regDet(lista);
+    if (!n) return '<td class="' + (clase || "") + ' cero">' + num(n) + "</td>";
+    return "<td class=\"" + ((clase || "") + (id ? " clicable" : "")).trim() + "\"" +
+           (id ? ' data-det="' + id + '"' : "") + ">" + num(n) + "</td>";
+  }
+
   const cols = {};
   const celdas = {};
   const totCol = {};
   const totFila = {};
   let granTotal = 0;
+  const filasCelda = {};
+  const filasFila = {};
+  const filasCol = {};
+  const filasGran = [];
 
   for (const f of FILAS){
     if (!pasaFiltros(f)) continue;
@@ -1672,6 +1743,15 @@ function matrizHtml(sem, fn, etqPeriodo){
     totCol[idp] = (totCol[idp] || 0) + 1;
     totFila[g] = (totFila[g] || 0) + 1;
     granTotal++;
+
+    if (!filasCelda[g]) filasCelda[g] = {};
+    if (!filasCelda[g][idp]) filasCelda[g][idp] = [];
+    filasCelda[g][idp].push(f);
+    if (!filasFila[g]) filasFila[g] = [];
+    filasFila[g].push(f);
+    if (!filasCol[idp]) filasCol[idp] = [];
+    filasCol[idp].push(f);
+    filasGran.push(f);
   }
 
   const ids = Object.keys(cols).sort(function(a, b){
@@ -1686,27 +1766,22 @@ function matrizHtml(sem, fn, etqPeriodo){
     return '<section class="panel"><h2>' + nombre + ' por plan</h2><div class="aviso">No hay movimientos en el periodo seleccionado.</div></section>';
   }
 
-  function celda(n, base, clase){
-    if (!n) return '<td class="' + (clase || "") + ' cero">0</td>';
-    return "<td" + (clase ? ' class="' + clase + '"' : "") + ">" + num(n) +
-           '<span class="mini">' + (base ? Math.round(n / base * 100) + "%" : "\u2014") + "</span></td>";
-  }
-
   let filas = "";
   grupos.forEach(function(g){
     filas += "<tr><td>" + g + "</td>" +
-      ids.map(function(id){ return celda(celdas[g][id] || 0, totFila[g]); }).join("") +
-      '<td class="tot">' + num(totFila[g]) + "</td></tr>";
+      ids.map(function(id){ return celda(celdas[g][id] || 0, totFila[g], "", filasCelda[g] && filasCelda[g][id]); }).join("") +
+      celdaTot(totFila[g], "tot", filasFila[g]) + "</tr>";
   });
   filas += '<tr class="total"><td>Total</td>' +
-    ids.map(function(id){ return celda(totCol[id], granTotal); }).join("") +
-    celda(granTotal, granTotal, "tot") + "</tr>";
+    ids.map(function(id){ return celda(totCol[id], granTotal, "", filasCol[id]); }).join("") +
+    celda(granTotal, granTotal, "tot", filasGran) + "</tr>";
 
   return '<section class="panel"><h2>' + nombre + " por plan \u00b7 " + tituloGrupo().toLowerCase() +
-    ' <span class="sub">' + etqPeriodo + " \u00b7 el porcentaje es la mezcla de cada uno: cada rengl\u00f3n suma 100%</span></h2>" +
+    ' <span class="sub">' + etqPeriodo + " \u00b7 el porcentaje es la mezcla de cada uno: cada rengl\u00f3n suma 100% \u00b7 toca un n\u00famero para ver el detalle</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr><th>' + tituloGrupo() + "</th>" +
     ids.map(function(id){ return "<th>" + (cols[id].corto || cols[id].etq) + "</th>"; }).join("") +
-    '<th class="tot">Total</th></tr></thead><tbody>' + filas + "</tbody></table></div></section>";
+    '<th class="tot">Total</th></tr></thead><tbody>' + filas + "</tbody></table></div></section>" +
+    detalleMatrizHtml();
 }
 
 /* ---------- plantilla, rankings y metas por coach ---------- */
@@ -3087,6 +3162,7 @@ function diagTecnico(clavePeriodo, fn){
 let DET_V0 = {};        // clave -> lista de personas
 let DET_SEL = "";       // cubeta abierta
 let DET_EQ = {};        // clave -> lista de personas del equipo (sección Equipos)
+let DET_MTZ = {};       // clave -> lista de renglones de la base (matriz por plan, semanal/mensual)
 
 function vendedores0Html(){
   if (INFO_EQ.estado === "cargando" || CARGANDO_EQ){
