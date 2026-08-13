@@ -2380,6 +2380,32 @@ function llaveCuentaDup(f){
   return [cliente, direccion, normaliza(f.numExt), colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
 }
 
+// segunda forma de detectar duplicado: mismo domicilio (dirección + núm. exterior +
+// ciudad), aunque cambien colonia, C.P. o el nombre del cliente
+function llaveDomicilioDup(f){
+  const direccion = normaliza(f.direccion);
+  const ciudad = normaliza(f.ciudad);
+  if (!direccion || !ciudad) return "";
+  return [direccion, normaliza(f.numExt), ciudad].join("|");
+}
+
+// conjuntos disjuntos: junta renglones que coincidan por CUALQUIERA de las dos llaves
+// (si A coincide con B por nombre+domicilio, y B coincide con C solo por domicilio,
+// A, B y C quedan en la misma cuenta duplicada)
+function nuevoUnionFind(n){
+  const padre = new Array(n);
+  for (let i = 0; i < n; i++) padre[i] = i;
+  function raiz(i){
+    while (padre[i] !== i){ padre[i] = padre[padre[i]]; i = padre[i]; }
+    return i;
+  }
+  function unir(a, b){
+    const ra = raiz(a), rb = raiz(b);
+    if (ra !== rb) padre[ra] = rb;
+  }
+  return { raiz: raiz, unir: unir };
+}
+
 // vendedor/coach/líder "corregidos": para venta técnico SLK/CRC salen del código
 // en VENTA TECNICOS cruzado con la plantilla, no de las columnas de la base
 function vendedorDeFila(f){
@@ -2419,23 +2445,39 @@ function filaEnPeriodoDupli(f){
 
 function cuentasDuplicadasHtml(){
   // primero se agrupa TODA la base (sin importar periodo); el periodo solo decide
-  // qué cuentas duplicadas se muestran, no qué renglones cuentan dentro del grupo
-  const grupos = {};
-  FILAS.forEach(function(f){
-    if (!enAlcance(f)) return;
-    const llave = llaveCuentaDup(f);
-    if (!llave) return;
-    if (!grupos[llave]) grupos[llave] = [];
-    grupos[llave].push(f);
+  // qué cuentas duplicadas se muestran, no qué renglones cuentan dentro del grupo.
+  // un renglón se une a otro si coinciden por nombre+domicilio completo, O SOLO por
+  // dirección+núm. exterior+ciudad (aunque cambien colonia, C.P. o el nombre)
+  const candidatos = FILAS.filter(function(f){ return enAlcance(f); });
+  const uf = nuevoUnionFind(candidatos.length);
+  const porCompleta = {};
+  const porDomicilio = {};
+  candidatos.forEach(function(f, i){
+    const k1 = llaveCuentaDup(f);
+    if (k1){ if (!porCompleta[k1]) porCompleta[k1] = []; porCompleta[k1].push(i); }
+    const k2 = llaveDomicilioDup(f);
+    if (k2){ if (!porDomicilio[k2]) porDomicilio[k2] = []; porDomicilio[k2].push(i); }
+  });
+  [porCompleta, porDomicilio].forEach(function(mapa){
+    Object.keys(mapa).forEach(function(k){
+      const idxs = mapa[k];
+      for (let i = 1; i < idxs.length; i++) uf.unir(idxs[0], idxs[i]);
+    });
+  });
+  const gruposUF = {};
+  candidatos.forEach(function(f, i){
+    const r = uf.raiz(i);
+    if (!gruposUF[r]) gruposUF[r] = [];
+    gruposUF[r].push(f);
   });
 
   const sinDomicilio = FILAS.filter(function(f){
-    return enAlcance(f) && normaliza(f.cliente) && !llaveCuentaDup(f);
+    return enAlcance(f) && normaliza(f.cliente) && !llaveCuentaDup(f) && !llaveDomicilioDup(f);
   }).length;
 
   const tipoPeriodo = el("dupliTipo").value;
-  let dup = Object.keys(grupos)
-    .map(function(k){ return grupos[k]; })
+  let dup = Object.keys(gruposUF)
+    .map(function(k){ return gruposUF[k]; })
     .filter(function(g){ return g.length > 1; });
 
   // con periodo activo: se queda la cuenta completa si AL MENOS uno de sus renglones
