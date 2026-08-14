@@ -2419,7 +2419,10 @@ function nuevoUnionFind(n){
 // domicilio cuando no es genérico), pero sin los filtros de periodo/búsqueda/puesto:
 // aquí solo interesa saber si el renglón pertenece a alguna cuenta duplicada o no
 function filasEnCuentaDuplicada(){
-  const candidatos = FILAS.filter(function(f){ return enAlcance(f); });
+  // igual que en Cuentas duplicadas: se compara contra TODA la base (no solo lo que
+  // el perfil que entró vería en el resto de la app), si no, un duplicado con un
+  // renglón de otro líder/coach quedaría sin detectar
+  const candidatos = FILAS;
   const uf = nuevoUnionFind(candidatos.length);
   const porCompleta = {};
   const porDomicilio = {};
@@ -2485,11 +2488,14 @@ function filaEnPeriodoDupli(f){
 }
 
 function cuentasDuplicadasHtml(){
-  // primero se agrupa TODA la base (sin importar periodo); el periodo solo decide
-  // qué cuentas duplicadas se muestran, no qué renglones cuentan dentro del grupo.
+  // primero se agrupa TODA la base (sin importar periodo, ni el alcance de quien entró);
+  // el periodo y el puesto solo deciden qué cuentas duplicadas se muestran, no qué
+  // renglones cuentan dentro del grupo. Esto es a propósito: para detectar que un
+  // renglón de un líder coincide con el de OTRO líder/canal hace falta comparar contra
+  // TODA la base, no solo contra lo que ese líder vería en el resto de la app.
   // un renglón se une a otro si coinciden por nombre+domicilio completo, O SOLO por
   // dirección+núm. exterior+ciudad (aunque cambien colonia, C.P. o el nombre)
-  const candidatos = FILAS.filter(function(f){ return enAlcance(f); });
+  const candidatos = FILAS;
   const uf = nuevoUnionFind(candidatos.length);
   const porCompleta = {};
   const porDomicilio = {};
@@ -2513,7 +2519,7 @@ function cuentasDuplicadasHtml(){
   });
 
   const sinDomicilio = FILAS.filter(function(f){
-    return enAlcance(f) && normaliza(f.cliente) && !llaveCuentaDup(f) && !llaveDomicilioDup(f);
+    return normaliza(f.cliente) && !llaveCuentaDup(f) && !llaveDomicilioDup(f);
   }).length;
 
   const tipoPeriodo = el("dupliTipo").value;
