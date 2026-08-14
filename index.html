@@ -663,6 +663,8 @@ function indicePorLetras(columnas){
 }
 
 let FILAS = [];        // {cluster,canal,canalBase,subcanal,oportunidad,estatus,...,fOp,fVal,fIns}
+let FILAS_COMPLETO = [];  // solo para Cuentas duplicadas: base sin filtrar por alcance (líderes)
+let CARGANDO_COMPLETO = false;
 let SEMANAS = [];      // claves ordenadas
 let MESES = [];        // [{clave:"2026-07", etq:"julio 2026"}]
 let MES_TOCADO = false;
@@ -871,31 +873,11 @@ function reclasificarCanal(){
   pintar();
 }
 
-async function cargar(){
-  const id = el("hojaId").value.trim();
-  const gid = el("hojaGid").value.trim();
-  el("btnRecargar").disabled = true;
-  avisar("Leyendo la base y el catálogo de venta técnico…");
-
-  // las dos consultas van al mismo tiempo
-  const pTec = cargarMapaTecnico(id);
-  const pBase = llamarProxy({ accion:"datos", token: TOKEN });
-
-  let tabla;
-  try{
-    const r = await pBase;
-    await pTec;
-    if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no devolvió la base");
-    IDX = indicePorLetras(r.columnas || []);
-    tabla = comoTabla({ datos: r.datos || [] });
-  }catch(e1){
-    avisar("No se pudo leer la base. <b>" + e1.message + "</b>", true);
-    el("btnRecargar").disabled = false;
-    return;
-  }
-
-  const filas = tabla.rows || [];
-  // detectar el orden de las fechas cuando vienen como texto
+// convierte los renglones crudos que manda el proxy (accion:datos) al mismo formato
+// que usa el resto de la app; se reutiliza tanto para la carga normal (ya filtrada
+// por alcance en el servidor) como para la carga completa que pide Cuentas duplicadas
+function parsearBaseRows(filas){
+  // detecta el orden de las fechas cuando vienen como texto
   const muestras = [];
   for (let i = 0; i < filas.length && muestras.length < 4000; i++){
     const c = filas[i].c || [];
@@ -913,12 +895,12 @@ async function cargar(){
     const v = c.v;
     if (v instanceof Date) return isNaN(v) ? null : soloFecha(v);
     if (typeof v === "string"){
-      const g = /^Date\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(v);   // así entrega Google las fechas
+      const g = /^Date\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/.exec(v);
       if (g) return new Date(Number(g[1]), Number(g[2]), Number(g[3]));
       const t = textoAFecha(v, orden);
       if (t) return t;
     }
-    if (c.f) return textoAFecha(String(c.f), orden);                  // respaldo: el texto mostrado
+    if (c.f) return textoAFecha(String(c.f), orden);
     return null;
   }
 
@@ -973,7 +955,38 @@ async function cargar(){
     });
   }
 
-  INFO_TECNICO.sinCruce = sinCruce;
+  return { filas: nuevas, sinCruce: sinCruce, semanas: semanas, max: max };
+}
+
+async function cargar(){
+  const id = el("hojaId").value.trim();
+  const gid = el("hojaGid").value.trim();
+  el("btnRecargar").disabled = true;
+  avisar("Leyendo la base y el catálogo de venta técnico…");
+
+  // las dos consultas van al mismo tiempo
+  const pTec = cargarMapaTecnico(id);
+  const pBase = llamarProxy({ accion:"datos", token: TOKEN });
+
+  let tabla;
+  try{
+    const r = await pBase;
+    await pTec;
+    if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no devolvió la base");
+    IDX = indicePorLetras(r.columnas || []);
+    tabla = comoTabla({ datos: r.datos || [] });
+  }catch(e1){
+    avisar("No se pudo leer la base. <b>" + e1.message + "</b>", true);
+    el("btnRecargar").disabled = false;
+    return;
+  }
+
+  const filas = tabla.rows || [];
+  const resultado = parsearBaseRows(filas);
+  const nuevas = resultado.filas;
+  const semanas = resultado.semanas;
+  const max = resultado.max;
+  INFO_TECNICO.sinCruce = resultado.sinCruce;
 
   FILAS = nuevas;
   FECHA_MAX = max;
@@ -2371,6 +2384,35 @@ function metalDe(p){
 }
 
 /* ---------- cuentas duplicadas ---------- */
+// un líder de ventas recibe de "accion:datos" solo los renglones de su equipo (lo
+// filtra el propio Apps Script por seguridad); para cruzar duplicados con OTROS
+// equipos hace falta pedir la base sin ese filtro — pero solo a quien le corresponde
+function necesitaBaseCompleta(){
+  return !!(PERFIL && PERFIL.alcance && PERFIL.alcance !== "todo" && PERFIL.alcance !== "tecnico");
+}
+
+async function cargarBaseCompleta(){
+  if (CARGANDO_COMPLETO || FILAS_COMPLETO.length || !necesitaBaseCompleta()) return;
+  CARGANDO_COMPLETO = true;
+  try{
+    const r = await llamarProxy({ accion:"datos", token: TOKEN, completo:"1" });
+    if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no devolvió la base completa");
+    const tabla = comoTabla({ datos: r.datos || [] });
+    FILAS_COMPLETO = parsearBaseRows(tabla.rows || []).filas;
+  }catch(e){
+    FILAS_COMPLETO = [];
+    avisar("No se pudo leer la base completa para Cuentas duplicadas. <b>" + e.message + "</b>", true);
+  }
+  CARGANDO_COMPLETO = false;
+  pintar();
+}
+
+// qué base usar para detectar duplicados: la completa (líderes) o la ya cargada
+// (todos los demás perfiles ya reciben la base completa desde "accion:datos")
+function baseParaDuplicados(){
+  return necesitaBaseCompleta() ? FILAS_COMPLETO : FILAS;
+}
+
 // misma cuenta = mismo cliente y domicilio (direccion, num exterior, colonia, ciudad, C.P.)
 // repetido en dos o mas renglones de la base
 function llaveCuentaDup(f){
@@ -2419,10 +2461,10 @@ function nuevoUnionFind(n){
 // domicilio cuando no es genérico), pero sin los filtros de periodo/búsqueda/puesto:
 // aquí solo interesa saber si el renglón pertenece a alguna cuenta duplicada o no
 function filasEnCuentaDuplicada(){
-  // igual que en Cuentas duplicadas: se compara contra TODA la base (no solo lo que
-  // el perfil que entró vería en el resto de la app), si no, un duplicado con un
+  // igual que en Cuentas duplicadas: se compara contra la base completa (no solo lo
+  // que el perfil que entró vería en el resto de la app), si no, un duplicado con un
   // renglón de otro líder/coach quedaría sin detectar
-  const candidatos = FILAS;
+  const candidatos = baseParaDuplicados();
   const uf = nuevoUnionFind(candidatos.length);
   const porCompleta = {};
   const porDomicilio = {};
@@ -2488,6 +2530,12 @@ function filaEnPeriodoDupli(f){
 }
 
 function cuentasDuplicadasHtml(){
+  if (necesitaBaseCompleta() && !FILAS_COMPLETO.length){
+    return '<section class="panel"><h2>Cuentas duplicadas</h2><div class="aviso' + (CARGANDO_COMPLETO ? "" : " error") + '">' +
+      (CARGANDO_COMPLETO ? "Leyendo la base completa para cruzar duplicados con otros equipos…" :
+        "No se pudo leer la base completa para cruzar duplicados.") + "</div></section>";
+  }
+
   // primero se agrupa TODA la base (sin importar periodo, ni el alcance de quien entró);
   // el periodo y el puesto solo deciden qué cuentas duplicadas se muestran, no qué
   // renglones cuentan dentro del grupo. Esto es a propósito: para detectar que un
@@ -2495,7 +2543,7 @@ function cuentasDuplicadasHtml(){
   // TODA la base, no solo contra lo que ese líder vería en el resto de la app.
   // un renglón se une a otro si coinciden por nombre+domicilio completo, O SOLO por
   // dirección+núm. exterior+ciudad (aunque cambien colonia, C.P. o el nombre)
-  const candidatos = FILAS;
+  const candidatos = baseParaDuplicados();
   const uf = nuevoUnionFind(candidatos.length);
   const porCompleta = {};
   const porDomicilio = {};
@@ -2518,7 +2566,7 @@ function cuentasDuplicadasHtml(){
     gruposUF[r].push(f);
   });
 
-  const sinDomicilio = FILAS.filter(function(f){
+  const sinDomicilio = candidatos.filter(function(f){
     return normaliza(f.cliente) && !llaveCuentaDup(f) && !llaveDomicilioDup(f);
   }).length;
 
@@ -4209,9 +4257,11 @@ function pintar(){
   } else if (VISTA === "dias30"){
     if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     if (SEG_TODOS.estado === "sin cargar") cargarSeguimientoTodos();
+    if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     // atención a clientes solo ve el detalle de pendientes
     html = (PERFIL && PERFIL.acceso === "os" ? "" : dias30Html()) + pendientesHtml();
   } else if (VISTA === "dupli"){
+    if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     html = cuentasDuplicadasHtml();
   } else if (VISTA === "equipos"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
