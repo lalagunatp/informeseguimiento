@@ -329,8 +329,10 @@
       <button id="btnRecargar" class="sec">Actualizar datos</button>
       <button id="btnCsv" class="sec">Descargar CSV</button>
     </div>
-    <details class="ajustes">
-      <summary>Ajustes de la fuente</summary>
+  </section>
+
+  <section class="panel oculto" id="panelAjustes">
+    <h2>Ajustes de la fuente</h2>
       <div class="controles">
         <label class="campo">URL del proxy
           <input type="text" id="urlProxy" value="https://script.google.com/macros/s/AKfycbwfq0zfPf4UbUNE8sRjzPikklhD_QpIgoY-K9XzUCfyV4-i8h7soeLbct03suexSmW_ZQ/exec">
@@ -458,7 +460,6 @@
         <button id="btnRevisarEq" class="sec">Revisar plantilla y rankings</button>
       </div>
       <div id="revision" class="aviso oculto"></div>
-    </details>
   </section>
 
   <section class="panel oculto" id="cajaDupliFiltros">
@@ -681,10 +682,6 @@ function avisar(txt, esError){
   const a = el("estado");
   a.innerHTML = txt || "";
   a.className = "aviso" + (esError ? " error" : "") + (txt ? "" : " oculto");
-  if (esError){
-    const dt = document.querySelector("details.ajustes");
-    if (dt) dt.open = true;
-  }
 }
 
 /* ---------- fechas que llegan como texto ---------- */
@@ -2485,9 +2482,12 @@ function filasEnCuentaDuplicada(){
     const r = uf.raiz(i);
     tamRaiz[r] = (tamRaiz[r] || 0) + 1;
   });
+  // se devuelve por osNorm (identificador estable), no por referencia de objeto:
+  // quien llama puede venir de FILAS o de FILAS_COMPLETO, arreglos con objetos
+  // distintos aunque representen el mismo renglón
   const set = new Set();
   candidatos.forEach(function(f, i){
-    if (tamRaiz[uf.raiz(i)] > 1) set.add(f);
+    if (tamRaiz[uf.raiz(i)] > 1 && f.osNorm) set.add(f.osNorm);
   });
   return set;
 }
@@ -3536,8 +3536,16 @@ function vendedores0Html(){
 /* ---------- seguimiento de OS ---------- */
 
 let OSPI = { estado:"sin cargar", enc:[], arriba:[], filas:[], iEnc:0 };
-let OSPI_INDICE = new Map();   // OS normalizada -> renglones ya convertidos a texto
+let OSPI_INDICE = new Map();   // OS normalizada -> renglones ya convertidos a texto (sin repetidos)
 let CARGANDO_OSPI = false;
+let INFO_OSPI_REPETIDAS = 0;   // cuántos renglones de OS POR INSTALAR salieron repetidos y se descartaron
+
+// mismo técnico + mismos eventos (asignación, inicio, tránsito… hasta último intento):
+// dos renglones de OS POR INSTALAR con esta llave igual son el mismo evento repetido
+const COLS_ASIG_EVENTO = ["N","O","Q","R","S","T","U","V","W","X","Y","Z","AA","AB","AC","AE","AF","AG"].map(letraAIndice);
+function claveAsignacion(v){
+  return COLS_ASIG_EVENTO.map(function(i){ return normaliza(limpiaValor(v[i])); }).join("|");
+}
 
 async function cargarOsPorInstalar(){
   if (CARGANDO_OSPI) return;
@@ -3573,15 +3581,20 @@ async function cargarOsPorInstalar(){
     OSPI = { estado:"ok", enc:enc, arriba:arriba, filas:rows.slice(iEnc + 1), iEnc:iEnc };
     OSPI_INDICE = new Map();
     let ultAsig = null;
+    let repetidas = 0;
     OSPI.filas.forEach(function(r){
       const v = celdasTexto(r);
       const k = normOS(v[1]);
       if (!k) return;
       if (!OSPI_INDICE.has(k)) OSPI_INDICE.set(k, []);
-      OSPI_INDICE.get(k).push(v);
+      const lista = OSPI_INDICE.get(k);
+      const ce = claveAsignacion(v);
+      if (lista.some(function(x){ return claveAsignacion(x) === ce; })){ repetidas++; return; }   // mismo evento ya registrado
+      lista.push(v);
       const t2 = limpiaValor(v[COL_Q]);
       if (t2 && (!ultAsig || t2 > ultAsig)) ultAsig = t2;
     });
+    INFO_OSPI_REPETIDAS = repetidas;
     marcarFuente("ospi", "ok", ultAsig || "", OSPI.filas.length);
   }catch(e){
     OSPI = { estado:"falló: " + e.message, enc:[], arriba:[], filas:[], iEnc:0 };
@@ -3665,8 +3678,18 @@ function seguimientoOsHtml(){
   fila.vendedorMuestra = vendedor;
   fila.coachMuestra = coach;
   fila.liderMuestra = lider;
+
+  let duplicidadTxt = "NO";
+  if (necesitaBaseCompleta() && !FILAS_COMPLETO.length){
+    duplicidadTxt = CARGANDO_COMPLETO ? "Cargando…" : "No se pudo revisar";
+  } else if (filasEnCuentaDuplicada().has(fila.osNorm)){
+    duplicidadTxt = "SI";
+  }
+
   const datos = [
     ["Núm. de OS", fila.os],
+    ["Cuenta", fila.cuenta || "—"],
+    ["Duplicidad", duplicidadTxt],
     ["Fecha de validación", fila.fVal ? fCorta(fila.fVal) : "—"],
     ["Nombre del cliente", fila.cliente],
     ["Plan", fila.plan],
@@ -3824,6 +3847,7 @@ function textoWhats(os, fila){
   L.push("*Seguimiento de venta*");
   L.push("OS: " + os);
   if (fila){
+    L.push("Cuenta: " + (fila.cuenta || "—"));
     L.push("Cliente: " + (fila.cliente || "—"));
     L.push("Colonia: " + (fila.colonia || "—") + " · Cluster: " + (fila.cluster || "—"));
     L.push("Plan: " + (fila.plan || "—"));
@@ -3853,12 +3877,12 @@ function seguimientoVentasHtml(os, fila){
     tabla = '<div class="aviso">Todavía no hay seguimiento capturado para esta OS.</div>';
   } else {
     tabla = '<div class="scroll"><table class="compacta"><thead><tr>' +
-      "<th>Registrado</th><th>Rescatada</th><th>Visita</th><th>Horario</th><th>Comentario</th><th>Reportó</th>" +
+      "<th>Registrado</th><th>Rescatada</th><th>Visita</th><th>Horario</th><th>Comentario</th><th>Reportó</th><th>Área</th>" +
       "</tr></thead><tbody>" +
       filasHist.map(function(r){
         return "<tr><td>" + (r.registrado || "") + "</td><td>" + (r.rescatada || "") + "</td><td>" +
           (r.fecha || "") + "</td><td>" + (r.horario || "") + '</td><td class="envuelve">' +
-          (r.comentario || "") + "</td><td>" + (r.capturo || "") + "</td></tr>";
+          (r.comentario || "") + "</td><td>" + (r.capturo || "") + "</td><td>" + (r.area || "—") + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }
 
@@ -3869,7 +3893,7 @@ function seguimientoVentasHtml(os, fila){
           return '<option value="' + o + '"' + (SEG_FORM.rescatada === o ? " selected" : "") + ">" + (o || "—") + "</option>";
         }).join("") +
       "</select></label>" +
-      '<label>Fecha de visita<input type="date" id="segFecha" value="' + SEG_FORM.fecha + '"></label>' +
+      '<label>Fecha de visita p/ins<input type="date" id="segFecha" value="' + SEG_FORM.fecha + '"></label>' +
       '<label>Horario<select id="segHorario">' +
         ["", "Matutino", "Vespertino", "Todo el día"].map(function(o){
           return '<option value="' + o + '"' + (SEG_FORM.horario === o ? " selected" : "") + ">" + (o || "—") + "</option>";
@@ -3932,6 +3956,7 @@ function activarSeguimiento(os, fila){
         horario: SEG_FORM.horario,
         comentario: SEG_FORM.comentario,
         capturo: quienCaptura(),
+        area: areaDePuesto(PERFIL ? PERFIL.puesto : ""),
         lider: fila ? fila.lider : "",
         coach: fila ? fila.coach : "",
         vendedor: fila ? fila.vendedor : ""
@@ -3980,8 +4005,9 @@ async function cargarSeguimientoTodos(forzar){
         const v = celdasTexto(r);
         if (i === 0 && normaliza(v[1]).indexOf("OS") === 0 && !/\d/.test(v[1])) return;   // encabezados
         if (!v[1]) return;
+        // columna L (índice 11) = área de quien capturó (Comercial/Operaciones/Dirección)
         agregar({ registrado: limpiaValor(v[0]), os: v[1], rescatada: v[3],
-                  fecha: limpiaValor(v[4]), horario: v[5], comentario: v[6], capturo: v[7] });
+                  fecha: limpiaValor(v[4]), horario: v[5], comentario: v[6], capturo: v[7], area: v[11] || "" });
       });
       SEG_TODOS = { estado:"ok", porOS: porOS, via:"hoja" };
       marcarFuente("seguim", "ok", "", Object.keys(porOS).length);
@@ -4023,11 +4049,27 @@ function resumenAsignaciones(osNorm){
   return r;
 }
 
+// puesto de quien capturó el seguimiento → área para el reporte (Comercial = líder de
+// ventas, Operaciones = soporte/operación, Dirección = director distrital)
+function areaDePuesto(puesto){
+  const p = normaliza(puesto);
+  if (!p) return "";
+  if (p.indexOf("DIRECTOR DISTRITAL") >= 0) return "Dirección";
+  if (p.indexOf("LIDER VENTAS") >= 0 || p.indexOf("LIDER DE VENTAS") >= 0) return "Comercial";
+  const ops = ["GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA", "COORDINADOR PE", "ANALISTA DE ATENCION A CLIENTES"];
+  if (ops.some(function(o){ return p.indexOf(o) >= 0; })) return "Operaciones";
+  return "";
+}
+
 function resumenSeguimiento(osNorm){
-  const r = { veces:0, rescatada:"", visita:"", reporto:"", comentario:"" };
+  const r = { veces:0, comercial:0, operaciones:0, rescatada:"", visita:"", reporto:"", comentario:"" };
   const lista = SEG_TODOS.porOS[osNorm];
   if (!lista || !lista.length) return r;
   r.veces = lista.length;
+  lista.forEach(function(x){
+    if (x.area === "Comercial") r.comercial++;
+    else if (x.area === "Operaciones") r.operaciones++;
+  });
   const ult = lista[lista.length - 1];
   r.rescatada = ult.rescatada || "";
   r.visita = ult.fecha || "";
@@ -4059,12 +4101,13 @@ function pendientesRows(){
 
     salida.push({
       lider: lider || "SIN LÍDER", coach: coach || "SIN COACH", vendedor: vendedor || "—",
-      os: f.os, oportunidad: f.oportunidad, validacion: fCorta(f.fVal), dias: dias,
+      cuenta: f.cuenta, os: f.os, oportunidad: f.oportunidad, validacion: fCorta(f.fVal), dias: dias,
       cliente: f.cliente, colonia: f.colonia, cluster: f.cluster, plan: f.plan, canal: f.canal,
-      duplicidad: dupSet.has(f) ? "SI" : "NO",
+      duplicidad: dupSet.has(f.osNorm) ? "SI" : "NO",
       asignaciones: a.asignaciones, inicios: a.inicios, desasignaciones: a.desasignaciones,
       motivoDes: a.motivoDes, motivoDet: a.motivoDet, tecnico: a.ultimoTecnico, estadoFinal: a.estadoFinal,
-      segVeces: s2.veces, segRescatada: s2.rescatada, segVisita: s2.visita,
+      segVeces: s2.veces, segComercial: s2.comercial, segOperaciones: s2.operaciones,
+      segRescatada: s2.rescatada, segVisita: s2.visita,
       segReporto: s2.reporto, segComentario: s2.comentario
     });
   });
@@ -4076,14 +4119,15 @@ function pendientesRows(){
 }
 
 const COLS_PEND = [
-  ["lider","Líder"], ["coach","Coach"], ["vendedor","Vendedor"], ["os","OS"],
+  ["lider","Líder"], ["coach","Coach"], ["vendedor","Vendedor"], ["cuenta","Cuenta"], ["os","OS"],
   ["oportunidad","Oportunidad"],
   ["validacion","Validación"], ["dias","Días"], ["cliente","Cliente"], ["colonia","Colonia"],
   ["cluster","Cluster"], ["plan","Plan"], ["canal","Canal"], ["duplicidad","Duplicidad"],
   ["asignaciones","Asignada"], ["inicios","Iniciada"], ["desasignaciones","Desasignada"],
   ["motivoDes","Último motivo desasignación"], ["motivoDet","Último motivo detención"],
   ["tecnico","Último técnico"], ["estadoFinal","Estado final"],
-  ["segVeces","Seguimientos"], ["segRescatada","Rescatada"], ["segVisita","Visita indicada"],
+  ["segVeces","Seguimientos"], ["segComercial","Comercial"], ["segOperaciones","Operaciones"],
+  ["segRescatada","Rescatada"], ["segVisita","Visita indicada"],
   ["segReporto","Reportó"], ["segComentario","Último comentario"]
 ];
 
@@ -4250,6 +4294,7 @@ function pintar(){
   if (VISTA === "os"){
     if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
+    if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     html = seguimientoOsHtml();
   } else if (VISTA === "vend0"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
@@ -4606,8 +4651,9 @@ function ajustaCajasDia(){
   const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
   const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
   el("btnCsv").style.display = (esOS || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
-  const dt = document.querySelector("details.ajustes");
-  if (dt) dt.style.display = (esOS || esDupli) ? "none" : "";
+  // Ajustes de la fuente: sección aparte, visible solo para Director o el empleado
+  // 65068028, sin importar la vista activa (no se oculta por VISTA como el resto)
+  el("panelAjustes").classList.toggle("oculto", !puedeVerAjustes());
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
@@ -4625,13 +4671,12 @@ function ajustaCajasDia(){
     el("cajaDupliMes").classList.toggle("oculto", !porMes);
   }
 
-  // atención a clientes: sin filtros de plan ni de histórico, y sin ajustes
+  // atención a clientes: sin filtros de plan ni de histórico
   if (soloOS){
     ["cajaPlan", "cajaMeses", "cajaPlanes", "cajaMetrica", "cajaDiaSem", "cajaDiaMes"].forEach(function(id){
       const e2 = el(id);
       if (e2) e2.style.display = "none";
     });
-    if (dt) dt.style.display = "none";
   }
 }
 
@@ -4754,6 +4799,14 @@ function puestoEs(){
     const nn = normaliza(n);
     return p.indexOf(nn) >= 0 || nn.indexOf(p) >= 0;
   });
+}
+
+// Ajustes de la fuente: solo Director Distrital, o el número de empleado 65068028
+// sin importar su puesto (excepción puntual pedida explícitamente)
+function puedeVerAjustes(){
+  if (!PERFIL) return false;
+  if (puestoEs("DIRECTOR DISTRITAL")) return true;
+  return String(PERFIL.numero || "").trim() === "65068028";
 }
 
 function accesoDe(puesto){
