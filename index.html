@@ -240,6 +240,7 @@
     <button type="button" data-vista="os">Seguimiento OS</button>
     <button type="button" data-vista="dupli">Cuentas duplicadas</button>
     <button type="button" data-vista="equipos">Equipos</button>
+    <button type="button" data-vista="ajustes" id="btnVistaAjustes">Ajustes</button>
   </div>
 </nav>
 <div id="fondoMenu" class="fondo oculto"></div>
@@ -4311,6 +4312,10 @@ function pintar(){
   } else if (VISTA === "equipos"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     html = equiposHtml();
+  } else if (VISTA === "ajustes"){
+    // el contenido real vive en el panel fijo #panelAjustes (arriba de #salida);
+    // aquí no hay nada dinámico que pintar
+    html = "";
   } else if (VISTA === "mes"){
     html = mensualHtml();
     const meses = mesesElegidos();
@@ -4642,23 +4647,28 @@ const OPCIONES_AGRUPAR = [
 function ajustaCajasDia(){
   const esOS = VISTA === "os";
   const esDupli = VISTA === "dupli";
+  const esAjustes = VISTA === "ajustes";
   Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
-    l.style.display = (esOS || esDupli) ? "none" : "";
+    l.style.display = (esOS || esDupli || esAjustes) ? "none" : "";
   });
   const acc = document.querySelector(".panel > .acciones");
   if (acc) acc.style.display = "";
   const soloOS0 = PERFIL && PERFIL.acceso === "os";
   const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
   const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
-  el("btnCsv").style.display = (esOS || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
-  // Ajustes de la fuente: sección aparte, visible solo para Director o el empleado
-  // 65068028, sin importar la vista activa (no se oculta por VISTA como el resto)
-  el("panelAjustes").classList.toggle("oculto", !puedeVerAjustes());
+  el("btnCsv").style.display = (esOS || esAjustes || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
+  // Ajustes de la fuente: pestaña aparte, como Semanal/Mensual/etc. Solo aparece el
+  // botón de navegación y el panel para Director o el empleado 65068028; para todos
+  // los demás el botón queda oculto y la vista nunca puede quedar en "ajustes".
+  const vePermiso = puedeVerAjustes();
+  const btnAjustes = el("btnVistaAjustes");
+  if (btnAjustes) btnAjustes.style.display = vePermiso ? "" : "none";
+  el("panelAjustes").classList.toggle("oculto", !(vePermiso && esAjustes));
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
   const soloOS = PERFIL && PERFIL.acceso === "os";
-  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || soloOS) ? "none" : "";
+  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || soloOS) ? "none" : "";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
 
