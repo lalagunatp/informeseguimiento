@@ -2637,8 +2637,9 @@ function cuentasDuplicadasHtml(){
         "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
         "<td>" + (f.canal || "—") + "</td>" +
         "<td>" + (f.cliente || "—") + "</td>" +
-        "<td>" + (f.cuenta || "—") + "</td>" +
         "<td>" + (f.oportunidad || "—") + "</td>" +
+        "<td>" + (f.os || "—") + "</td>" +
+        "<td>" + (f.cuenta || "—") + "</td>" +
         (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (f.numExt || "—") + "</td>" : "") +
         "<td>" + (f.colonia || "—") + "</td>" +
         "<td>" + (f.ciudad || "—") + "</td>" +
@@ -2657,7 +2658,7 @@ function cuentasDuplicadasHtml(){
     "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>#</th><th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
-    "<th>N° cuenta</th><th>N° oportunidad</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Comentario</th>" +
+    "<th>N° oportunidad</th><th>OS</th><th>N° cuenta</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Comentario</th>" +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
 }
