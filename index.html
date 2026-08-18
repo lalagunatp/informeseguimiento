@@ -3159,6 +3159,14 @@ function metaDeGrupo(grupo, tipo){
 
 /* ---------- vendedores en 0 ---------- */
 
+// de un tally {canal: n, ...} devuelve el canal con más renglones (o "" si viene vacío)
+function canalMasFrecuente(canales){
+  if (!canales) return "";
+  let mejor = "", n = 0;
+  Object.keys(canales).forEach(function(c){ if (canales[c] > n){ n = canales[c]; mejor = c; } });
+  return mejor;
+}
+
 function conteoPeriodo(claves, fn, metrica){
   const set = {};
   claves.forEach(function(k){ set[k] = true; });
@@ -3175,11 +3183,18 @@ function conteoPeriodo(claves, fn, metrica){
     // en venta técnico manda el código del técnico, no el capturista
     const kn = f.codTec ? "" : clave(f.numvendedor);
     const nn = f.codTec ? normaliza(f.codTec) : normaliza(f.vendedor);
-    const llave = nn || kn;
-    if (!llave) return;
+    let llave = nn || kn;
+    if (!llave){
+      // venta técnico sin código de técnico ni vendedor (el renglón de VENTA TECNICO
+      // ya no existe, p.ej. porque el trabajo se cerró y se quitó de esa pestaña):
+      // antes se perdía por completo; ahora se agrupa por canal para no perder el conteo
+      if (normaliza(f.subcanal).indexOf("VENTA TECNICO") < 0) return;
+      llave = "SIN CODIGO|" + (f.canal || "Venta técnico otros");
+    }
 
     if (!personas[llave]){
-      personas[llave] = { n:0, nombre: f.codTec ? f.codTec : f.vendedor, num:kn, nom:nn,
+      personas[llave] = { n:0, nombre: f.codTec ? f.codTec : (f.vendedor || "Sin código de técnico"),
+                          num:kn, nom:nn,
                           lider:f.lider || "SIN LÍDER", coach:f.coach || "SIN COACH",
                           planes:{}, canales:{}, opor:[] };
     }
@@ -3445,14 +3460,17 @@ function vendedores0Html(){
       if (filtroCoach && !filtroCoach.has(x.coach)) return;
       fuera++;
       const planesX = Object.keys(x.planes || {}).map(function(z){ return z + " (" + x.planes[z] + ")"; }).join(", ");
+      // el canal del propio renglón (x.canales) es más confiable que buscarlo en el
+      // mapa PERSONA_CANAL por código/número, que puede fallar si esas claves están vacías
+      const canalX = canalMasFrecuente(x.canales) || PERSONA_CANAL.get(x.num) || PERSONA_CANAL.get(x.nom) || "SIN CANAL";
       const k = modoGrupo === "coach" ? x.coach :
                 (modoGrupo === "ranking" ? "Fuera de HC" :
-                (modoGrupo === "canal" ? (PERSONA_CANAL.get(x.num) || PERSONA_CANAL.get(x.nom) || "SIN CANAL") : x.lider));
+                (modoGrupo === "canal" ? canalX : x.lider));
       acumula(bolsa(k), x.n);
       acumula(gran, x.n);
       guardar(k, Math.min(x.n, tope), {
         nombre: x.nombre, ranking: "Fuera de HC", coach: x.coach, lider: x.lider,
-        canal: PERSONA_CANAL.get(x.nom) || PERSONA_CANAL.get(x.num) || "SIN CANAL",
+        canal: canalX,
         n: x.n, planes: planesX,
         opor: (x.opor || []).map(function(o){ return o.n; }).filter(function(v, i, a){ return a.indexOf(v) === i; }).join(", ")
       });
