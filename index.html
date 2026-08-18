@@ -2411,11 +2411,17 @@ function baseParaDuplicados(){
   return necesitaBaseCompleta() ? FILAS_COMPLETO : FILAS;
 }
 
+// "Calle Merolicos" y "Merolicos" son la misma dirección: se quita la palabra
+// "calle" (como palabra completa, no como parte de otra) antes de comparar
+function normalizaDireccion(v){
+  return normaliza(v).replace(/\bCALLE\b\s*/g, "").trim();
+}
+
 // misma cuenta = mismo cliente y domicilio (direccion, num exterior, colonia, ciudad, C.P.)
 // repetido en dos o mas renglones de la base
 function llaveCuentaDup(f){
   const cliente = normaliza(f.cliente);
-  const direccion = normaliza(f.direccion);
+  const direccion = normalizaDireccion(f.direccion);
   const colonia = normaliza(f.colonia);
   if (!cliente || (!direccion && !colonia)) return "";
   return [cliente, direccion, normaliza(f.numExt), colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
@@ -2430,7 +2436,7 @@ const DIRECCION_GENERICA = ["SIN NOMBRE", "CALLE SIN NOMBRE", "C SIN NOMBRE", "U
 const NUMEXT_GENERICO = ["S/N", "SIN NUMERO", "SN"];
 
 function llaveDomicilioDup(f){
-  const direccion = normaliza(f.direccion);
+  const direccion = normalizaDireccion(f.direccion);
   const ciudad = normaliza(f.ciudad);
   const numExt = normaliza(f.numExt);
   if (!direccion || !ciudad) return "";
@@ -2610,6 +2616,10 @@ function cuentasDuplicadasHtml(){
   // los puestos ve todas las cuentas duplicadas pero sin ese dato de domicilio
   const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
 
+  // una fecha de validación en el futuro es un dato malo de la fuente: se muestra
+  // igual que si no hubiera fecha
+  const hoySolo = (function(){ const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()); })();
+
   let filas = "";
   let renglones = 0;
   dup.forEach(function(grupo, gi){
@@ -2623,7 +2633,7 @@ function cuentasDuplicadasHtml(){
       filas += "<tr" + estilo + ">" +
         "<td>" + (gi + 1) + "</td>" +
         "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
-        "<td>" + (f.fVal ? fCorta(f.fVal) : "—") + "</td>" +
+        "<td>" + (f.fVal && f.fVal <= hoySolo ? fCorta(f.fVal) : "—") + "</td>" +
         "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
         "<td>" + (f.canal || "—") + "</td>" +
         "<td>" + (f.cliente || "—") + "</td>" +
