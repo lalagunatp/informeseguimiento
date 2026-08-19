@@ -2428,10 +2428,11 @@ function baseParaDuplicados(){
   return necesitaBaseCompleta() ? FILAS_COMPLETO : FILAS;
 }
 
-// "Calle Merolicos" y "Merolicos" son la misma dirección: se quita la palabra
-// "calle" (como palabra completa, no como parte de otra) antes de comparar
+// "Calle Merolicos", "Av Merolicos", "Av. Merolicos", "Avenida Merolicos" y
+// "Merolicos" son la misma dirección: se quitan esos prefijos (como palabra
+// completa, no como parte de otra, para no tocar calles como "Avila") antes de comparar
 function normalizaDireccion(v){
-  return normaliza(v).replace(/\bCALLE\b\s*/g, "").trim();
+  return normaliza(v).replace(/\b(CALLE|AVENIDA|AV)\b\.?\s*/g, "").trim();
 }
 
 // misma cuenta = mismo cliente y domicilio (direccion, num exterior, colonia, ciudad, C.P.)
