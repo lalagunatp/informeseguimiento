@@ -2536,6 +2536,72 @@ function filasEnCuentaDuplicada(){
   return set;
 }
 
+// arma el grupo de renglones duplicados (mismo criterio de la sección Cuentas
+// duplicadas) al que pertenece esta fila; null si no está en ninguna cuenta duplicada
+function grupoDuplicadoDeFila(fila){
+  const candidatos = baseParaDuplicados();
+  const uf = nuevoUnionFind(candidatos.length);
+  const porCompleta = {};
+  const porDomicilio = {};
+  candidatos.forEach(function(f, i){
+    const k1 = llaveCuentaDup(f);
+    if (k1){ if (!porCompleta[k1]) porCompleta[k1] = []; porCompleta[k1].push(i); }
+    const k2 = llaveDomicilioDup(f);
+    if (k2){ if (!porDomicilio[k2]) porDomicilio[k2] = []; porDomicilio[k2].push(i); }
+  });
+  [porCompleta, porDomicilio].forEach(function(mapa){
+    Object.keys(mapa).forEach(function(k){
+      const idxs = mapa[k];
+      for (let i = 1; i < idxs.length; i++) uf.unir(idxs[0], idxs[i]);
+    });
+  });
+  let idxFila = -1;
+  for (let i = 0; i < candidatos.length; i++){
+    if (candidatos[i].osNorm === fila.osNorm){ idxFila = i; break; }
+  }
+  if (idxFila < 0) return null;
+  const raizFila = uf.raiz(idxFila);
+  const grupo = candidatos.filter(function(f, i){ return uf.raiz(i) === raizFila; });
+  return grupo.length > 1 ? grupo : null;
+}
+
+// misma tabla/columnas que la sección Cuentas duplicadas, pero solo con el grupo de
+// esta OS (se usa en Seguimiento OS cuando Duplicidad = SI)
+function tablaGrupoDuplicadoHtml(grupo){
+  const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
+  const hoySolo = (function(){ const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()); })();
+  const ordenado = grupo.slice().sort(function(a, b){ return (a.fOp && b.fOp) ? a.fOp - b.fOp : 0; });
+  let filas = "";
+  ordenado.forEach(function(f){
+    const vendedor = vendedorDeFila(f), coach = coachDeFila(f), lider = liderDeFila(f);
+    const numeros = corrigeNumeros(f);
+    filas += "<tr>" +
+      "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
+      "<td>" + (f.fVal && f.fVal <= hoySolo ? fCorta(f.fVal) : "—") + "</td>" +
+      "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
+      "<td>" + (f.canal || "—") + "</td>" +
+      "<td>" + (f.cliente || "—") + "</td>" +
+      "<td>" + (f.oportunidad || "—") + "</td>" +
+      "<td>" + (f.os || "—") + "</td>" +
+      "<td>" + (f.cuenta || "—") + "</td>" +
+      (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (numeros.ext || "—") + "</td><td>" + (numeros.int || "—") + "</td>" : "") +
+      "<td>" + (f.colonia || "—") + "</td>" +
+      "<td>" + (f.ciudad || "—") + "</td>" +
+      "<td>" + (f.cp || "—") + "</td>" +
+      "<td>" + (f.plan || "—") + "</td>" +
+      '<td class="recorta" title="' + (f.comentario || "").replace(/"/g, "'") + '">' + (f.comentario || "—") + "</td>" +
+      "<td>" + (vendedor || "—") + "</td>" +
+      "<td>" + (coach || "—") + "</td>" +
+      "<td>" + (lider || "—") + "</td></tr>";
+  });
+  return '<section class="panel"><h2>Cuentas duplicadas <span class="sub">' + grupo.length + " renglón(es) de esta misma cuenta</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
+    "<th>N° oportunidad</th><th>OS</th><th>N° cuenta</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th><th>Núm. int.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Plan</th><th>Comentario</th>" +
+    "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
+    filas + "</tbody></table></div></section>";
+}
+
 // vendedor/coach/líder "corregidos": para venta técnico SLK/CRC salen del código
 // en VENTA TECNICOS cruzado con la plantilla, no de las columnas de la base
 function vendedorDeFila(f){
@@ -3778,11 +3844,14 @@ function seguimientoOsHtml(){
   fila.liderMuestra = lider;
 
   let duplicidadTxt = "NO";
+  let grupoDup = null;
   if (necesitaBaseCompleta() && !FILAS_COMPLETO.length){
     duplicidadTxt = CARGANDO_COMPLETO ? "Cargando…" : "No se pudo revisar";
-  } else if (filasEnCuentaDuplicada().has(fila.osNorm)){
-    duplicidadTxt = "SI";
+  } else {
+    grupoDup = grupoDuplicadoDeFila(fila);
+    if (grupoDup) duplicidadTxt = "SI";
   }
+  const bloqueDup = grupoDup ? tablaGrupoDuplicadoHtml(grupoDup) : "";
 
   const datos = [
     ["Núm. de OS", fila.os],
@@ -3822,17 +3891,17 @@ function seguimientoOsHtml(){
 
   // historial de asignaciones
   if (OSPI.estado === "cargando" || CARGANDO_OSPI){
-    return ficha + '<section class="panel"><div class="aviso">Leyendo OS POR INSTALAR…</div></section>' + seg;
+    return ficha + '<section class="panel"><div class="aviso">Leyendo OS POR INSTALAR…</div></section>' + seg + bloqueDup;
   }
   if (OSPI.estado !== "ok"){
     return ficha + '<section class="panel"><div class="aviso error">No se pudo leer OS POR INSTALAR (' +
-      OSPI.estado + '). Revisa el gid en Ajustes de la fuente.</div></section>' + seg;
+      OSPI.estado + '). Revisa el gid en Ajustes de la fuente.</div></section>' + seg + bloqueDup;
   }
 
   // cada asignación es un renglón de la hoja; la misma OS se repite
   const rengs = OSPI_INDICE.get(q) || [];
   if (!rengs.length){
-    return ficha + '<section class="panel"><div class="aviso">La OS no aparece en OS POR INSTALAR: todav\u00eda no tiene asignaci\u00f3n registrada.</div></section>' + seg;
+    return ficha + '<section class="panel"><div class="aviso">La OS no aparece en OS POR INSTALAR: todav\u00eda no tiene asignaci\u00f3n registrada.</div></section>' + seg + bloqueDup;
   }
 
   // renglones fijos, con la columna exacta de OS POR INSTALAR
@@ -3885,7 +3954,7 @@ function seguimientoOsHtml(){
     filas.map(function(_, k){ return "<th>" + (ORD[k] || (k + 1) + "a").toUpperCase() + "</th>"; }).join("") +
     "</tr></thead><tbody>" + cuerpo + "</tbody></table></div></section>";
 
-  return ficha + hist + seg;
+  return ficha + hist + seg + bloqueDup;
 }
 
 /* ---------- seguimiento de ventas (captura y bitácora) ---------- */
