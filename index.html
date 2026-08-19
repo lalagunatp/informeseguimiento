@@ -1050,6 +1050,16 @@ async function cargar(){
   pintar();
 }
 
+// nunca por defecto una semana a futuro (dato malo de la fuente): primero la semana
+// real de hoy si ya tiene registro, si no la última semana anterior a hoy con registro
+function semanaPorDefecto(){
+  if (!SEMANAS.length) return "";
+  const semanaHoy = isoSemana(new Date());
+  if (SEMANAS.indexOf(semanaHoy) >= 0) return semanaHoy;
+  const pasadas = SEMANAS.filter(function(s){ return s <= semanaHoy; });
+  return pasadas.length ? pasadas[pasadas.length - 1] : SEMANAS[0];
+}
+
 function llenarSelectores(){
   const sem = el("semana");
   const previo = sem.value;
@@ -1060,7 +1070,7 @@ function llenarSelectores(){
     o.textContent = "Semana " + etiquetaSemana(k) + "  ·  " + fCorta(lunesDe(k)) + " al " + fCorta(new Date(lunesDe(k).getFullYear(), lunesDe(k).getMonth(), lunesDe(k).getDate() + 6));
     sem.appendChild(o);
   });
-  sem.value = (previo && SEMANAS.indexOf(previo) >= 0) ? previo : (FECHA_MAX ? isoSemana(FECHA_MAX) : SEMANAS[SEMANAS.length - 1]);
+  sem.value = (previo && SEMANAS.indexOf(previo) >= 0) ? previo : semanaPorDefecto();
 
   const ds = el("dupliSemana");
   const previoDs = ds.value;
