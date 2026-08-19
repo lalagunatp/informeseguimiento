@@ -2436,11 +2436,24 @@ function baseParaDuplicados(){
 // "Merolicos" son la misma dirección: se quitan esos prefijos (como palabra
 // completa, no como parte de otra, para no tocar calles como "Avila") antes de comparar
 const ALIAS_CALLE_DUP = {
-  "JUAN AGUSTIN DE ESPINOZA": "JUAN AGUSTIN ESPINOZA"
+  "JUAN AGUSTIN DE ESPINOZA": "JUAN AGUSTIN ESPINOZA",
+  "JOSE ARTURO CUELLAR CARREON": "JOSE ARTURO CUELLAR",
+  "INDEPENDENCIA OTE": "INDEPENDENCIA",
+  "INDEPENDENCIA PONIENTE": "INDEPENDENCIA",
+  "MONTEREAL": "MONTE REAL",
+  "MONTERREAL": "MONTE REAL",
+  "PEDRO RODRIGUEZ TRIANA": "PEDRO RODRIGUEZ"
 };
+// Calzada y Circuito son tipos de vía distintos (no se fusionan entre sí): cada uno se
+// homologa a su propia palabra canónica antes de quitar los demás prefijos, para que
+// "Calzada X" y "Circuito X" NO se consideren la misma calle
 function normalizaDireccion(v){
   const d = normaliza(v)
-    .replace(/\b(CALLE|CALLLE|AVENIDA|AV|CERRADA|CDA|CALZADA|CLZ|CALZ|PROLONGACION|PROL|PRIVADA|PRIV)\b\.?\s*/g, "")
+    .replace(/\b(CALZADA|CLZ|CALZ)\b[.,]?\s*/g, "CALZADA ")
+    .replace(/\b(CIRCUITO|CTO)\b[.,]?\s*/g, "CIRCUITO ")
+    .replace(/\b(CALLE|CALLLE|AVENIDA|AV|CERRADA|CDA|PROLONGACION|PROL|PRIVADA|PRIV|BOULEVARD|BLVD|BLV)\b[.,]?\s*/g, "")
+    .replace(/\bGPE\b[.,]?\s*/g, "GUADALUPE ")
+    .replace(/\s+/g, " ")
     .trim();
   return ALIAS_CALLE_DUP[d] || d;
 }
