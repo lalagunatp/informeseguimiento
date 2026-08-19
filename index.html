@@ -3487,6 +3487,35 @@ function vendedores0Html(){
       });
     });
 
+    // reconciliación definitiva: el total por canal nunca debe quedar por debajo de
+    // contar los renglones directo de la base (mismo método que Semanal/Mensual). Si
+    // por algún renglón no se pudo identificar a la persona (venta técnico sin
+    // código resoluble, o con una identidad que no cuadró en ningún lado), el total
+    // igual se completa para que siempre cuadre; el desglose por cantidad de personas
+    // puede quedar aproximado solo para esos renglones sin identidad.
+    if (modoGrupo === "canal"){
+      const directoPorCanal = {};
+      FILAS.forEach(function(f){
+        if (!pasaFiltros(f)) return;
+        let fecha = null;
+        if (tipo === "val"){ if (!esValidada(f) || !f.fVal) return; fecha = f.fVal; }
+        else if (tipo === "op"){ if (!f.fOp) return; fecha = f.fOp; }
+        else { if (!esInstalada(f)) return; fecha = f.fIns; }
+        if (!pasaDia(fecha) || fn(fecha) !== clavePeriodo) return;
+        const c = f.canal || "SIN CANAL";
+        directoPorCanal[c] = (directoPorCanal[c] || 0) + 1;
+      });
+      Object.keys(directoPorCanal).forEach(function(c){
+        if (filtroLider || filtroCoach) return;   // esos filtros no aplican al conteo directo por canal
+        const o = bolsa(c);
+        const directo = directoPorCanal[c];
+        if (directo > o.tot){
+          gran.tot += (directo - o.tot);
+          o.tot = directo;
+        }
+      });
+    }
+
     function renglon(etq, o, clase, k){
       const idT = k === undefined ? "" : tipo + "|" + k + "|TOT";
       const celdaTot = idT && DET_V0[idT]
