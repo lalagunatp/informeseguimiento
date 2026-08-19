@@ -2436,7 +2436,7 @@ function baseParaDuplicados(){
 // "Merolicos" son la misma dirección: se quitan esos prefijos (como palabra
 // completa, no como parte de otra, para no tocar calles como "Avila") antes de comparar
 function normalizaDireccion(v){
-  return normaliza(v).replace(/\b(CALLE|AVENIDA|AV)\b\.?\s*/g, "").trim();
+  return normaliza(v).replace(/\b(CALLE|AVENIDA|AV|CERRADA|CDA)\b\.?\s*/g, "").trim();
 }
 
 // número exterior mal capturado en el origen (le metieron letras, o trae un espacio o
