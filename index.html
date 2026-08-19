@@ -4339,9 +4339,26 @@ function agregarScrollPegado(contenedor){
   contenedor.insertAdjacentElement("afterend", barra);
 
   function ajustar(){
-    const necesita = contenedor.scrollWidth > contenedor.clientWidth + 1;
-    barra.style.display = necesita ? "block" : "none";
+    if (!contenedor.isConnected){
+      // el panel ya no existe (se repintó #salida): se desconecta para no acumular
+      window.removeEventListener("resize", ajustarDiferido);
+      window.removeEventListener("scroll", ajustarDiferido);
+      return;
+    }
+    const necesitaAncho = contenedor.scrollWidth > contenedor.clientWidth + 1;
+    if (!necesitaAncho){ barra.style.display = "none"; return; }
+    // si la barra nativa del contenedor (al final de la tabla) ya se ve en pantalla,
+    // no hace falta la pegada encima: mostrar las dos se ve como algo mal configurado
+    const rect = contenedor.getBoundingClientRect();
+    const nativaVisible = rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) && rect.bottom >= 0;
+    barra.style.display = nativaVisible ? "none" : "block";
     relleno.style.width = contenedor.scrollWidth + "px";
+  }
+  let pendiente = false;
+  function ajustarDiferido(){
+    if (pendiente) return;
+    pendiente = true;
+    requestAnimationFrame(function(){ pendiente = false; ajustar(); });
   }
   let sincronizando = false;
   contenedor.addEventListener("scroll", function(){
@@ -4357,7 +4374,8 @@ function agregarScrollPegado(contenedor){
     sincronizando = false;
   });
   ajustar();
-  window.addEventListener("resize", ajustar);
+  window.addEventListener("resize", ajustarDiferido);
+  window.addEventListener("scroll", ajustarDiferido, { passive:true });
 }
 
 // busca el panel cuyo título empieza con el texto dado y le agrega la barra pegada
