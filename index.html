@@ -2439,6 +2439,20 @@ function normalizaDireccion(v){
   return normaliza(v).replace(/\b(CALLE|AVENIDA|AV)\b\.?\s*/g, "").trim();
 }
 
+// número exterior mal capturado en el origen (le metieron letras, o trae un espacio o
+// un guión) — esa parte de más debió ir en número interior. Se corrige SOLO si número
+// interior viene vacío (si ya hay un dato real ahí, no se toca nada); la corrección es
+// la que se muestra y la que se usa para cruzar duplicados. El número interior (el
+// original o el que sale de esta corrección) NO es parte del cruce de duplicados.
+function corrigeNumeros(f){
+  const t = String(f.numExt || "").trim();
+  if (!t || normaliza(f.numInt)) return { ext: f.numExt, int: f.numInt };
+  let m = /^(\d+)[\s\-]+(.+)$/.exec(t);      // "123 A", "123-A", "123 - 456"
+  if (!m) m = /^(\d+)([A-Za-z].*)$/.exec(t); // "123A", sin separador
+  if (!m) return { ext: f.numExt, int: f.numInt };
+  return { ext: m[1], int: m[2].trim() };
+}
+
 // misma cuenta = mismo cliente y domicilio (direccion, num exterior, colonia, ciudad, C.P.)
 // repetido en dos o mas renglones de la base
 function llaveCuentaDup(f){
@@ -2446,7 +2460,8 @@ function llaveCuentaDup(f){
   const direccion = normalizaDireccion(f.direccion);
   const colonia = normaliza(f.colonia);
   if (!cliente || (!direccion && !colonia)) return "";
-  return [cliente, direccion, normaliza(f.numExt), normaliza(f.numInt), colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
+  const numExt = normaliza(corrigeNumeros(f).ext);
+  return [cliente, direccion, numExt, colonia, normaliza(f.ciudad), normaliza(f.cp)].join("|");
 }
 
 // segunda forma de detectar duplicado: mismo domicilio (dirección + núm. exterior +
@@ -2460,10 +2475,10 @@ const NUMEXT_GENERICO = ["S/N", "SIN NUMERO", "SN"];
 function llaveDomicilioDup(f){
   const direccion = normalizaDireccion(f.direccion);
   const ciudad = normaliza(f.ciudad);
-  const numExt = normaliza(f.numExt);
+  const numExt = normaliza(corrigeNumeros(f).ext);
   if (!direccion || !ciudad) return "";
   if (DIRECCION_GENERICA.indexOf(direccion) >= 0 || NUMEXT_GENERICO.indexOf(numExt) >= 0) return "";
-  return [direccion, numExt, normaliza(f.numInt), ciudad].join("|");
+  return [direccion, numExt, ciudad].join("|");
 }
 
 // conjuntos disjuntos: junta renglones que coincidan por CUALQUIERA de las dos llaves
@@ -2652,6 +2667,7 @@ function cuentasDuplicadasHtml(){
       const destaca = (tipoPeriodo && filaEnPeriodoDupli(f)) ? "background:var(--v-bg);" : "";
       const estilo = (bordeGrupo || destaca) ? ' style="' + bordeGrupo + destaca + '"' : "";
       const vendedor = vendedorDeFila(f), coach = coachDeFila(f), lider = liderDeFila(f);
+      const numeros = corrigeNumeros(f);
       filas += "<tr" + estilo + ">" +
         "<td>" + (gi + 1) + "</td>" +
         "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
@@ -2662,7 +2678,7 @@ function cuentasDuplicadasHtml(){
         "<td>" + (f.oportunidad || "—") + "</td>" +
         "<td>" + (f.os || "—") + "</td>" +
         "<td>" + (f.cuenta || "—") + "</td>" +
-        (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (f.numExt || "—") + "</td><td>" + (f.numInt || "—") + "</td>" : "") +
+        (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (numeros.ext || "—") + "</td><td>" + (numeros.int || "—") + "</td>" : "") +
         "<td>" + (f.colonia || "—") + "</td>" +
         "<td>" + (f.ciudad || "—") + "</td>" +
         "<td>" + (f.cp || "—") + "</td>" +
