@@ -471,7 +471,7 @@
   </section>
 
   <section class="panel oculto" id="cajaDupliFiltros">
-    <h2>Periodo de venta o validación</h2>
+    <h2>Periodo de venta o validación <span class="sub">elige Vendido o Validado para poder acotar por semana o mes</span></h2>
     <div class="controles">
       <label class="campo">Filtrar por
         <select id="dupliTipo">
@@ -480,7 +480,7 @@
           <option value="validado">Validado (fecha de validación)</option>
         </select>
       </label>
-      <label class="campo">Periodo
+      <label class="campo" id="cajaDupliPeriodo">Periodo
         <select id="dupliPeriodo">
           <option value="semana" selected>Semana</option>
           <option value="mes">Mes</option>
@@ -4803,9 +4803,15 @@ function ajustaCajasDia(){
   // sin el panel de periodo (ese es para operaciones/supervisión)
   el("cajaDupliFiltros").classList.toggle("oculto", !esDupli || esAnalistaAC);
   if (esDupli && !esAnalistaAC){
+    // "Periodo" y "Semana"/"Mes" no hacen nada mientras "Filtrar por" siga en
+    // "Todo el histórico" (esa es la causa más común de "cambié el mes y no pasa
+    // nada"): se ocultan hasta que se elija Vendido o Validado, para que no parezca
+    // que están rotos
+    const hayTipo = !!el("dupliTipo").value;
+    el("cajaDupliPeriodo").classList.toggle("oculto", !hayTipo);
     const porMes = el("dupliPeriodo").value === "mes";
-    el("cajaDupliSemana").classList.toggle("oculto", porMes);
-    el("cajaDupliMes").classList.toggle("oculto", !porMes);
+    el("cajaDupliSemana").classList.toggle("oculto", !hayTipo || porMes);
+    el("cajaDupliMes").classList.toggle("oculto", !hayTipo || !porMes);
   }
 
   // atención a clientes: sin filtros de plan ni de histórico
@@ -4878,9 +4884,10 @@ el("btnRevisarEq").addEventListener("click", revisarEquipos);
 ["metasRanking","semanasMes","umbralPlatino","origenPromedio","metaConversion"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "equipos") pintar(); });
 });
-["dupliTipo","dupliSemana","dupliMes"].forEach(function(id){
+["dupliSemana","dupliMes"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "dupli") pintar(); });
 });
+el("dupliTipo").addEventListener("change", function(){ ajustaCajasDia(); if (VISTA === "dupli") pintar(); });
 el("dupliPeriodo").addEventListener("change", function(){ ajustaCajasDia(); if (VISTA === "dupli") pintar(); });
 ["lideresLocales","plazasLocales","cruceCampo","clavesTecnico","palabrasAdicional"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (FILAS.length) reclasificarCanal(); });
