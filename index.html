@@ -2435,8 +2435,14 @@ function baseParaDuplicados(){
 // "Calle Merolicos", "Av Merolicos", "Av. Merolicos", "Avenida Merolicos" y
 // "Merolicos" son la misma dirección: se quitan esos prefijos (como palabra
 // completa, no como parte de otra, para no tocar calles como "Avila") antes de comparar
+const ALIAS_CALLE_DUP = {
+  "JUAN AGUSTIN DE ESPINOZA": "JUAN AGUSTIN ESPINOZA"
+};
 function normalizaDireccion(v){
-  return normaliza(v).replace(/\b(CALLE|AVENIDA|AV|CERRADA|CDA)\b\.?\s*/g, "").trim();
+  const d = normaliza(v)
+    .replace(/\b(CALLE|CALLLE|AVENIDA|AV|CERRADA|CDA|CALZADA|CLZ|CALZ|PROLONGACION|PROL|PRIVADA|PRIV)\b\.?\s*/g, "")
+    .trim();
+  return ALIAS_CALLE_DUP[d] || d;
 }
 
 // número exterior mal capturado en el origen (le metieron letras, o trae un espacio o
