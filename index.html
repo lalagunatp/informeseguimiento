@@ -122,6 +122,13 @@
   .aviso b{color:var(--ink)}
   .aviso.error{color:var(--r-tx); background:var(--r-bg)}
   .scroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
+  .scroll-pegado{
+    position:sticky; bottom:0; z-index:15; height:16px;
+    overflow-x:auto; overflow-y:hidden;
+    background:var(--panel); border-top:1px solid var(--line);
+    display:none;
+  }
+  .scroll-pegado > div{ height:1px }
   table{border-collapse:collapse; width:100%; min-width:760px; font-variant-numeric:tabular-nums}
   th,td{padding:6px 8px; border-bottom:1px solid var(--line2); text-align:right; white-space:nowrap}
   th:first-child,td:first-child{
@@ -4305,6 +4312,52 @@ const BLOQUES = [
 
 let ULTIMO = null;   // para CSV y resumen
 
+// barra de desplazamiento horizontal "pegada" al fondo de la pantalla, sincronizada
+// con el contenedor real: para tablas anchas y largas, la barra nativa del propio
+// contenedor queda al final de la tabla, fuera de vista; esta se ve siempre que el
+// panel siga en pantalla
+function agregarScrollPegado(contenedor){
+  const tabla = contenedor.querySelector("table");
+  if (!tabla) return;
+
+  const barra = document.createElement("div");
+  barra.className = "scroll-pegado";
+  const relleno = document.createElement("div");
+  barra.appendChild(relleno);
+  contenedor.insertAdjacentElement("afterend", barra);
+
+  function ajustar(){
+    const necesita = contenedor.scrollWidth > contenedor.clientWidth + 1;
+    barra.style.display = necesita ? "block" : "none";
+    relleno.style.width = contenedor.scrollWidth + "px";
+  }
+  let sincronizando = false;
+  contenedor.addEventListener("scroll", function(){
+    if (sincronizando) return;
+    sincronizando = true;
+    barra.scrollLeft = contenedor.scrollLeft;
+    sincronizando = false;
+  });
+  barra.addEventListener("scroll", function(){
+    if (sincronizando) return;
+    sincronizando = true;
+    contenedor.scrollLeft = barra.scrollLeft;
+    sincronizando = false;
+  });
+  ajustar();
+  window.addEventListener("resize", ajustar);
+}
+
+// busca el panel cuyo título empieza con el texto dado y le agrega la barra pegada
+function scrollPegadoPorTitulo(tituloInicio){
+  Array.prototype.forEach.call(document.querySelectorAll("#salida section.panel"), function(sec){
+    const h2 = sec.querySelector("h2");
+    if (!h2 || h2.textContent.trim().indexOf(tituloInicio) !== 0) return;
+    const cont = sec.querySelector(".scroll");
+    if (cont) agregarScrollPegado(cont);
+  });
+}
+
 function pintar(){
   if (!FILAS.length){ el("salida").innerHTML = ""; return; }
 
@@ -4412,6 +4465,8 @@ function pintar(){
   });
 
   el("salida").innerHTML = html;
+  scrollPegadoPorTitulo("Cuentas duplicadas");
+  scrollPegadoPorTitulo("Validaciones pendientes por instalar");
 
   if (VISTA === "os" && OS_BUSCADA){
     const q0 = normOS(OS_BUSCADA);
