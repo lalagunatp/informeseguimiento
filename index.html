@@ -1301,6 +1301,11 @@ function pasaFiltros(f){
 // filtro por día: en la vista semanal por día de la semana, en la mensual por número de día
 function pasaDia(fecha){
   if (!fecha) return true;
+  // Vendedores en 0, Seguimiento OS, Cuentas duplicadas, Equipos y Ajustes no muestran
+  // ningún selector de día en pantalla: si se dejara caer al "else" de abajo, un filtro
+  // de día de la semana elegido antes en Semanal se quedaría pegado en memoria (no se
+  // resetea al cambiar de pestaña) y recortaría en silencio los datos de esas vistas
+  if (VISTA !== "semana" && VISTA !== "dias30" && VISTA !== "mes") return true;
   const m = VISTA === "mes" ? MULTI.diames : MULTI.diasem;
   if (!m || !m.sel.size) return true;
   if (m.sel.has("\u0000")) return false;
