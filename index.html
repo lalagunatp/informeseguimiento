@@ -648,15 +648,15 @@ function normaliza(s){
 
 // letras vigentes en BASE DE DATOS (tras insertar "N Interior" en AC y "Motivo Rechazo
 // Op" en L, cada inserción recorrió una columna a la derecha todo lo que venía después)
-const COLUMNAS = "A,C,D,E,F,G,H,I,K,N,O,P,Q,R,S,T,U,V,AB,AC,AD,AE,AF,AG,AH,AI,AJ";
-const IDX_SELECT = { os:0, cluster:1, creacion:2, validacion:3, activacion:4, cliente:5, canal:6, subcanal:7, estatus:8, estatus2:9, cuenta:10, plan:11, oportunidad:12, vendedor:13, pl:14, pp:15, addon:16, numvendedor:17, colonia:18, director:19, lider:20, coach:21, comentario:-1 };
+const COLUMNAS = "A,C,D,E,F,G,H,I,K,L,N,O,P,Q,R,S,T,U,V,AB,AC,AD,AE,AF,AG,AH,AI,AJ";
+const IDX_SELECT = { os:0, cluster:1, creacion:2, validacion:3, activacion:4, cliente:5, canal:6, subcanal:7, estatus:8, motivoRechazoOp:9, estatus2:10, cuenta:11, plan:12, oportunidad:13, vendedor:14, pl:15, pp:16, addon:17, numvendedor:18, colonia:19, director:20, lider:21, coach:22, comentario:-1 };
 // posiciones reales A..AJ, por si hay que leer la hoja completa
-const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, estatus2:13, cuenta:14, plan:15, oportunidad:16, vendedor:17, pl:18, pp:19, addon:20, numvendedor:21, comentario:23, direccion:27, numExt:28, numInt:29, colonia:30, ciudad:31, cp:32, director:33, lider:34, coach:35 };
+const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, motivoRechazoOp:11, estatus2:13, cuenta:14, plan:15, oportunidad:16, vendedor:17, pl:18, pp:19, addon:20, numvendedor:21, comentario:23, direccion:27, numExt:28, numInt:29, colonia:30, ciudad:31, cp:32, director:33, lider:34, coach:35 };
 let IDX = IDX_SELECT;
 
 const LETRA_CAMPO = {
   A:"os", C:"cluster", D:"creacion", E:"validacion", F:"activacion", G:"cliente",
-  H:"canal", I:"subcanal", K:"estatus", N:"estatus2", O:"cuenta", P:"plan",
+  H:"canal", I:"subcanal", K:"estatus", L:"motivoRechazoOp", N:"estatus2", O:"cuenta", P:"plan",
   Q:"oportunidad", R:"vendedor", S:"pl", T:"pp", U:"addon", V:"numvendedor",
   X:"comentario", AB:"direccion", AC:"numExt", AD:"numInt", AE:"colonia", AF:"ciudad", AG:"cp",
   AH:"director", AI:"lider", AJ:"coach"
@@ -940,6 +940,7 @@ function parsearBaseRows(filas){
       numvendedor: (celda(c, IDX.numvendedor) || {}).v != null ? celda(c, IDX.numvendedor).v : "",
       cuenta:      (celda(c, IDX.cuenta) || {}).v != null ? celda(c, IDX.cuenta).v : "",
       estatus:  texto(celda(c, IDX.estatus)),
+      motivoRechazoOp: texto(celda(c, IDX.motivoRechazoOp)),
       estatus2: texto(celda(c, IDX.estatus2)),
       plan:     texto(celda(c, IDX.plan)),
       vendedor: texto(celda(c, IDX.vendedor)),
@@ -2594,6 +2595,8 @@ function tablaGrupoDuplicadoHtml(grupo){
   const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
   const hoySolo = (function(){ const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()); })();
   const ordenado = grupo.slice().sort(function(a, b){ return (a.fOp && b.fOp) ? a.fOp - b.fOp : 0; });
+  const chCliente = anchoPromedioCh(grupo.map(function(f){ return f.cliente; }));
+  const chPlan = anchoPromedioCh(grupo.map(function(f){ return f.plan; }));
   let filas = "";
   ordenado.forEach(function(f){
     const vendedor = vendedorDeFila(f), coach = coachDeFila(f), lider = liderDeFila(f);
@@ -2602,8 +2605,9 @@ function tablaGrupoDuplicadoHtml(grupo){
       "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
       "<td>" + (f.fVal && f.fVal <= hoySolo ? fCorta(f.fVal) : "—") + "</td>" +
       "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
+      '<td class="envuelve" style="max-width:22ch">' + (f.motivoRechazoOp || "—") + "</td>" +
       "<td>" + (f.canal || "—") + "</td>" +
-      "<td>" + (f.cliente || "—") + "</td>" +
+      '<td class="envuelve" style="max-width:' + chCliente + 'ch">' + (f.cliente || "—") + "</td>" +
       "<td>" + (f.oportunidad || "—") + "</td>" +
       "<td>" + (f.os || "—") + "</td>" +
       "<td>" + (f.cuenta || "—") + "</td>" +
@@ -2611,7 +2615,7 @@ function tablaGrupoDuplicadoHtml(grupo){
       "<td>" + (f.colonia || "—") + "</td>" +
       "<td>" + (f.ciudad || "—") + "</td>" +
       "<td>" + (f.cp || "—") + "</td>" +
-      "<td>" + (f.plan || "—") + "</td>" +
+      '<td class="envuelve" style="max-width:' + chPlan + 'ch">' + (f.plan || "—") + "</td>" +
       '<td class="recorta" title="' + (f.comentario || "").replace(/"/g, "'") + '">' + (f.comentario || "—") + "</td>" +
       "<td>" + (vendedor || "—") + "</td>" +
       "<td>" + (coach || "—") + "</td>" +
@@ -2619,7 +2623,7 @@ function tablaGrupoDuplicadoHtml(grupo){
   });
   return '<section class="panel"><h2>Cuentas duplicadas <span class="sub">' + grupo.length + " renglón(es) de esta misma cuenta</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
+    "<th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>OP rechazada</th><th>Canal</th><th>Cliente</th>" +
     "<th>N° oportunidad</th><th>OS</th><th>N° cuenta</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th><th>Núm. int.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Plan</th><th>Comentario</th>" +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
@@ -2660,6 +2664,15 @@ function filaEnPeriodoDupli(f){
   }
   const sem = el("dupliSemana").value;
   return !sem || isoSemana(fecha) === sem;
+}
+
+// promedio de caracteres de una lista de textos, en "ch" (mínimo 8, para no dejar
+// columnas demasiado angostas cuando casi todo viene vacío)
+function anchoPromedioCh(valores){
+  const largos = valores.map(function(v){ return String(v || "").length; }).filter(function(n){ return n > 0; });
+  if (!largos.length) return 12;
+  const prom = largos.reduce(function(s, n){ return s + n; }, 0) / largos.length;
+  return Math.max(8, Math.round(prom));
 }
 
 function cuentasDuplicadasHtml(){
@@ -2746,6 +2759,14 @@ function cuentasDuplicadasHtml(){
   // igual que si no hubiera fecha
   const hoySolo = (function(){ const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()); })();
 
+  // ancho de columna = promedio de caracteres de lo que se va a mostrar (en "ch", que
+  // ya es del tamaño del propio texto); los nombres/planes más largos que el promedio
+  // envuelven a un segundo renglón en vez de estirar la columna
+  const todasLasFilas = [];
+  dup.forEach(function(g){ todasLasFilas.push.apply(todasLasFilas, g); });
+  const chCliente = anchoPromedioCh(todasLasFilas.map(function(f){ return f.cliente; }));
+  const chPlan = anchoPromedioCh(todasLasFilas.map(function(f){ return f.plan; }));
+
   let filas = "";
   let renglones = 0;
   dup.forEach(function(grupo, gi){
@@ -2762,8 +2783,9 @@ function cuentasDuplicadasHtml(){
         "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
         "<td>" + (f.fVal && f.fVal <= hoySolo ? fCorta(f.fVal) : "—") + "</td>" +
         "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
+        '<td class="envuelve" style="max-width:22ch">' + (f.motivoRechazoOp || "—") + "</td>" +
         "<td>" + (f.canal || "—") + "</td>" +
-        "<td>" + (f.cliente || "—") + "</td>" +
+        '<td class="envuelve" style="max-width:' + chCliente + 'ch">' + (f.cliente || "—") + "</td>" +
         "<td>" + (f.oportunidad || "—") + "</td>" +
         "<td>" + (f.os || "—") + "</td>" +
         "<td>" + (f.cuenta || "—") + "</td>" +
@@ -2771,7 +2793,7 @@ function cuentasDuplicadasHtml(){
         "<td>" + (f.colonia || "—") + "</td>" +
         "<td>" + (f.ciudad || "—") + "</td>" +
         "<td>" + (f.cp || "—") + "</td>" +
-        "<td>" + (f.plan || "—") + "</td>" +
+        '<td class="envuelve" style="max-width:' + chPlan + 'ch">' + (f.plan || "—") + "</td>" +
         '<td class="recorta" title="' + (f.comentario || "").replace(/"/g, "'") + '">' + (f.comentario || "—") + "</td>" +
         "<td>" + (vendedor || "—") + "</td>" +
         "<td>" + (coach || "—") + "</td>" +
@@ -2785,7 +2807,7 @@ function cuentasDuplicadasHtml(){
     (tipoPeriodo ? " · en verde, el/los renglón(es) del periodo elegido; se muestran también sus otros renglones, de cualquier fecha" : "") +
     "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>#</th><th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>Canal</th><th>Cliente</th>" +
+    "<th>#</th><th>Fecha oportunidad</th><th>Fecha validación</th><th>Fecha activación</th><th>OP rechazada</th><th>Canal</th><th>Cliente</th>" +
     "<th>N° oportunidad</th><th>OS</th><th>N° cuenta</th>" + (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th><th>Núm. int.</th>" : "") + "<th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Plan</th><th>Comentario</th>" +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" +
     filas + "</tbody></table></div></section>";
