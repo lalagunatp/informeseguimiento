@@ -2846,6 +2846,88 @@ function cuentasDuplicadasHtml(){
     filas + "</tbody></table></div></section>";
 }
 
+// alcance del objetivo de instalaciones por ranking, en la semana ya seleccionada arriba
+// (mismo selector "Semana" que usa el resto de la app): instalaciones reales de esa
+// semana, cruzadas por número/nombre de vendedor (venta técnico, por código) contra la
+// plantilla, para saber el ranking de quién instaló. Lo que no cruza con nadie de la
+// plantilla no se pierde: se cuenta aparte en "Fuera de HC", igual que en Vendedores en 0
+function alcanceRankingHtml(filtroLider, filtroCoachEq){
+  const sem = el("semana").value;
+  if (!sem) return "";
+
+  const porNum = {}, porNom = {};
+  const headcount = {};
+  PLANTILLA.forEach(function(p){
+    if (!personaEnAlcance(p)) return;
+    if (filtroLider && !filtroLider.has(p.lider)) return;
+    if (filtroCoachEq && !filtroCoachEq.has(p.coach)) return;
+    const metal = metalDe(p);
+    headcount[metal] = (headcount[metal] || 0) + 1;
+    if (p.numero) porNum[clave(p.numero)] = metal;
+    if (p.nombre) porNom[normaliza(p.nombre)] = metal;
+  });
+
+  const insPorMetal = {};
+  let fueraHc = 0, totalIns = 0;
+  FILAS.forEach(function(f){
+    if (!pasaFiltros(f)) return;
+    if (!esInstalada(f) || !f.fIns || isoSemana(f.fIns) !== sem) return;
+    totalIns++;
+    let metal = null;
+    if (f.codTec){
+      metal = porNum[clave(f.codTec)];
+      if (!metal){
+        const per = MAPA_TEC_PERSONA.get(normaliza(f.codTec));
+        if (per && per.nombre) metal = porNom[normaliza(per.nombre)];
+      }
+    } else {
+      metal = (f.numvendedor && porNum[clave(f.numvendedor)]) || (f.vendedor && porNom[normaliza(f.vendedor)]);
+    }
+    if (metal) insPorMetal[metal] = (insPorMetal[metal] || 0) + 1;
+    else fueraHc++;
+  });
+
+  // con filtro de líder/coach activo no se puede saber si lo que no cruza es de ese
+  // líder/coach o de otro: se omite en vez de arriesgar un número engañoso
+  const sinFueraHc = !!(filtroLider || filtroCoachEq);
+  if (sinFueraHc) fueraHc = 0;
+
+  const filasOrden = ORDEN_METAL.concat(fueraHc ? ["Fuera de HC"] : []);
+  let filas = "";
+  filasOrden.forEach(function(m){
+    const esFuera = m === "Fuera de HC";
+    const n = esFuera ? fueraHc : (insPorMetal[m] || 0);
+    const personas = esFuera ? null : (headcount[m] || 0);
+    const meta = esFuera ? null : Math.round(metaDe(m) * (headcount[m] || 0));
+    const avance = meta ? n / meta : null;
+    const dist = totalIns ? n / totalIns : null;
+    const clAv = avance === null ? "" : (avance >= 1 ? " v" : (avance >= 0.9 ? " a" : " r"));
+    filas += "<tr><td>" + m + "</td>" +
+      (personas === null ? "<td>—</td>" : celdaNum(personas)) +
+      (meta === null ? '<td class="sem">—</td>' : celdaNum(meta, "sem")) +
+      celdaNum(n, "tot") +
+      '<td class="dif' + clAv + '">' + (meta ? pct(avance) : "—") + "</td>" +
+      "<td>" + (totalIns ? pct(dist) : "—") + "</td></tr>";
+  });
+
+  const totalPersonas = ORDEN_METAL.reduce(function(s, m){ return s + (headcount[m] || 0); }, 0);
+  const totalMeta = ORDEN_METAL.reduce(function(s, m){ return s + Math.round(metaDe(m) * (headcount[m] || 0)); }, 0);
+  const totalRankIns = ORDEN_METAL.reduce(function(s, m){ return s + (insPorMetal[m] || 0); }, 0);
+  const avanceTotal = totalMeta ? totalRankIns / totalMeta : null;
+  const clAvT = avanceTotal === null ? "" : (avanceTotal >= 1 ? " v" : (avanceTotal >= 0.9 ? " a" : " r"));
+  filas += '<tr class="total"><td>Total</td>' +
+    celdaNum(totalPersonas) + celdaNum(totalMeta, "sem") + celdaNum(totalIns, "tot") +
+    '<td class="dif' + clAvT + '">' + (totalMeta ? pct(avanceTotal) : "—") + "</td>" +
+    "<td>" + (totalIns ? "100%" : "—") + "</td></tr>";
+
+  return '<section class="panel"><h2>Alcance de objetivo de instalaciones por ranking <span class="sub">semana ' +
+    etiquetaSemana(sem) + " · meta semanal por metal: " + el("metasRanking").value +
+    (fueraHc ? " · Fuera de HC: instalaciones que no cruzan con nadie de la plantilla" : "") + "</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Ranking</th><th>Personas</th>' +
+    '<th class="sem">Meta semana</th><th class="tot">Instalaciones</th><th>% Avance</th><th>% Distribución</th></tr></thead><tbody>' +
+    filas + "</tbody></table></div></section>";
+}
+
 function equiposHtml(){
   if (INFO_EQ.estado === "cargando" || CARGANDO_EQ){
     return '<section class="panel"><h2>Equipos por coach</h2><div class="aviso">Leyendo plantilla y rankings\u2026</div></section>';
@@ -2966,7 +3048,7 @@ function equiposHtml(){
     '<div class="scroll"><table class="compacta">' + enc.replace(">Coach<", ">Líder<") +
     "<tbody>" + filasR + "</tbody></table></div></section>";
 
-  return cab + html + detalleEquipoHtml();
+  return cab + alcanceRankingHtml(filtroLider, filtroCoachEq) + html + detalleEquipoHtml();
 }
 
 function detalleEquipoHtml(){
