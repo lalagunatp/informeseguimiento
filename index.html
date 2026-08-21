@@ -646,21 +646,20 @@ function normaliza(s){
 
 /* ---------- estado ---------- */
 
-// AC = "N Interior", insertada en BASE DE DATOS después de "N Exterior": todo lo que
-// antes vivía en AC..AH (colonia, ciudad, C.P., director, líder, coach) se recorrió
-// una columna a la derecha (AD..AI)
-const COLUMNAS = "A,C,D,E,F,G,H,I,K,M,N,O,P,Q,R,S,T,U,AA,AB,AC,AD,AE,AF,AG,AH,AI";
+// letras vigentes en BASE DE DATOS (tras insertar "N Interior" en AC y "Motivo Rechazo
+// Op" en L, cada inserción recorrió una columna a la derecha todo lo que venía después)
+const COLUMNAS = "A,C,D,E,F,G,H,I,K,N,O,P,Q,R,S,T,U,V,AB,AC,AD,AE,AF,AG,AH,AI,AJ";
 const IDX_SELECT = { os:0, cluster:1, creacion:2, validacion:3, activacion:4, cliente:5, canal:6, subcanal:7, estatus:8, estatus2:9, cuenta:10, plan:11, oportunidad:12, vendedor:13, pl:14, pp:15, addon:16, numvendedor:17, colonia:18, director:19, lider:20, coach:21, comentario:-1 };
-// posiciones reales A..AI, por si hay que leer la hoja completa
-const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, estatus2:12, cuenta:13, plan:14, oportunidad:15, vendedor:16, pl:17, pp:18, addon:19, numvendedor:20, comentario:22, direccion:26, numExt:27, numInt:28, colonia:29, ciudad:30, cp:31, director:32, lider:33, coach:34 };
+// posiciones reales A..AJ, por si hay que leer la hoja completa
+const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, estatus2:13, cuenta:14, plan:15, oportunidad:16, vendedor:17, pl:18, pp:19, addon:20, numvendedor:21, comentario:23, direccion:27, numExt:28, numInt:29, colonia:30, ciudad:31, cp:32, director:33, lider:34, coach:35 };
 let IDX = IDX_SELECT;
 
 const LETRA_CAMPO = {
   A:"os", C:"cluster", D:"creacion", E:"validacion", F:"activacion", G:"cliente",
-  H:"canal", I:"subcanal", K:"estatus", M:"estatus2", N:"cuenta", O:"plan",
-  P:"oportunidad", Q:"vendedor", R:"pl", S:"pp", T:"addon", U:"numvendedor",
-  W:"comentario", AA:"direccion", AB:"numExt", AC:"numInt", AD:"colonia", AE:"ciudad", AF:"cp",
-  AG:"director", AH:"lider", AI:"coach"
+  H:"canal", I:"subcanal", K:"estatus", N:"estatus2", O:"cuenta", P:"plan",
+  Q:"oportunidad", R:"vendedor", S:"pl", T:"pp", U:"addon", V:"numvendedor",
+  X:"comentario", AB:"direccion", AC:"numExt", AD:"numInt", AE:"colonia", AF:"ciudad", AG:"cp",
+  AH:"director", AI:"lider", AJ:"coach"
 };
 
 // el proxy dice qué columnas manda y en qué orden
