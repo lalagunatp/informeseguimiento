@@ -1443,11 +1443,11 @@ function tablasPeriodo(claves, etiquetas, acc, sufijo, extras, sinTotal, rech){
       }
       const rg = (b.tipo === "op" && rech) ? rech[g] : null;
       filas += "<tr><td>" + g + "</td>" +
-        claves.map(function(k){
+        claves.map(function(k, i){
           const n = acc[g][b.tipo][k] || 0;
-          return rg ? celdaRech(n, rg[k]) : celdaNum(n);
+          return rg ? celdaRech(n, rg[k], g + " · " + etiquetas[i]) : celdaNum(n);
         }).join("") +
-        (sinTotal ? "" : (rg ? celdaRech(totalTipo(g, b.tipo), claves.reduce(function(l,k){ return l.concat(rg[k] || []); }, []), "tot")
+        (sinTotal ? "" : (rg ? celdaRech(totalTipo(g, b.tipo), claves.reduce(function(l,k){ return l.concat(rg[k] || []); }, []), g + " · Total", "tot")
                               : celdaNum(totalTipo(g, b.tipo), "tot"))) + extraHtml(g, valAct) + "</tr>";
     });
 
@@ -1466,12 +1466,12 @@ function tablasPeriodo(claves, etiquetas, acc, sufijo, extras, sinTotal, rech){
       return grupos.reduce(function(l, g){ return l.concat((rech[g] && rech[g][k]) || []); }, []);
     }
     filas += '<tr class="total"><td>Total</td>' +
-      claves.map(function(k){
+      claves.map(function(k, i){
         const n = sumaCol(b.tipo, k);
-        return (b.tipo === "op" && rech) ? celdaRech(n, rechCol(k)) : celdaNum(n);
+        return (b.tipo === "op" && rech) ? celdaRech(n, rechCol(k), "Total · " + etiquetas[i]) : celdaNum(n);
       }).join("") +
       (sinTotal ? "" : ((b.tipo === "op" && rech)
-        ? celdaRech(claves.reduce(function(s,k){ return s + sumaCol(b.tipo, k); }, 0), claves.reduce(function(l,k){ return l.concat(rechCol(k)); }, []), "tot")
+        ? celdaRech(claves.reduce(function(s,k){ return s + sumaCol(b.tipo, k); }, 0), claves.reduce(function(l,k){ return l.concat(rechCol(k)); }, []), "Total · Total", "tot")
         : celdaNum(claves.reduce(function(s,k){ return s + sumaCol(b.tipo, k); }, 0), "tot"))) + extraT + "</tr>";
 
     html += '<section class="panel"><h2>' + b.titulo.toUpperCase() + " " + sufijo +
@@ -4515,10 +4515,10 @@ const BLOQUES = [
 // celda de conteo que además abre/cierra (misma cubeta DET_SEL de matriz/equipos/etc.)
 // el detalle de las oportunidades rechazadas que caen en ella; sin lista, es una celda
 // normal
-function celdaRech(n, lista, extra, titulo){
+function celdaRech(n, lista, etiqueta, extra, titulo){
   if (!lista || !lista.length) return celdaNum(n, extra, titulo);
   const id = "rech" + (DET_RECH_N++);
-  DET_RECH[id] = lista;
+  DET_RECH[id] = { lista: lista, n: n, etiqueta: etiqueta };
   return '<td class="' + ((extra || "") + " clicable").trim() + '" data-det="' + id + '"' +
     (titulo ? ' title="' + titulo.replace(/"/g, "'") + '"' : "") + ">" + num(n) + "</td>";
 }
@@ -4526,8 +4526,10 @@ function celdaRech(n, lista, extra, titulo){
 // panel de detalle: se intercala entre el panel OPORTUNIDAD y VENTA VALIDADA
 function detalleRechazadasHtml(){
   if (!DET_SEL || !DET_RECH[DET_SEL]) return "";
-  const lista = DET_RECH[DET_SEL];
-  return '<section class="panel"><h2>Oportunidades rechazadas <span class="sub">' + lista.length +
+  const info = DET_RECH[DET_SEL];
+  const lista = info.lista;
+  return '<section class="panel"><h2>Oportunidades rechazadas <span class="sub">' +
+    (info.etiqueta ? info.etiqueta + " · " : "") + lista.length + " de " + info.n +
     " oportunidad(es) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th><th>Canal</th><th>N° oportunidad</th><th>Motivo del rechazo</th><th>Plan</th>" +
@@ -4863,11 +4865,11 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
     const rg = rechAct && rechAct.porGrupo[g] ? rechAct.porGrupo[g] : null;
     const rga = rechAnt && rechAnt.porGrupo[g] ? rechAnt.porGrupo[g].tot : [];
     filas += "<tr><td>" + g + "</td>" +
-             (rechAnt ? celdaRech(A.t, rga, "sem") : celdaNum(A.t, "sem")) +
+             (rechAnt ? celdaRech(A.t, rga, g + " · Semana anterior (" + etiquetaSemana(semAnt) + ")", "sem") : celdaNum(A.t, "sem")) +
              C.d.map(function(n, j){
-               return rechAct ? celdaRech(n, rg ? rg.dia[j] : [], j === 0 ? "sem" : "") : celdaNum(n, j === 0 ? "sem" : "");
+               return rechAct ? celdaRech(n, rg ? rg.dia[j] : [], g + " · " + DIAS_LARGOS[j], j === 0 ? "sem" : "") : celdaNum(n, j === 0 ? "sem" : "");
              }).join("") +
-             (rechAct ? celdaRech(C.t, rg ? rg.tot : [], "tot") : celdaNum(C.t, "tot")) +
+             (rechAct ? celdaRech(C.t, rg ? rg.tot : [], g + " · Total semana " + etiquetaSemana(sem), "tot") : celdaNum(C.t, "tot")) +
              '<td class="dif' + claseSemaforo(difs[i], difs) + '">' + pct(difs[i]) + "</td>" +
              celdaNum(proy, "", tituloProy(info, g)) + m.html + "</tr>";
   });
@@ -4886,11 +4888,11 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
     metaHtml = celdaNum(metaTot, "sem") + '<td class="dif' + cl + '">' + pct(av) + "</td>";
   }
   filas += '<tr class="total"><td>Total</td>' +
-           (rechAnt ? celdaRech(TA.t, rechAnt.total, "sem") : celdaNum(TA.t, "sem")) +
+           (rechAnt ? celdaRech(TA.t, rechAnt.total, "Total · Semana anterior (" + etiquetaSemana(semAnt) + ")", "sem") : celdaNum(TA.t, "sem")) +
            TC.d.map(function(n, j){
-             return rechAct ? celdaRech(n, rechAct.totalDia[j], j === 0 ? "sem" : "") : celdaNum(n, j === 0 ? "sem" : "");
+             return rechAct ? celdaRech(n, rechAct.totalDia[j], "Total · " + DIAS_LARGOS[j], j === 0 ? "sem" : "") : celdaNum(n, j === 0 ? "sem" : "");
            }).join("") +
-           (rechAct ? celdaRech(TC.t, rechAct.total, "tot") : celdaNum(TC.t, "tot")) + '<td class="dif">' + pct(difT) + "</td>" +
+           (rechAct ? celdaRech(TC.t, rechAct.total, "Total · Total semana " + etiquetaSemana(sem), "tot") : celdaNum(TC.t, "tot")) + '<td class="dif">' + pct(difT) + "</td>" +
            celdaNum(proyT, "", tituloProy(infoT, "Total")) + metaHtml + "</tr>";
 
   return '<section class="panel"><h2>' + b.titulo.toUpperCase() +
