@@ -3618,6 +3618,7 @@ function grupoDeLaPersona(p, modoGrupo){
   if (modoGrupo === "coach") return p.coach || "SIN COACH";
   if (modoGrupo === "canal") return canalDePersona(p) || "SIN CANAL";
   if (modoGrupo === "ranking") return metalDe(p);
+  if (modoGrupo === "vendedor") return p.nombre || "SIN NOMBRE";
   return p.lider || "SIN LÍDER";
 }
 
@@ -3839,7 +3840,8 @@ function vendedores0Html(){
   const modoGrupo = el("agrupar").value;
   const rotulo = modoGrupo === "coach" ? "Coach" :
                  (modoGrupo === "ranking" ? "Ranking" :
-                 (modoGrupo === "canal" ? "Canal de ventas" : "Líder"));
+                 (modoGrupo === "canal" ? "Canal de ventas" :
+                 (modoGrupo === "vendedor" ? "Vendedor" : "Líder")));
 
   const enPlantilla = {};
   gente.forEach(function(p){
@@ -3899,7 +3901,9 @@ function vendedores0Html(){
         return;
       }
 
-      const k = modoGrupo === "coach" ? p.coach : (modoGrupo === "ranking" ? metalDe(p) : p.lider);
+      const k = modoGrupo === "coach" ? p.coach :
+                (modoGrupo === "ranking" ? metalDe(p) :
+                (modoGrupo === "vendedor" ? p.nombre : p.lider));
       acumula(bolsa(k), n);
       acumula(gran, n);
       guardar(k, Math.min(n, tope), ficha);
@@ -3921,7 +3925,8 @@ function vendedores0Html(){
       const canalX = canalMasFrecuente(x.canales) || PERSONA_CANAL.get(x.num) || PERSONA_CANAL.get(x.nom) || "SIN CANAL";
       const k = modoGrupo === "coach" ? x.coach :
                 (modoGrupo === "ranking" ? "Fuera de HC" :
-                (modoGrupo === "canal" ? canalX : x.lider));
+                (modoGrupo === "canal" ? canalX :
+                (modoGrupo === "vendedor" ? x.nombre : x.lider)));
       acumula(bolsa(k), x.n);
       acumula(gran, x.n);
       guardar(k, Math.min(x.n, tope), {
@@ -5351,7 +5356,7 @@ function ajustaAgrupar(){
   const sel = el("agrupar");
   const previo = sel.value;
   const lista = OPCIONES_AGRUPAR.filter(function(o){
-    if (VISTA === "vend0") return ["lider","coach","canal","ranking"].indexOf(o[0]) >= 0;
+    if (VISTA === "vend0") return ["lider","coach","canal","ranking","vendedor"].indexOf(o[0]) >= 0;
     if (o[0] === "ranking") return false;
     if (o[0] === "diasem") return VISTA === "semana";
     if (o[0] === "diames") return VISTA === "mes";
