@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reporte de seguimiento · La Laguna</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#123a5e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="La Laguna">
 <style>
   :root{
     --bg:#eef1f5; --panel:#ffffff; --ink:#101a26; --muted:#5d6b7a;
@@ -13,6 +21,7 @@
     --a-bg:#fdf1cf; --a-tx:#8a6300;
     --r-bg:#fbdfdd; --r-tx:#a91e14;
     --gris:#e9edf2;
+    --det-bg:#f5f1e9; --det-line:#e4dbc7; --det-acc:#c2a76b; --det-tx:#7a6a3f;
   }
   *{box-sizing:border-box}
   body{
@@ -103,6 +112,15 @@
     text-transform:uppercase; color:var(--azul); border-bottom:1px solid var(--line2);
     display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
   }
+  /* paneles que aparecen/desaparecen al interactuar (detalle de un clic, filtros que se
+     muestran u ocultan): un tono cálido y claro los distingue de los paneles fijos */
+  .panel.detalle{
+    background:var(--det-bg); border-color:var(--det-line);
+    border-left:3px solid var(--det-acc); animation:aparece .18s ease-out;
+  }
+  .panel.detalle > h2{color:var(--det-tx); border-bottom-color:var(--det-line)}
+  .panel.detalle > h2 span.sub{color:var(--det-tx); opacity:.75}
+  @keyframes aparece{ from{opacity:0; transform:translateY(-4px)} to{opacity:1; transform:translateY(0)} }
   .panel > h2 span.sub{font-weight:400; letter-spacing:.2px; text-transform:none; color:var(--muted); font-size:12px}
   .controles{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; padding:12px 14px}
   label.campo{display:flex; flex-direction:column; gap:4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted)}
@@ -1787,7 +1805,7 @@ function detalleMatrizHtml(){
   if (!DET_SEL || !DET_MTZ[DET_SEL]) return "";
   const nombre = el("matrizMetrica").options[el("matrizMetrica").selectedIndex].text;
   const lista = fichasPorVendedor(DET_MTZ[DET_SEL]);
-  return '<section class="panel"><h2>Detalle \u00b7 ' + nombre + ' <span class="sub">' + lista.length +
+  return '<section class="panel detalle"><h2>Detalle \u00b7 ' + nombre + ' <span class="sub">' + lista.length +
     " vendedor(es) \u00b7 toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Vendedor</th><th>Coach</th><th>L\u00edder</th><th>Canal</th><th>Oportunidad</th><th>Planes</th>" +
@@ -3038,7 +3056,7 @@ function equiposHtml(){
 function detalleEquipoHtml(){
   if (!DET_SEL || !DET_EQ[DET_SEL]) return "";
   const lista = DET_EQ[DET_SEL].slice().sort(function(a, b){ return a.nombre.localeCompare(b.nombre, "es"); });
-  return '<section class="panel"><h2>Detalle del equipo <span class="sub">' + lista.length +
+  return '<section class="panel detalle"><h2>Detalle del equipo <span class="sub">' + lista.length +
     " persona(s), toca otro numero para cambiar o el mismo para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Vendedor</th><th>Coach</th><th>Lider</th><th>Ranking</th><th>Fecha de alta</th></tr></thead><tbody>" +
@@ -3610,6 +3628,8 @@ let DET_EQ = {};        // clave -> lista de personas del equipo (sección Equip
 let DET_MTZ = {};       // clave -> lista de renglones de la base (matriz por plan, semanal/mensual)
 let DET_RECH = {};      // clave -> lista de oportunidades rechazadas (paneles Oportunidad)
 let DET_RECH_N = 0;
+let DET_CUMPL = {};     // clave -> lista de personas (panel "cumplieron su objetivo individual")
+let DET_CUMPL_N = 0;
 
 // para las dos secciones de meta por ranking: la fila que representa a cada persona
 // cambia según "Agrupar por" (mismo selector que ya usan los 3 paneles de arriba), pero
@@ -3636,19 +3656,21 @@ function datosInstalacionesSemana(gente, modoGrupo){
   const metaPorGrupo = {};    // grupo -> suma de la meta individual (por ranking) de su gente
   const grupoDePersona = {};  // id -> grupo (según "Agrupar por")
   const metalDePersona = {};  // id -> ranking (siempre, para la meta individual)
+  const personaInfo = {};     // id -> {nombre, puesto}, para el detalle clicable
   gente.forEach(function(p){
     const metal = metalDe(p);
     const grupo = grupoDeLaPersona(p, modoGrupo);
     const id = p.numero ? ("N:" + clave(p.numero)) : ("X:" + normaliza(p.nombre));
     metalDePersona[id] = metal;
     grupoDePersona[id] = grupo;
+    personaInfo[id] = { nombre: p.nombre, puesto: p.puesto };
     headcount[grupo] = (headcount[grupo] || 0) + 1;
     metaPorGrupo[grupo] = (metaPorGrupo[grupo] || 0) + metaDe(metal);
     if (p.numero) porNum[clave(p.numero)] = id;
     if (p.nombre) porNom[normaliza(p.nombre)] = id;
   });
 
-  const insPorGrupo = {}, insPorPersona = {};
+  const insPorGrupo = {}, insPorPersona = {}, oporPorPersona = {};
   let fueraHc = 0, totalIns = 0;
   FILAS.forEach(function(f){
     if (!pasaFiltros(f)) return;
@@ -3668,6 +3690,11 @@ function datosInstalacionesSemana(gente, modoGrupo){
       const grupo = grupoDePersona[id];
       insPorGrupo[grupo] = (insPorGrupo[grupo] || 0) + 1;
       insPorPersona[id] = (insPorPersona[id] || 0) + 1;
+      if (f.oportunidad !== "" && f.oportunidad !== undefined){
+        if (!oporPorPersona[id]) oporPorPersona[id] = [];
+        const op = String(f.oportunidad);
+        if (oporPorPersona[id].indexOf(op) < 0) oporPorPersona[id].push(op);
+      }
     } else {
       fueraHc++;
     }
@@ -3675,8 +3702,8 @@ function datosInstalacionesSemana(gente, modoGrupo){
 
   return {
     sem: sem, headcount: headcount, grupoDePersona: grupoDePersona, metalDePersona: metalDePersona,
-    metaPorGrupo: metaPorGrupo, insPorGrupo: insPorGrupo, insPorPersona: insPorPersona,
-    fueraHc: fueraHc, totalIns: totalIns
+    personaInfo: personaInfo, metaPorGrupo: metaPorGrupo, insPorGrupo: insPorGrupo,
+    insPorPersona: insPorPersona, oporPorPersona: oporPorPersona, fueraHc: fueraHc, totalIns: totalIns
   };
 }
 
@@ -3741,13 +3768,28 @@ function cumplimientoRankingHtml(gente, modoGrupo, rotulo){
   const orden = ordenGruposRanking(d, modoGrupo);
 
   const cumplieronPorGrupo = {};
-  const medibles = {};   // headcount del grupo cuyo ranking sí tiene meta configurada
+  const medibles = {};        // headcount del grupo cuyo ranking sí tiene meta configurada
+  const fichasPorGrupo = {};       // grupo -> [ficha, ...] de TODAS sus personas
+  const fichasCumplenPorGrupo = {}; // grupo -> [ficha, ...] solo de quienes cumplieron
   Object.keys(d.grupoDePersona).forEach(function(id){
     const g = d.grupoDePersona[id];
-    const meta = metaDe(d.metalDePersona[id]);
+    const info = d.personaInfo[id] || {};
+    const metal = d.metalDePersona[id];
+    const meta = metaDe(metal);
+    const n = d.insPorPersona[id] || 0;
+    const ficha = {
+      nombre: info.nombre, puesto: info.puesto, ranking: metal,
+      instalaciones: n, oportunidades: (d.oporPorPersona[id] || []).join(", ")
+    };
+    if (!fichasPorGrupo[g]) fichasPorGrupo[g] = [];
+    fichasPorGrupo[g].push(ficha);
     if (!meta) return;
     medibles[g] = (medibles[g] || 0) + 1;
-    if ((d.insPorPersona[id] || 0) >= meta) cumplieronPorGrupo[g] = (cumplieronPorGrupo[g] || 0) + 1;
+    if (n >= meta){
+      cumplieronPorGrupo[g] = (cumplieronPorGrupo[g] || 0) + 1;
+      if (!fichasCumplenPorGrupo[g]) fichasCumplenPorGrupo[g] = [];
+      fichasCumplenPorGrupo[g].push(ficha);
+    }
   });
 
   let filas = "";
@@ -3757,8 +3799,8 @@ function cumplimientoRankingHtml(gente, modoGrupo, rotulo){
     const cumplieron = cumplieronPorGrupo[g] || 0;
     const pctAlcance = med ? cumplieron / med : null;
     const cl = pctAlcance === null ? "" : (pctAlcance >= 1 ? " v" : (pctAlcance >= 0.9 ? " a" : " r"));
-    filas += "<tr><td>" + g + "</td>" + celdaNum(personas) +
-      (med ? celdaNum(cumplieron, "tot") : '<td class="tot">—</td>') +
+    filas += "<tr><td>" + g + "</td>" + celdaCumpl(personas, fichasPorGrupo[g]) +
+      (med ? celdaCumpl(cumplieron, fichasCumplenPorGrupo[g], "tot") : '<td class="tot">—</td>') +
       '<td class="dif' + cl + '">' + (pctAlcance === null ? "—" : pct(pctAlcance)) + "</td></tr>";
   });
 
@@ -3767,7 +3809,10 @@ function cumplimientoRankingHtml(gente, modoGrupo, rotulo){
   const totalCumplieron = grupos.reduce(function(s, g){ return s + (cumplieronPorGrupo[g] || 0); }, 0);
   const pctTotal = totalMedibles ? totalCumplieron / totalMedibles : null;
   const clT = pctTotal === null ? "" : (pctTotal >= 1 ? " v" : (pctTotal >= 0.9 ? " a" : " r"));
-  filas += '<tr class="total"><td>Total</td>' + celdaNum(totalPersonas) + celdaNum(totalCumplieron, "tot") +
+  const todasLasFichas = grupos.reduce(function(l, g){ return l.concat(fichasPorGrupo[g] || []); }, []);
+  const fichasCumplenTotal = grupos.reduce(function(l, g){ return l.concat(fichasCumplenPorGrupo[g] || []); }, []);
+  filas += '<tr class="total"><td>Total</td>' + celdaCumpl(totalPersonas, todasLasFichas) +
+    celdaCumpl(totalCumplieron, fichasCumplenTotal, "tot") +
     '<td class="dif' + clT + '">' + (totalMedibles ? pct(pctTotal) : "—") + "</td></tr>";
 
   return '<section class="panel"><h2>Vendedores que cumplieron su objetivo individual <span class="sub">semana ' +
@@ -4025,7 +4070,7 @@ function vendedores0Html(){
     const nomTipo = p2[0] === "op" ? "oportunidades" : (p2[0] === "val" ? "validadas" : "instalaciones");
     const esTotal = p2[2] === "TOT";
     const lista = DET_V0[DET_SEL].slice().sort(function(a, b){ return b.n - a.n || a.nombre.localeCompare(b.nombre, "es"); });
-    detalle = '<section class="panel"><h2>Detalle · ' + p2[1] + " · " +
+    detalle = '<section class="panel detalle"><h2>Detalle · ' + p2[1] + " · " +
       (esTotal ? "todas las " + nomTipo : p2[2] + (Number(p2[2]) >= tope ? " o más" : "") + " " + nomTipo) +
       ' <span class="sub">' + lista.length + " persona(s) · toca otra celda para cambiar</span></h2>" +
       '<div class="scroll"><table class="compacta"><thead><tr>' +
@@ -4040,7 +4085,8 @@ function vendedores0Html(){
   }
 
   return cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas + detalle +
-    alcanceRankingHtml(gente, modoGrupo, rotulo) + cumplimientoRankingHtml(gente, modoGrupo, rotulo);
+    alcanceRankingHtml(gente, modoGrupo, rotulo) + cumplimientoRankingHtml(gente, modoGrupo, rotulo) +
+    detalleCumplimientoHtml();
 }
 
 /* ---------- seguimiento de OS ---------- */
@@ -4794,7 +4840,7 @@ function detalleRechazadasHtml(){
   if (!DET_SEL || !DET_RECH[DET_SEL]) return "";
   const info = DET_RECH[DET_SEL];
   const lista = info.lista;
-  return '<section class="panel"><h2>Oportunidades rechazadas <span class="sub">' +
+  return '<section class="panel detalle"><h2>Oportunidades rechazadas <span class="sub">' +
     (info.etiqueta ? info.etiqueta + " · " : "") + lista.length + " de " + info.n +
     " oportunidad(es) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
@@ -4806,6 +4852,32 @@ function detalleRechazadasHtml(){
         (lider || "—") + "</td><td>" + (f.canal || "—") + "</td><td>" + (f.oportunidad || "—") + "</td>" +
         '<td class="envuelve">' + (f.motivoRechazoOp || "—") + "</td>" +
         "<td>" + (f.plan || "—") + "</td></tr>";
+    }).join("") + "</tbody></table></div></section>";
+}
+
+// celda que abre/cierra el detalle de personas del panel "cumplieron su objetivo
+// individual" (misma cubeta DET_SEL); sin lista, es una celda normal
+function celdaCumpl(n, lista, extra){
+  if (!lista || !lista.length) return celdaNum(n, extra);
+  const id = "cump" + (DET_CUMPL_N++);
+  DET_CUMPL[id] = lista;
+  return '<td class="' + ((extra || "") + " clicable").trim() + '" data-det="' + id + '">' + num(n) + "</td>";
+}
+
+// panel de detalle: nombre, puesto, ranking, instalaciones del periodo y sus
+// oportunidades, para el grupo/celda que se haya tocado en "cumplieron su objetivo"
+function detalleCumplimientoHtml(){
+  if (!DET_SEL || !DET_CUMPL[DET_SEL]) return "";
+  const lista = DET_CUMPL[DET_SEL].slice().sort(function(a, b){ return b.instalaciones - a.instalaciones || a.nombre.localeCompare(b.nombre, "es"); });
+  return '<section class="panel detalle"><h2>Detalle · cumplimiento individual <span class="sub">' + lista.length +
+    " persona(s) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Nombre</th><th>Puesto</th><th>Ranking</th><th>Instalaciones</th><th>N° de oportunidad</th>" +
+    "</tr></thead><tbody>" +
+    lista.map(function(x){
+      return "<tr><td>" + (x.nombre || "—") + "</td><td>" + (x.puesto || "—") + "</td><td>" + (x.ranking || "—") + "</td>" +
+        celdaNum(x.instalaciones, "tot") +
+        '<td class="envuelve">' + (x.oportunidades || "—") + "</td></tr>";
     }).join("") + "</tbody></table></div></section>";
 }
 
@@ -4879,6 +4951,8 @@ function pintar(){
   if (!FILAS.length){ el("salida").innerHTML = ""; return; }
   DET_RECH = {};
   DET_RECH_N = 0;
+  DET_CUMPL = {};
+  DET_CUMPL_N = 0;
 
   const sem = el("semana").value;
   const semAnt = claveAnterior(sem);
@@ -5672,6 +5746,14 @@ el("accPin").addEventListener("keydown", function(ev){ if (ev.key === "Enter") i
 el("pinNuevo").addEventListener("input", pintarReglas);
 el("pinNuevo").addEventListener("keydown", function(ev){ if (ev.key === "Enter") el("pinConfirma").focus(); });
 el("pinConfirma").addEventListener("keydown", function(ev){ if (ev.key === "Enter") guardarPin(); });
+
+// PWA: para que el navegador la ofrezca como "instalar app". No cachea datos, solo el
+// cascarón de la página (ver sw.js) — la información siempre se pide en vivo al Apps Script.
+if ("serviceWorker" in navigator){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  });
+}
 
 </script>
 </body>
