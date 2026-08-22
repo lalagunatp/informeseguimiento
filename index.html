@@ -189,6 +189,11 @@
     position:absolute; z-index:20; top:calc(100% + 4px); left:0; min-width:100%; max-width:320px;
     background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 8px 22px rgba(16,26,38,.16);
   }
+  .multi-extra{
+    display:flex; gap:8px; align-items:flex-start; padding:8px 10px; border-bottom:1px solid var(--line2);
+    font-size:12px; color:var(--ink); cursor:pointer; text-transform:none; letter-spacing:0;
+  }
+  .multi-extra input{margin:2px 0 0; flex:none}
   .multi-acc{display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line2)}
   .multi-acc button{padding:4px 9px; font-size:12px; background:#fff; color:var(--azul); border:1px solid var(--line)}
   .multi-busca{padding:8px 8px 4px; border-bottom:1px solid var(--line2)}
@@ -243,7 +248,7 @@
     <button type="button" data-vista="semana" class="on">Semanal</button>
     <button type="button" data-vista="mes">Mensual</button>
     <button type="button" data-vista="dias30">Últimos 30 días</button>
-    <button type="button" data-vista="vend0">Vendedores en 0</button>
+    <button type="button" data-vista="vend0">Vend X Eventos</button>
     <button type="button" data-vista="os">Seguimiento OS</button>
     <button type="button" data-vista="dupli">Cuentas duplicadas</button>
     <button type="button" data-vista="equipos">Equipos</button>
@@ -287,6 +292,9 @@
       </label>
       <label class="campo">Coach
         <div id="fCoach"></div>
+      </label>
+      <label class="campo" id="cajaVendedor">Vendedor
+        <div id="fVendedor"></div>
       </label>
       <label class="campo">Canal
         <div id="fCanal"></div>
@@ -1101,6 +1109,7 @@ function llenarSelectores(){
   llenarMulti("director");
   llenarMulti("lider");
   llenarMulti("coach");
+  llenarMulti("vendedor");
   llenarMulti("canal");
   llenarMulti("plan");
   llenarMulti("mes");
@@ -1114,6 +1123,7 @@ const MULTI = {
   director: { contId:"fDirector", sel:new Set(), valores:[] },
   lider:    { contId:"fLider",    sel:new Set(), valores:[] },
   coach:    { contId:"fCoach",    sel:new Set(), valores:[] },
+  vendedor: { contId:"fVendedor", sel:new Set(), valores:[], soloPlantilla:true },
   canal:    { contId:"fCanal",    sel:new Set(), valores:[] },
   plan:     { contId:"fPlan",     sel:new Set(), valores:[] },
   mes:      { contId:"fMes",      sel:new Set(), valores:[], manual:true },
@@ -1129,6 +1139,7 @@ function armarMulti(campo){
   c.innerHTML =
     '<button type="button" class="multi-btn"><span class="etq">Todos</span><span class="flecha">▾</span></button>' +
     '<div class="multi-panel oculto">' +
+      (campo === "vendedor" ? '<label class="multi-extra"><input type="checkbox"> Incluir los que no están en plantilla pero sí generaron oportunidad</label>' : "") +
       '<div class="multi-acc"><button type="button" data-acc="todos">Todos</button>' +
       '<button type="button" data-acc="solo">Quitar todos</button></div>' +
       '<div class="multi-busca"><input type="text" placeholder="Buscar\u2026"></div>' +
@@ -1141,6 +1152,16 @@ function armarMulti(campo){
   m.busca = c.querySelector(".multi-busca input");
   m.busca.addEventListener("input", function(){ filtrarMulti(campo); });
   m.busca.addEventListener("click", function(ev){ ev.stopPropagation(); });
+  if (campo === "vendedor"){
+    m.chkExtra = c.querySelector(".multi-extra input");
+    m.chkExtra.checked = !m.soloPlantilla;
+    m.chkExtra.addEventListener("click", function(ev){ ev.stopPropagation(); });
+    m.chkExtra.addEventListener("change", function(){
+      m.soloPlantilla = !m.chkExtra.checked;
+      llenarMulti("vendedor");
+      pintar();
+    });
+  }
 
   m.btn.addEventListener("click", function(ev){
     ev.preventDefault(); ev.stopPropagation();
@@ -1171,7 +1192,24 @@ function armarMulti(campo){
 function llenarMulti(campo){
   armarMulti(campo);
   const m = MULTI[campo];
-  if (m.manual){
+  if (campo === "vendedor"){
+    const nombresPlantilla = Array.from(new Set(PLANTILLA.map(function(p){ return p.nombre; }).filter(Boolean)));
+    let valores = nombresPlantilla.slice();
+    if (!m.soloPlantilla){
+      const yaHay = {};
+      nombresPlantilla.forEach(function(n){ yaHay[normaliza(n)] = true; });
+      const vistos = {};
+      FILAS.forEach(function(f){
+        const n = nombreVendedorDeFila(f);
+        if (!n) return;
+        const k = normaliza(n);
+        if (yaHay[k] || vistos[k]) return;
+        vistos[k] = true;
+        valores.push(n);
+      });
+    }
+    m.valores = valores.sort(function(a, b){ return a.localeCompare(b, "es"); });
+  } else if (m.manual){
     if (campo === "diasem") m.valores = DIAS_LARGOS.slice();
     else if (campo === "diames") m.valores = Array.from({length:31}, function(_, i){ return String(i + 1); });
     else m.valores = MESES.map(function(x){ return x.etq; });
@@ -1251,6 +1289,7 @@ function cumple(campo, f){
   const m = MULTI[campo];
   if (!m || m.sel.size === 0) return true;
   if (m.sel.has("\u0000")) return false;
+  if (campo === "vendedor") return m.sel.has(nombreVendedorDeFila(f));
   return m.sel.has(f[campo]);
 }
 
@@ -1295,13 +1334,13 @@ function esInstalada(f){
 
 function pasaFiltros(f){
   return enAlcance(f) && cumple("director", f) && cumple("lider", f) && cumple("coach", f) &&
-         cumple("canal", f) && cumple("plan", f);
+         cumple("vendedor", f) && cumple("canal", f) && cumple("plan", f);
 }
 
 // filtro por día: en la vista semanal por día de la semana, en la mensual por número de día
 function pasaDia(fecha){
   if (!fecha) return true;
-  // Vendedores en 0, Seguimiento OS, Cuentas duplicadas, Equipos y Ajustes no muestran
+  // Vend X Eventos, Seguimiento OS, Cuentas duplicadas, Equipos y Ajustes no muestran
   // ningún selector de día en pantalla: si se dejara caer al "else" de abajo, un filtro
   // de día de la semana elegido antes en Semanal se quedaría pegado en memoria (no se
   // resetea al cambiar de pestaña) y recortaría en silencio los datos de esas vistas
@@ -1858,6 +1897,7 @@ function matrizHtml(sem, fn, etqPeriodo){
 /* ---------- plantilla, rankings y metas por coach ---------- */
 
 let PLANTILLA = [];      // {numero, nombre, puesto, coach, lider, vacante, fechaAlta}
+let PUESTO_POR_NOMBRE = new Map();   // nombre normalizado -> puesto (incluye coaches y líderes, no solo de venta)
 let PLANT_CRUDO = { enc:[], filas:[] };   // renglones tal cual, para buscar el código del técnico
 let MAPA_TEC_PERSONA = new Map();         // código de técnico -> {nombre, lider, coach}
 let COACHES_TEC = new Set();              // coaches de venta técnico, para el alcance del canal
@@ -2049,6 +2089,7 @@ async function cargarEquipos(){
   CARGANDO_EQ = true;
   const id = el("hojaId").value.trim();
   PLANTILLA = [];
+  PUESTO_POR_NOMBRE = new Map();
   RANKINGS = new Map();
   RANK_NOMBRE = new Map();
   INFO_EQ = { estado:"cargando", plantilla:0, ranking:0, entrena:0, mesRanking:"", mesesInst:[], encabezados:{} };
@@ -2118,6 +2159,10 @@ async function cargarEquipos(){
         vacante: /VACANTE/i.test(normaliza(nombre)) || /VACANTE/i.test(normaliza(v[cPue] || ""))
       });
     }
+    // puesto de TODOS (incluye coaches y líderes, que en PLANTILLA solo quedan como
+    // "coach"/"lider" de otros, no como renglón propio): para saber si un líder es
+    // Líder de Ventas o depende de otro puesto (ej. Gerente de Operaciones)
+    crudos.forEach(function(p){ if (p.nombre) PUESTO_POR_NOMBRE.set(normaliza(p.nombre), p.puesto || ""); });
 
     // el jefe de cada quien es su coach; el jefe del coach es el líder
     const porNombre = {};
@@ -2157,6 +2202,7 @@ async function cargarEquipos(){
     marcarFuente("plantilla", e.message);
   }
   CARGANDO_EQ = false;
+  llenarMulti("vendedor");   // la plantilla ya está lista: refresca la lista por default
   pintar();
 }
 
@@ -2671,6 +2717,15 @@ function vendedorDeFila(f){
   }
   return f.vendedor;
 }
+// igual que vendedorDeFila, pero solo el nombre (sin el código técnico al frente): lo
+// que usa el filtro "Vendedor", para comparar contra los nombres de PLANTILLA
+function nombreVendedorDeFila(f){
+  if (f.codTec){
+    const per = MAPA_TEC_PERSONA.get(f.codTec);
+    if (per && per.nombre) return per.nombre;
+  }
+  return f.vendedor;
+}
 function coachDeFila(f){
   if (f.codTec){
     const per = MAPA_TEC_PERSONA.get(f.codTec);
@@ -2846,6 +2901,13 @@ function cuentasDuplicadasHtml(){
     filas + "</tbody></table></div></section>";
 }
 
+// true si el puesto registrado en PLANTILLA para ese nombre es "Líder Ventas"/"Líder de
+// Ventas" (deja fuera otros puestos de jefatura, ej. Gerente de Operaciones)
+function esLiderDeVentas(nombre){
+  const p = normaliza(PUESTO_POR_NOMBRE.get(normaliza(nombre)) || "");
+  return p.indexOf("LIDER") >= 0 && p.indexOf("VENTA") >= 0;
+}
+
 function equiposHtml(){
   if (INFO_EQ.estado === "cargando" || CARGANDO_EQ){
     return '<section class="panel"><h2>Equipos por coach</h2><div class="aviso">Leyendo plantilla y rankings\u2026</div></section>';
@@ -2877,6 +2939,7 @@ function equiposHtml(){
   const lideres = {};
   PLANTILLA.forEach(function(p){
     if (!personaEnAlcance(p)) return;
+    if (!esLiderDeVentas(p.lider)) return;
     if (filtroLider && !filtroLider.has(p.lider)) return;
     if (filtroCoachEq && !filtroCoachEq.has(p.coach)) return;
     const metal = metalDe(p);
@@ -3499,11 +3562,11 @@ function diagTecnico(clavePeriodo, fn){
   }
 
   // cruce parcialmente roto: algunos códigos del periodo no están en PLANTILLA,
-  // esos renglones no se suman al vendedor correcto en "Vendedores en 0"
+  // esos renglones no se suman al vendedor correcto en "Vend X Eventos"
   return '<section class="panel"><div class="aviso error">' +
     "<b>Venta técnico cruza solo parcialmente (" + sinCruce + " de " + conCodigo +
     " renglones con código no aparecen en la columna D de PLANTILLA).</b><br>" +
-    "Esos renglones no se suman al total del vendedor en “Vendedores en 0”." +
+    "Esos renglones no se suman al total del vendedor en “Vend X Eventos”." +
     (ejSinCruce.length ? "<br>Códigos que no cruzan: " + ejSinCruce.join(" · ") : "") +
     "</div></section>";
 }
@@ -3528,7 +3591,7 @@ function grupoDeLaPersona(p, modoGrupo){
 // cruce compartido: instalaciones reales de la semana ya seleccionada arriba (mismo
 // selector "Semana" del resto de la app), por número/nombre de vendedor (venta técnico,
 // por código) contra la plantilla (ya filtrada por "gente", igual que el resto de
-// Vendedores en 0), agrupadas según "Agrupar por". Lo que no cruza con nadie de la
+// Vend X Eventos), agrupadas según "Agrupar por". Lo que no cruza con nadie de la
 // plantilla no se pierde: se cuenta aparte en "fueraHc"
 function datosInstalacionesSemana(gente, modoGrupo){
   const sem = el("semana").value;
@@ -3681,10 +3744,10 @@ function cumplimientoRankingHtml(gente, modoGrupo, rotulo){
 
 function vendedores0Html(){
   if (INFO_EQ.estado === "cargando" || CARGANDO_EQ){
-    return '<section class="panel"><h2>Vendedores en 0</h2><div class="aviso">Leyendo la plantilla\u2026</div></section>';
+    return '<section class="panel"><h2>Vend X Eventos</h2><div class="aviso">Leyendo la plantilla\u2026</div></section>';
   }
   if (!PLANTILLA.length){
-    return '<section class="panel"><h2>Vendedores en 0</h2>' +
+    return '<section class="panel"><h2>Vend X Eventos</h2>' +
       '<div class="aviso error">No se pudo leer la plantilla (' + INFO_EQ.estado +
       '). Revisa el gid en Ajustes de la fuente.</div></section>';
   }
@@ -3694,7 +3757,7 @@ function vendedores0Html(){
   if (modo === "mes"){
     const meses = mesesElegidos();
     if (!meses.length){
-      return '<section class="panel"><h2>Vendedores en 0</h2>' +
+      return '<section class="panel"><h2>Vend X Eventos</h2>' +
         '<div class="aviso">Elige al menos un mes en \u201cMeses del hist\u00f3rico\u201d.</div></section>';
     }
     clavePeriodo = meses[meses.length - 1];
@@ -3734,7 +3797,7 @@ function vendedores0Html(){
     return true;
   });
   if (!gente.length){
-    return '<section class="panel"><h2>Vendedores en 0</h2>' +
+    return '<section class="panel"><h2>Vend X Eventos</h2>' +
       '<div class="aviso">La plantilla no trajo vendedores con ese filtro.</div></section>';
   }
 
@@ -3909,7 +3972,7 @@ function vendedores0Html(){
     if (!pasaFiltros(f)) return;
     if (f.fOp && fn(f.fOp) === clavePeriodo) eventos++;
   });
-  const cab = '<section class="panel"><h2>Vendedores en 0 <span class="sub">' + etqPeriodo +
+  const cab = '<section class="panel"><h2>Vend X Eventos <span class="sub">' + etqPeriodo +
     " \u00b7 " + gente.length + " personas en plantilla \u00b7 " + eventos +
     " oportunidades en el periodo con los filtros puestos \u00b7 cada columna es cu\u00e1ntos llevan esa cantidad</span></h2></section>";
 
@@ -4933,7 +4996,7 @@ function pintar(){
   const cab = VISTA === "os"
     ? "Seguimiento de OS"
     : VISTA === "vend0"
-    ? "Vendedores en 0"
+    ? "Vend X Eventos"
     : VISTA === "dias30"
     ? "Últimos 30 días"
     : VISTA === "mes"
@@ -5147,7 +5210,7 @@ function descargarCsv(){
   });
 
   if (!filas.length) return;   // nada que exportar
-  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vendedores_en_0", os:"seguimiento_os", dupli:"cuentas_duplicadas", equipos:"equipos" };
+  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", equipos:"equipos" };
   const csv = "\ufeff" + filas.map(function(f){
     return f.map(function(x){ return '"' + String(x === undefined || x === null ? "" : x).replace(/"/g, '""') + '"'; }).join(",");
   }).join("\n");
@@ -5218,6 +5281,7 @@ function ajustaCajasDia(){
   el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || soloOS) ? "none" : "";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
+  el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0") ? "" : "none";
 
   // atención a clientes: en Cuentas duplicadas solo busca por cuenta/oportunidad,
   // sin el panel de periodo (ese es para operaciones/supervisión)
@@ -5236,7 +5300,7 @@ function ajustaCajasDia(){
 
   // atención a clientes: sin filtros de plan ni de histórico
   if (soloOS){
-    ["cajaPlan", "cajaMeses", "cajaPlanes", "cajaMetrica", "cajaDiaSem", "cajaDiaMes"].forEach(function(id){
+    ["cajaPlan", "cajaMeses", "cajaPlanes", "cajaMetrica", "cajaDiaSem", "cajaDiaMes", "cajaVendedor"].forEach(function(id){
       const e2 = el(id);
       if (e2) e2.style.display = "none";
     });
