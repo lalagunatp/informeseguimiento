@@ -1183,6 +1183,7 @@ function armarMulti(campo){
       if (campo === "mes") MES_TOCADO = true;
       pintarMulti(campo);
       cascada(campo);
+      if (campo === "mes" && !MULTI.vendedor.soloPlantilla) llenarMulti("vendedor");
       pintar();
     });
   });
@@ -1200,6 +1201,7 @@ function llenarMulti(campo){
       nombresPlantilla.forEach(function(n){ yaHay[normaliza(n)] = true; });
       const vistos = {};
       FILAS.forEach(function(f){
+        if (!enAlcance(f) || !filaEnPeriodoVigente(f)) return;
         const n = nombreVendedorDeFila(f);
         if (!n) return;
         const k = normaliza(n);
@@ -1236,6 +1238,7 @@ function llenarMulti(campo){
       if (campo === "mes") MES_TOCADO = true;
       pintarMulti(campo);
       cascada(campo);
+      if (campo === "mes" && !MULTI.vendedor.soloPlantilla) llenarMulti("vendedor");
       pintar();
     });
     const txt = document.createElement("span");
@@ -3138,6 +3141,36 @@ function rango30(){
   }
   const ini = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate() - 29);
   return { ini: ini, fin: fin };
+}
+
+// el "periodo que se está viendo" en este momento, según la vista activa (para el
+// checkbox "incluir los que no están en plantilla" del filtro Vendedor)
+function periodoVigente(){
+  if (VISTA === "mes"){
+    const meses = mesesElegidos();
+    return meses.length ? { tipo:"meses", claves:meses } : null;
+  }
+  if (VISTA === "vend0" && el("periodo0").value === "mes"){
+    const meses = mesesElegidos();
+    return meses.length ? { tipo:"meses", claves:[meses[meses.length - 1]] } : null;
+  }
+  if (VISTA === "dias30") return { tipo:"rango", rango:rango30() };
+  const sem = el("semana").value;
+  return sem ? { tipo:"semana", clave:sem } : null;
+}
+
+// true si el renglón generó oportunidad, venta validada o instalación dentro del
+// periodo vigente (el mismo criterio que usa cada vista para sus propios totales)
+function filaEnPeriodoVigente(f){
+  const p = periodoVigente();
+  if (!p) return false;
+  function cae(d){
+    if (!d) return false;
+    if (p.tipo === "semana") return isoSemana(d) === p.clave;
+    if (p.tipo === "meses") return p.claves.indexOf(claveMes(d)) >= 0;
+    return d >= p.rango.ini && d <= p.rango.fin;
+  }
+  return cae(f.fOp) || (esValidada(f) && cae(f.fVal)) || (esInstalada(f) && cae(f.fIns));
 }
 
 function agrega30(){
@@ -5223,8 +5256,15 @@ function descargarCsv(){
 
 /* ---------- arranque ---------- */
 
-["semana","agrupar","reglaVal","reglaIns","planVista","matrizMetrica","periodo0"].forEach(function(id){
+["agrupar","reglaVal","reglaIns","planVista","matrizMetrica"].forEach(function(id){
   el(id).addEventListener("change", pintar);
+});
+// estos dos, además, pueden cambiar el "periodo vigente" (checkbox del filtro Vendedor)
+["semana","periodo0"].forEach(function(id){
+  el(id).addEventListener("change", function(){
+    if (!MULTI.vendedor.soloPlantilla) llenarMulti("vendedor");
+    pintar();
+  });
 });
 function abrirCajon(){
   el("cajon").classList.remove("oculto");
@@ -5332,6 +5372,7 @@ Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function
     VISTA = b.getAttribute("data-vista");
     ajustaAgrupar();
     ajustaCajasDia();
+    if (!MULTI.vendedor.soloPlantilla) llenarMulti("vendedor");
     Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(x){
       x.classList.toggle("on", x === b);
     });
