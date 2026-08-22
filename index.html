@@ -3515,31 +3515,43 @@ let DET_MTZ = {};       // clave -> lista de renglones de la base (matriz por pl
 let DET_RECH = {};      // clave -> lista de oportunidades rechazadas (paneles Oportunidad)
 let DET_RECH_N = 0;
 
+// para las dos secciones de meta por ranking: la fila que representa a cada persona
+// cambia según "Agrupar por" (mismo selector que ya usan los 3 paneles de arriba), pero
+// la meta individual de cada quien siempre sale de su propio ranking
+function grupoDeLaPersona(p, modoGrupo){
+  if (modoGrupo === "coach") return p.coach || "SIN COACH";
+  if (modoGrupo === "canal") return canalDePersona(p) || "SIN CANAL";
+  if (modoGrupo === "ranking") return metalDe(p);
+  return p.lider || "SIN LÍDER";
+}
+
 // cruce compartido: instalaciones reales de la semana ya seleccionada arriba (mismo
 // selector "Semana" del resto de la app), por número/nombre de vendedor (venta técnico,
-// por código) contra la plantilla, tanto por ranking como por persona individual. Lo
-// que no cruza con nadie de la plantilla no se pierde: se cuenta aparte en "fueraHc",
-// igual que en el resto de Vendedores en 0
-function datosInstalacionesSemana(filtroLider, filtroCoach){
+// por código) contra la plantilla (ya filtrada por "gente", igual que el resto de
+// Vendedores en 0), agrupadas según "Agrupar por". Lo que no cruza con nadie de la
+// plantilla no se pierde: se cuenta aparte en "fueraHc"
+function datosInstalacionesSemana(gente, modoGrupo){
   const sem = el("semana").value;
   if (!sem) return null;
 
   const porNum = {}, porNom = {};
-  const headcount = {};
-  const metalDePersona = {};
-  PLANTILLA.forEach(function(p){
-    if (!personaEnAlcance(p)) return;
-    if (filtroLider && !filtroLider.has(p.lider)) return;
-    if (filtroCoach && !filtroCoach.has(p.coach)) return;
+  const headcount = {};       // grupo -> n personas
+  const metaPorGrupo = {};    // grupo -> suma de la meta individual (por ranking) de su gente
+  const grupoDePersona = {};  // id -> grupo (según "Agrupar por")
+  const metalDePersona = {};  // id -> ranking (siempre, para la meta individual)
+  gente.forEach(function(p){
     const metal = metalDe(p);
+    const grupo = grupoDeLaPersona(p, modoGrupo);
     const id = p.numero ? ("N:" + clave(p.numero)) : ("X:" + normaliza(p.nombre));
     metalDePersona[id] = metal;
-    headcount[metal] = (headcount[metal] || 0) + 1;
+    grupoDePersona[id] = grupo;
+    headcount[grupo] = (headcount[grupo] || 0) + 1;
+    metaPorGrupo[grupo] = (metaPorGrupo[grupo] || 0) + metaDe(metal);
     if (p.numero) porNum[clave(p.numero)] = id;
     if (p.nombre) porNom[normaliza(p.nombre)] = id;
   });
 
-  const insPorMetal = {}, insPorPersona = {};
+  const insPorGrupo = {}, insPorPersona = {};
   let fueraHc = 0, totalIns = 0;
   FILAS.forEach(function(f){
     if (!pasaFiltros(f)) return;
@@ -3556,8 +3568,8 @@ function datosInstalacionesSemana(filtroLider, filtroCoach){
       id = (f.numvendedor && porNum[clave(f.numvendedor)]) || (f.vendedor && porNom[normaliza(f.vendedor)]);
     }
     if (id){
-      const metal = metalDePersona[id];
-      insPorMetal[metal] = (insPorMetal[metal] || 0) + 1;
+      const grupo = grupoDePersona[id];
+      insPorGrupo[grupo] = (insPorGrupo[grupo] || 0) + 1;
       insPorPersona[id] = (insPorPersona[id] || 0) + 1;
     } else {
       fueraHc++;
@@ -3565,32 +3577,38 @@ function datosInstalacionesSemana(filtroLider, filtroCoach){
   });
 
   return {
-    sem: sem, headcount: headcount, metalDePersona: metalDePersona,
-    insPorMetal: insPorMetal, insPorPersona: insPorPersona, fueraHc: fueraHc, totalIns: totalIns
+    sem: sem, headcount: headcount, grupoDePersona: grupoDePersona, metalDePersona: metalDePersona,
+    metaPorGrupo: metaPorGrupo, insPorGrupo: insPorGrupo, insPorPersona: insPorPersona,
+    fueraHc: fueraHc, totalIns: totalIns
   };
 }
 
-// alcance del objetivo de instalaciones por ranking (instalaciones reales del equipo vs.
-// la meta agregada de ese ranking)
-function alcanceRankingHtml(filtroLider, filtroCoach){
-  const d = datosInstalacionesSemana(filtroLider, filtroCoach);
+function ordenGruposRanking(d, modoGrupo){
+  const grupos = Object.keys(d.headcount);
+  if (modoGrupo === "ranking") return ORDEN_METAL.filter(function(m){ return d.headcount[m]; });
+  return grupos.sort(function(a, b){ return (d.headcount[b] || 0) - (d.headcount[a] || 0) || a.localeCompare(b, "es"); });
+}
+
+// alcance del objetivo de instalaciones (instalaciones reales vs. la meta agregada, por
+// ranking o por lo que diga "Agrupar por")
+function alcanceRankingHtml(gente, modoGrupo, rotulo){
+  const d = datosInstalacionesSemana(gente, modoGrupo);
   if (!d) return "";
 
-  // con filtro de líder/coach activo no se puede saber si lo que no cruza es de ese
-  // líder/coach o de otro: se omite en vez de arriesgar un número engañoso
-  const fueraHc = (filtroLider || filtroCoach) ? 0 : d.fueraHc;
+  const grupos = Object.keys(d.headcount);
+  const orden = ordenGruposRanking(d, modoGrupo);
+  const filasOrden = orden.concat(d.fueraHc ? ["Fuera de HC"] : []);
 
-  const filasOrden = ORDEN_METAL.concat(fueraHc ? ["Fuera de HC"] : []);
   let filas = "";
-  filasOrden.forEach(function(m){
-    const esFuera = m === "Fuera de HC";
-    const n = esFuera ? fueraHc : (d.insPorMetal[m] || 0);
-    const personas = esFuera ? null : (d.headcount[m] || 0);
-    const meta = esFuera ? null : Math.round(metaDe(m) * (d.headcount[m] || 0));
+  filasOrden.forEach(function(g){
+    const esFuera = g === "Fuera de HC";
+    const n = esFuera ? d.fueraHc : (d.insPorGrupo[g] || 0);
+    const personas = esFuera ? null : (d.headcount[g] || 0);
+    const meta = esFuera ? null : Math.round(d.metaPorGrupo[g] || 0);
     const avance = meta ? n / meta : null;
     const dist = d.totalIns ? n / d.totalIns : null;
     const clAv = avance === null ? "" : (avance >= 1 ? " v" : (avance >= 0.9 ? " a" : " r"));
-    filas += "<tr><td>" + m + "</td>" +
+    filas += "<tr><td>" + g + "</td>" +
       (personas === null ? "<td>—</td>" : celdaNum(personas)) +
       (meta === null ? '<td class="sem">—</td>' : celdaNum(meta, "sem")) +
       celdaNum(n, "tot") +
@@ -3598,60 +3616,66 @@ function alcanceRankingHtml(filtroLider, filtroCoach){
       "<td>" + (d.totalIns ? pct(dist) : "—") + "</td></tr>";
   });
 
-  const totalPersonas = ORDEN_METAL.reduce(function(s, m){ return s + (d.headcount[m] || 0); }, 0);
-  const totalMeta = ORDEN_METAL.reduce(function(s, m){ return s + Math.round(metaDe(m) * (d.headcount[m] || 0)); }, 0);
-  const totalRankIns = ORDEN_METAL.reduce(function(s, m){ return s + (d.insPorMetal[m] || 0); }, 0);
-  const avanceTotal = totalMeta ? totalRankIns / totalMeta : null;
+  const totalPersonas = grupos.reduce(function(s, g){ return s + (d.headcount[g] || 0); }, 0);
+  const totalMeta = grupos.reduce(function(s, g){ return s + Math.round(d.metaPorGrupo[g] || 0); }, 0);
+  const totalGrupoIns = grupos.reduce(function(s, g){ return s + (d.insPorGrupo[g] || 0); }, 0);
+  const avanceTotal = totalMeta ? totalGrupoIns / totalMeta : null;
   const clAvT = avanceTotal === null ? "" : (avanceTotal >= 1 ? " v" : (avanceTotal >= 0.9 ? " a" : " r"));
   filas += '<tr class="total"><td>Total</td>' +
     celdaNum(totalPersonas) + celdaNum(totalMeta, "sem") + celdaNum(d.totalIns, "tot") +
     '<td class="dif' + clAvT + '">' + (totalMeta ? pct(avanceTotal) : "—") + "</td>" +
     "<td>" + (d.totalIns ? "100%" : "—") + "</td></tr>";
 
-  return '<section class="panel"><h2>Alcance de objetivo de instalaciones por ranking <span class="sub">semana ' +
-    etiquetaSemana(d.sem) + " · meta semanal por metal: " + el("metasRanking").value +
-    (fueraHc ? " · Fuera de HC: instalaciones que no cruzan con nadie de la plantilla" : "") + "</span></h2>" +
-    '<div class="scroll"><table class="compacta"><thead><tr><th>Ranking</th><th>Personas</th>' +
+  return '<section class="panel"><h2>Alcance de objetivo de instalaciones por ' + rotulo.toLowerCase() + ' <span class="sub">semana ' +
+    etiquetaSemana(d.sem) + " · la meta de cada " + rotulo.toLowerCase() + " es la suma de la meta individual (por ranking) de su gente · meta por metal: " + el("metasRanking").value +
+    (d.fueraHc ? " · Fuera de HC: instalaciones que no cruzan con nadie de la plantilla" : "") + "</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>' + rotulo + "</th><th>Personas</th>" +
     '<th class="sem">Meta semana</th><th class="tot">Instalaciones</th><th>% Avance</th><th>% Distribución</th></tr></thead><tbody>' +
     filas + "</tbody></table></div></section>";
 }
 
 // cuántos vendedores (personas, no instalaciones) cumplieron SU PROPIA meta semanal
-// individual, de acuerdo a su ranking, y qué % de la gente de ese ranking representa
-function cumplimientoRankingHtml(filtroLider, filtroCoach){
-  const d = datosInstalacionesSemana(filtroLider, filtroCoach);
+// individual (según su ranking), agrupados por ranking o por lo que diga "Agrupar por"
+function cumplimientoRankingHtml(gente, modoGrupo, rotulo){
+  const d = datosInstalacionesSemana(gente, modoGrupo);
   if (!d) return "";
 
-  const cumplieronPorMetal = {};
-  Object.keys(d.metalDePersona).forEach(function(id){
-    const m = d.metalDePersona[id];
-    const meta = metaDe(m);
-    if (!meta) return;   // sin meta configurada para ese ranking: no se puede medir
-    if ((d.insPorPersona[id] || 0) >= meta) cumplieronPorMetal[m] = (cumplieronPorMetal[m] || 0) + 1;
+  const grupos = Object.keys(d.headcount);
+  const orden = ordenGruposRanking(d, modoGrupo);
+
+  const cumplieronPorGrupo = {};
+  const medibles = {};   // headcount del grupo cuyo ranking sí tiene meta configurada
+  Object.keys(d.grupoDePersona).forEach(function(id){
+    const g = d.grupoDePersona[id];
+    const meta = metaDe(d.metalDePersona[id]);
+    if (!meta) return;
+    medibles[g] = (medibles[g] || 0) + 1;
+    if ((d.insPorPersona[id] || 0) >= meta) cumplieronPorGrupo[g] = (cumplieronPorGrupo[g] || 0) + 1;
   });
 
   let filas = "";
-  ORDEN_METAL.forEach(function(m){
-    const meta = metaDe(m);
-    const personas = d.headcount[m] || 0;
-    const cumplieron = meta ? (cumplieronPorMetal[m] || 0) : 0;
-    const pctAlcance = (meta && personas) ? cumplieron / personas : null;
+  orden.forEach(function(g){
+    const personas = d.headcount[g] || 0;
+    const med = medibles[g] || 0;
+    const cumplieron = cumplieronPorGrupo[g] || 0;
+    const pctAlcance = med ? cumplieron / med : null;
     const cl = pctAlcance === null ? "" : (pctAlcance >= 1 ? " v" : (pctAlcance >= 0.9 ? " a" : " r"));
-    filas += "<tr><td>" + m + "</td>" + celdaNum(personas) +
-      (meta ? celdaNum(cumplieron, "tot") : '<td class="tot">—</td>') +
+    filas += "<tr><td>" + g + "</td>" + celdaNum(personas) +
+      (med ? celdaNum(cumplieron, "tot") : '<td class="tot">—</td>') +
       '<td class="dif' + cl + '">' + (pctAlcance === null ? "—" : pct(pctAlcance)) + "</td></tr>";
   });
 
-  const totalPersonas = ORDEN_METAL.reduce(function(s, m){ return s + (metaDe(m) ? (d.headcount[m] || 0) : 0); }, 0);
-  const totalCumplieron = ORDEN_METAL.reduce(function(s, m){ return s + (metaDe(m) ? (cumplieronPorMetal[m] || 0) : 0); }, 0);
-  const pctTotal = totalPersonas ? totalCumplieron / totalPersonas : null;
+  const totalPersonas = grupos.reduce(function(s, g){ return s + (d.headcount[g] || 0); }, 0);
+  const totalMedibles = grupos.reduce(function(s, g){ return s + (medibles[g] || 0); }, 0);
+  const totalCumplieron = grupos.reduce(function(s, g){ return s + (cumplieronPorGrupo[g] || 0); }, 0);
+  const pctTotal = totalMedibles ? totalCumplieron / totalMedibles : null;
   const clT = pctTotal === null ? "" : (pctTotal >= 1 ? " v" : (pctTotal >= 0.9 ? " a" : " r"));
   filas += '<tr class="total"><td>Total</td>' + celdaNum(totalPersonas) + celdaNum(totalCumplieron, "tot") +
-    '<td class="dif' + clT + '">' + (totalPersonas ? pct(pctTotal) : "—") + "</td></tr>";
+    '<td class="dif' + clT + '">' + (totalMedibles ? pct(pctTotal) : "—") + "</td></tr>";
 
   return '<section class="panel"><h2>Vendedores que cumplieron su objetivo individual <span class="sub">semana ' +
-    etiquetaSemana(d.sem) + " · cada vendedor contra la meta semanal de su propio ranking · rankings sin meta configurada salen en —</span></h2>" +
-    '<div class="scroll"><table class="compacta"><thead><tr><th>Ranking</th><th>Personas</th>' +
+    etiquetaSemana(d.sem) + " · por " + rotulo.toLowerCase() + " · cada vendedor contra la meta semanal de su propio ranking · % Alcance es sobre la gente cuyo ranking sí tiene meta configurada</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>' + rotulo + "</th><th>Personas</th>" +
     '<th class="tot">Cumplieron objetivo</th><th>% Alcance</th></tr></thead><tbody>' + filas + "</tbody></table></div></section>";
 }
 
@@ -3915,7 +3939,7 @@ function vendedores0Html(){
   }
 
   return cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas + detalle +
-    alcanceRankingHtml(filtroLider, filtroCoach) + cumplimientoRankingHtml(filtroLider, filtroCoach);
+    alcanceRankingHtml(gente, modoGrupo, rotulo) + cumplimientoRankingHtml(gente, modoGrupo, rotulo);
 }
 
 /* ---------- seguimiento de OS ---------- */
