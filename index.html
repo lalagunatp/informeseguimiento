@@ -3663,14 +3663,14 @@ function datosInstalacionesSemana(gente, modoGrupo){
     const id = p.numero ? ("N:" + clave(p.numero)) : ("X:" + normaliza(p.nombre));
     metalDePersona[id] = metal;
     grupoDePersona[id] = grupo;
-    personaInfo[id] = { nombre: p.nombre, puesto: p.puesto };
+    personaInfo[id] = { nombre: p.nombre, canal: canalDePersona(p), coach: p.coach, lider: p.lider };
     headcount[grupo] = (headcount[grupo] || 0) + 1;
     metaPorGrupo[grupo] = (metaPorGrupo[grupo] || 0) + metaDe(metal);
     if (p.numero) porNum[clave(p.numero)] = id;
     if (p.nombre) porNom[normaliza(p.nombre)] = id;
   });
 
-  const insPorGrupo = {}, insPorPersona = {}, oporPorPersona = {};
+  const insPorGrupo = {}, insPorPersona = {}, oporPorPersona = {}, planPorPersona = {};
   let fueraHc = 0, totalIns = 0;
   FILAS.forEach(function(f){
     if (!pasaFiltros(f)) return;
@@ -3695,6 +3695,10 @@ function datosInstalacionesSemana(gente, modoGrupo){
         const op = String(f.oportunidad);
         if (oporPorPersona[id].indexOf(op) < 0) oporPorPersona[id].push(op);
       }
+      if (f.plan){
+        if (!planPorPersona[id]) planPorPersona[id] = {};
+        planPorPersona[id][f.plan] = (planPorPersona[id][f.plan] || 0) + 1;
+      }
     } else {
       fueraHc++;
     }
@@ -3703,7 +3707,8 @@ function datosInstalacionesSemana(gente, modoGrupo){
   return {
     sem: sem, headcount: headcount, grupoDePersona: grupoDePersona, metalDePersona: metalDePersona,
     personaInfo: personaInfo, metaPorGrupo: metaPorGrupo, insPorGrupo: insPorGrupo,
-    insPorPersona: insPorPersona, oporPorPersona: oporPorPersona, fueraHc: fueraHc, totalIns: totalIns
+    insPorPersona: insPorPersona, oporPorPersona: oporPorPersona, planPorPersona: planPorPersona,
+    fueraHc: fueraHc, totalIns: totalIns
   };
 }
 
@@ -3777,9 +3782,11 @@ function cumplimientoRankingHtml(gente, modoGrupo, rotulo){
     const metal = d.metalDePersona[id];
     const meta = metaDe(metal);
     const n = d.insPorPersona[id] || 0;
+    const planes = d.planPorPersona[id] || {};
     const ficha = {
-      nombre: info.nombre, puesto: info.puesto, ranking: metal,
-      instalaciones: n, oportunidades: (d.oporPorPersona[id] || []).join(", ")
+      nombre: info.nombre, canal: info.canal, coach: info.coach, lider: info.lider, ranking: metal,
+      instalaciones: n, oportunidades: (d.oporPorPersona[id] || []).join(", "),
+      plan: Object.keys(planes).map(function(pl){ return pl + " (" + planes[pl] + ")"; }).join(", ")
     };
     if (!fichasPorGrupo[g]) fichasPorGrupo[g] = [];
     fichasPorGrupo[g].push(ficha);
@@ -4872,12 +4879,14 @@ function detalleCumplimientoHtml(){
   return '<section class="panel detalle"><h2>Detalle · cumplimiento individual <span class="sub">' + lista.length +
     " persona(s) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Nombre</th><th>Puesto</th><th>Ranking</th><th>Instalaciones</th><th>N° de oportunidad</th>" +
+    "<th>Nombre</th><th>Canal</th><th>Coach</th><th>Líder</th><th>Ranking</th><th>Instalaciones</th><th>N° de oportunidad</th><th>Plan</th>" +
     "</tr></thead><tbody>" +
     lista.map(function(x){
-      return "<tr><td>" + (x.nombre || "—") + "</td><td>" + (x.puesto || "—") + "</td><td>" + (x.ranking || "—") + "</td>" +
+      return "<tr><td>" + (x.nombre || "—") + "</td><td>" + (x.canal || "—") + "</td><td>" +
+        (x.coach || "—") + "</td><td>" + (x.lider || "—") + "</td><td>" + (x.ranking || "—") + "</td>" +
         celdaNum(x.instalaciones, "tot") +
-        '<td class="envuelve">' + (x.oportunidades || "—") + "</td></tr>";
+        '<td class="envuelve">' + (x.oportunidades || "—") + "</td>" +
+        '<td class="envuelve">' + (x.plan || "—") + "</td></tr>";
     }).join("") + "</tbody></table></div></section>";
 }
 
