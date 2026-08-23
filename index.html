@@ -4875,7 +4875,10 @@ function celdaCumpl(n, lista, extra){
 // oportunidades, para el grupo/celda que se haya tocado en "cumplieron su objetivo"
 function detalleCumplimientoHtml(){
   if (!DET_SEL || !DET_CUMPL[DET_SEL]) return "";
-  const lista = DET_CUMPL[DET_SEL].slice().sort(function(a, b){ return b.instalaciones - a.instalaciones || a.nombre.localeCompare(b.nombre, "es"); });
+  const lista = DET_CUMPL[DET_SEL].slice().sort(function(a, b){
+    return ORDEN_METAL.indexOf(a.ranking) - ORDEN_METAL.indexOf(b.ranking) ||
+           b.instalaciones - a.instalaciones || a.nombre.localeCompare(b.nombre, "es");
+  });
   return '<section class="panel detalle"><h2>Detalle · cumplimiento individual <span class="sub">' + lista.length +
     " persona(s) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
