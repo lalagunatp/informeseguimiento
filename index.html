@@ -269,6 +269,7 @@
     <button type="button" data-vista="vend0">Vend X Eventos</button>
     <button type="button" data-vista="os">Seguimiento OS</button>
     <button type="button" data-vista="dupli">Cuentas duplicadas</button>
+    <button type="button" data-vista="oprech">Op Rechazadas</button>
     <button type="button" data-vista="equipos">Equipos</button>
     <button type="button" data-vista="ajustes" id="btnVistaAjustes">Ajustes</button>
   </div>
@@ -517,6 +518,28 @@
       </label>
       <label class="campo oculto" id="cajaDupliMes">Mes
         <select id="dupliMes"></select>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel oculto" id="cajaOpRechFiltros">
+    <h2>Periodo de oportunidad</h2>
+    <div class="controles">
+      <label class="campo">Periodo
+        <select id="opRechPeriodo">
+          <option value="" selected>Todo el histórico</option>
+          <option value="semana">Semana</option>
+          <option value="mes">Mes</option>
+        </select>
+      </label>
+      <label class="campo oculto" id="cajaOpRechSemana">Semana
+        <select id="opRechSemana"></select>
+      </label>
+      <label class="campo oculto" id="cajaOpRechMes">Mes
+        <select id="opRechMes"></select>
+      </label>
+      <label class="campo">Motivo de rechazo
+        <div id="fMotivoRechazoOp"></div>
       </label>
     </div>
   </section>
@@ -1124,12 +1147,35 @@ function llenarSelectores(){
   });
   dm.value = (previoDm && MESES.some(function(m){ return m.clave === previoDm; })) ? previoDm : (MESES.length ? MESES[MESES.length - 1].clave : "");
 
+  const ors = el("opRechSemana");
+  const previoOrs = ors.value;
+  ors.innerHTML = "";
+  SEMANAS.slice().reverse().forEach(function(k){
+    const o = document.createElement("option");
+    o.value = k;
+    o.textContent = "Semana " + etiquetaSemana(k) + "  ·  " + fCorta(lunesDe(k)) + " al " + fCorta(new Date(lunesDe(k).getFullYear(), lunesDe(k).getMonth(), lunesDe(k).getDate() + 6));
+    ors.appendChild(o);
+  });
+  ors.value = (previoOrs && SEMANAS.indexOf(previoOrs) >= 0) ? previoOrs : sem.value;
+
+  const orm = el("opRechMes");
+  const previoOrm = orm.value;
+  orm.innerHTML = "";
+  MESES.slice().reverse().forEach(function(m){
+    const o = document.createElement("option");
+    o.value = m.clave;
+    o.textContent = m.etq;
+    orm.appendChild(o);
+  });
+  orm.value = (previoOrm && MESES.some(function(m){ return m.clave === previoOrm; })) ? previoOrm : (MESES.length ? MESES[MESES.length - 1].clave : "");
+
   llenarMulti("director");
   llenarMulti("lider");
   llenarMulti("coach");
   llenarMulti("vendedor");
   llenarMulti("canal");
   llenarMulti("plan");
+  llenarMulti("motivoRechazoOp");
   llenarMulti("mes");
   llenarMulti("diasem");
   llenarMulti("diames");
@@ -1144,6 +1190,7 @@ const MULTI = {
   vendedor: { contId:"fVendedor", sel:new Set(), valores:[], soloPlantilla:true },
   canal:    { contId:"fCanal",    sel:new Set(), valores:[] },
   plan:     { contId:"fPlan",     sel:new Set(), valores:[] },
+  motivoRechazoOp: { contId:"fMotivoRechazoOp", sel:new Set(), valores:[] },
   mes:      { contId:"fMes",      sel:new Set(), valores:[], manual:true },
   diasem:   { contId:"fDiaSem",   sel:new Set(), valores:[], manual:true },
   diames:   { contId:"fDiaMes",   sel:new Set(), valores:[], manual:true }
@@ -2773,6 +2820,65 @@ function filaEnPeriodoDupli(f){
   }
   const sem = el("dupliSemana").value;
   return !sem || isoSemana(fecha) === sem;
+}
+
+// para Op Rechazadas: solo hay una fecha relevante (la de la oportunidad), así que a
+// diferencia de Cuentas duplicadas no hace falta elegir "vendido o validado"
+function filaEnPeriodoOpRech(f){
+  const periodo = el("opRechPeriodo").value;
+  if (!periodo) return true;
+  if (!f.fOp) return false;
+  if (periodo === "mes"){
+    const mes = el("opRechMes").value;
+    return !mes || claveMes(f.fOp) === mes;
+  }
+  const sem = el("opRechSemana").value;
+  return !sem || isoSemana(f.fOp) === sem;
+}
+
+// detalle de las oportunidades con estatus RECHAZADA (columna K); dirección/núm.
+// ext./núm. int. solo para Director Distrital y Líder de Ventas, mismo criterio que la
+// extensión de domicilio en Cuentas duplicadas
+function opRechazadasHtml(){
+  // dirección/núm. ext./núm. int./vendedor/coach: mismo criterio que la extensión de
+  // domicilio en Cuentas duplicadas (Director Distrital y Líder de Ventas)
+  const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
+  const filas0 = FILAS.filter(function(f){
+    return pasaFiltros(f) && /RECHAZADA/.test(normaliza(f.estatus)) && filaEnPeriodoOpRech(f) &&
+           cumple("motivoRechazoOp", f);
+  });
+
+  if (!filas0.length){
+    return '<section class="panel"><h2>Op Rechazadas</h2>' +
+      '<div class="aviso">No se encontraron oportunidades rechazadas con los filtros actuales.</div></section>';
+  }
+
+  filas0.sort(function(a, b){ return (a.fOp && b.fOp) ? b.fOp - a.fOp : 0; });
+
+  let filas = "";
+  filas0.forEach(function(f){
+    const numeros = corrigeNumeros(f);
+    filas += "<tr>" +
+      "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
+      "<td>" + (f.cuenta || "—") + "</td>" +
+      "<td>" + (f.cliente || "—") + "</td>" +
+      (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (numeros.ext || "—") + "</td><td>" + (numeros.int || "—") + "</td>" : "") +
+      "<td>" + (f.colonia || "—") + "</td>" +
+      "<td>" + (f.cp || "—") + "</td>" +
+      "<td>" + (f.ciudad || "—") + "</td>" +
+      "<td>" + (f.plan || "—") + "</td>" +
+      (veDireccion ? "<td>" + (vendedorDeFila(f) || "—") + "</td><td>" + (coachDeFila(f) || "—") + "</td>" : "") +
+      "</tr>";
+  });
+
+  return '<section class="panel"><h2>Op Rechazadas <span class="sub">' + filas0.length +
+    " oportunidad(es) rechazada(s)</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Fecha de oportunidad</th><th>N° cuenta</th><th>Nombre cliente</th>" +
+    (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th><th>Núm. int.</th>" : "") +
+    "<th>Colonia</th><th>C.P.</th><th>Ciudad</th><th>Plan</th>" +
+    (veDireccion ? "<th>Vendedor</th><th>Coach</th>" : "") +
+    "</tr></thead><tbody>" + filas + "</tbody></table></div></section>";
 }
 
 // promedio de caracteres de una lista de textos, en "ch" (mínimo 8, para no dejar
@@ -5028,6 +5134,8 @@ function pintar(){
   } else if (VISTA === "dupli"){
     if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     html = cuentasDuplicadasHtml();
+  } else if (VISTA === "oprech"){
+    html = opRechazadasHtml();
   } else if (VISTA === "equipos"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     html = equiposHtml();
@@ -5073,6 +5181,7 @@ function pintar(){
   el("salida").innerHTML = html;
   scrollPegadoPorTitulo("Cuentas duplicadas");
   scrollPegadoPorTitulo("Validaciones pendientes por instalar");
+  scrollPegadoPorTitulo("Op Rechazadas");
 
   if (VISTA === "os" && OS_BUSCADA){
     const q0 = normOS(OS_BUSCADA);
@@ -5334,7 +5443,7 @@ function descargarCsv(){
   });
 
   if (!filas.length) return;   // nada que exportar
-  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", equipos:"equipos" };
+  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos" };
   const csv = "\ufeff" + filas.map(function(f){
     return f.map(function(x){ return '"' + String(x === undefined || x === null ? "" : x).replace(/"/g, '""') + '"'; }).join(",");
   }).join("\n");
@@ -5389,6 +5498,7 @@ function ajustaCajasDia(){
   const esOS = VISTA === "os";
   const esDupli = VISTA === "dupli";
   const esAjustes = VISTA === "ajustes";
+  const esOpRech = VISTA === "oprech";
   Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
     l.style.display = (esOS || esDupli || esAjustes) ? "none" : "";
   });
@@ -5409,10 +5519,21 @@ function ajustaCajasDia(){
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
   const soloOS = PERFIL && PERFIL.acceso === "os";
-  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || soloOS) ? "none" : "";
+  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || esOpRech || soloOS) ? "none" : "";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
   el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0") ? "" : "none";
+  el("cajaMeses").style.display = (esOS || esDupli || esAjustes || esOpRech) ? "none" : "";
+  el("cajaPlanes").style.display = (esOS || esDupli || esAjustes || esOpRech) ? "none" : "";
+
+  // Op Rechazadas: solo una fecha relevante (oportunidad), sin el gate "Filtrar por" de
+  // Cuentas duplicadas; Semana/Mes se ocultan mientras Periodo siga en "Todo el histórico"
+  el("cajaOpRechFiltros").classList.toggle("oculto", !esOpRech);
+  if (esOpRech){
+    const periodoOR = el("opRechPeriodo").value;
+    el("cajaOpRechSemana").classList.toggle("oculto", periodoOR !== "semana");
+    el("cajaOpRechMes").classList.toggle("oculto", periodoOR !== "mes");
+  }
 
   // atención a clientes: en Cuentas duplicadas solo busca por cuenta/oportunidad,
   // sin el panel de periodo (ese es para operaciones/supervisión)
@@ -5505,6 +5626,10 @@ el("btnRevisarEq").addEventListener("click", revisarEquipos);
 });
 el("dupliTipo").addEventListener("change", function(){ ajustaCajasDia(); if (VISTA === "dupli") pintar(); });
 el("dupliPeriodo").addEventListener("change", function(){ ajustaCajasDia(); if (VISTA === "dupli") pintar(); });
+["opRechSemana","opRechMes"].forEach(function(id){
+  el(id).addEventListener("change", function(){ if (VISTA === "oprech") pintar(); });
+});
+el("opRechPeriodo").addEventListener("change", function(){ ajustaCajasDia(); if (VISTA === "oprech") pintar(); });
 ["lideresLocales","plazasLocales","cruceCampo","clavesTecnico","palabrasAdicional"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (FILAS.length) reclasificarCanal(); });
 });
