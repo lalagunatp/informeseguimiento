@@ -2861,23 +2861,24 @@ function opRechazadasHtml(){
     filas += "<tr>" +
       "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
       "<td>" + (f.cuenta || "—") + "</td>" +
+      '<td class="envuelve">' + (f.motivoRechazoOp || "—") + "</td>" +
       "<td>" + (f.cliente || "—") + "</td>" +
       (veDireccion ? '<td class="envuelve">' + (f.direccion || "—") + "</td><td>" + (numeros.ext || "—") + "</td><td>" + (numeros.int || "—") + "</td>" : "") +
       "<td>" + (f.colonia || "—") + "</td>" +
       "<td>" + (f.cp || "—") + "</td>" +
       "<td>" + (f.ciudad || "—") + "</td>" +
       "<td>" + (f.plan || "—") + "</td>" +
-      (veDireccion ? "<td>" + (vendedorDeFila(f) || "—") + "</td><td>" + (coachDeFila(f) || "—") + "</td>" : "") +
+      (veDireccion ? "<td>" + (vendedorDeFila(f) || "—") + "</td><td>" + (coachDeFila(f) || "—") + "</td><td>" + (liderDeFila(f) || "—") + "</td>" : "") +
       "</tr>";
   });
 
   return '<section class="panel"><h2>Op Rechazadas <span class="sub">' + filas0.length +
     " oportunidad(es) rechazada(s)</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Fecha de oportunidad</th><th>N° cuenta</th><th>Nombre cliente</th>" +
+    "<th>Fecha de oportunidad</th><th>N° cuenta</th><th>Motivo de rechazo</th><th>Nombre cliente</th>" +
     (veDireccion ? "<th>Dirección</th><th>Núm. ext.</th><th>Núm. int.</th>" : "") +
     "<th>Colonia</th><th>C.P.</th><th>Ciudad</th><th>Plan</th>" +
-    (veDireccion ? "<th>Vendedor</th><th>Coach</th>" : "") +
+    (veDireccion ? "<th>Vendedor</th><th>Coach</th><th>Líder</th>" : "") +
     "</tr></thead><tbody>" + filas + "</tbody></table></div></section>";
 }
 
