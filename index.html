@@ -4972,7 +4972,13 @@ function detalleRechazadasHtml(contexto){
   if (!DET_SEL || !DET_RECH[DET_SEL]) return "";
   const info = DET_RECH[DET_SEL];
   if (info.contexto !== contexto) return "";
-  const lista = info.lista;
+  // agrupado por líder y, dentro de cada líder, por coach (en vez de quedar en el
+  // orden en que aparecen en la base, que se ve desordenado)
+  const lista = info.lista.slice().sort(function(a, b){
+    return liderDeFila(a).localeCompare(liderDeFila(b), "es") ||
+           coachDeFila(a).localeCompare(coachDeFila(b), "es") ||
+           vendedorDeFila(a).localeCompare(vendedorDeFila(b), "es");
+  });
   return '<section class="panel detalle"><h2>Oportunidades rechazadas <span class="sub">' +
     (info.etiqueta ? info.etiqueta + " · " : "") + lista.length + " de " + info.n +
     " oportunidad(es) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
