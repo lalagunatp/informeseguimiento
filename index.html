@@ -4026,7 +4026,8 @@ function vendedores0Html(){
 
   function tabla(tipo, titulo, nota, rotuloTot){
     const cnt = conteoPeriodo([clavePeriodo], fn, tipo);
-    const todasFichas = [];   // para el Total general (renglón Total, columna TOT)
+    const todasFichas = [];        // para el Total general (renglón Total, columna TOT)
+    const porBucketGeneral = {};   // i (0..tope) -> fichas, para el renglón Total por cantidad
     function guardar(k, i, dato){
       const id = tipo + "|" + k + "|" + i;
       if (!DET_V0[id]) DET_V0[id] = [];
@@ -4035,6 +4036,8 @@ function vendedores0Html(){
       if (!DET_V0[idT]) DET_V0[idT] = [];
       DET_V0[idT].push(dato);
       todasFichas.push(dato);
+      if (!porBucketGeneral[i]) porBucketGeneral[i] = [];
+      porBucketGeneral[i].push(dato);
     }
     const grupos = {}, gran = nuevaFila();
     function bolsa(k){
@@ -4165,7 +4168,8 @@ function vendedores0Html(){
     orden.forEach(function(k){ filas += renglon(k, grupos[k], "", k); });
     const idTotalGeneral = tipo + "|__TOTAL__|TOT";
     DET_V0[idTotalGeneral] = todasFichas;
-    filas += renglon("Total", gran, "total", undefined, idTotalGeneral);
+    for (let i = 0; i <= tope; i++) DET_V0[tipo + "|__TOTAL__|" + i] = porBucketGeneral[i] || [];
+    filas += renglon("Total", gran, "total", "__TOTAL__", idTotalGeneral);
 
     const cab = [];
     for (let i = 0; i <= tope; i++) cab.push("<th>" + (i === tope ? i + "+" : i) + "</th>");
