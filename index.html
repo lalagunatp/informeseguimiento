@@ -4026,6 +4026,7 @@ function vendedores0Html(){
 
   function tabla(tipo, titulo, nota, rotuloTot){
     const cnt = conteoPeriodo([clavePeriodo], fn, tipo);
+    const todasFichas = [];   // para el Total general (renglón Total, columna TOT)
     function guardar(k, i, dato){
       const id = tipo + "|" + k + "|" + i;
       if (!DET_V0[id]) DET_V0[id] = [];
@@ -4033,6 +4034,7 @@ function vendedores0Html(){
       const idT = tipo + "|" + k + "|TOT";
       if (!DET_V0[idT]) DET_V0[idT] = [];
       DET_V0[idT].push(dato);
+      todasFichas.push(dato);
     }
     const grupos = {}, gran = nuevaFila();
     function bolsa(k){
@@ -4134,8 +4136,8 @@ function vendedores0Html(){
       });
     }
 
-    function renglon(etq, o, clase, k){
-      const idT = k === undefined ? "" : tipo + "|" + k + "|TOT";
+    function renglon(etq, o, clase, k, idTotal){
+      const idT = idTotal || (k === undefined ? "" : tipo + "|" + k + "|TOT");
       const celdaTot = idT && DET_V0[idT]
         ? '<td class="tot clicable" data-det="' + idT + '">' + num(o.tot) + "</td>"
         : celdaNum(o.tot, "tot");
@@ -4161,7 +4163,9 @@ function vendedores0Html(){
       });
     }
     orden.forEach(function(k){ filas += renglon(k, grupos[k], "", k); });
-    filas += renglon("Total", gran, "total");
+    const idTotalGeneral = tipo + "|__TOTAL__|TOT";
+    DET_V0[idTotalGeneral] = todasFichas;
+    filas += renglon("Total", gran, "total", undefined, idTotalGeneral);
 
     const cab = [];
     for (let i = 0; i <= tope; i++) cab.push("<th>" + (i === tope ? i + "+" : i) + "</th>");
@@ -4182,18 +4186,20 @@ function vendedores0Html(){
     " \u00b7 " + gente.length + " personas en plantilla \u00b7 " + eventos +
     " oportunidades en el periodo con los filtros puestos \u00b7 cada columna es cu\u00e1ntos llevan esa cantidad</span></h2></section>";
 
-  const cuerpoTablas =
-    tabla("op", "OPORTUNIDAD", "por fecha de creación", "OPOR") +
-    tabla("val", "VENTA VALIDADA", "por fecha de validación", "VTA") +
-    tabla("ins", "INSTALACIONES", "por fecha de activación", "INS");
+  // cada tabla se guarda aparte (no se concatena de una vez): el detalle de la celda
+  // tocada se intercala justo debajo de SU tabla, no siempre hasta el final
+  const htmlOp = tabla("op", "OPORTUNIDAD", "por fecha de creación", "OPOR");
+  const htmlVal = tabla("val", "VENTA VALIDADA", "por fecha de validación", "VTA");
+  const htmlIns = tabla("ins", "INSTALACIONES", "por fecha de activación", "INS");
 
   let detalle = "";
   if (DET_SEL && DET_V0[DET_SEL]){
     const p2 = DET_SEL.split("|");
     const nomTipo = p2[0] === "op" ? "oportunidades" : (p2[0] === "val" ? "validadas" : "instalaciones");
     const esTotal = p2[2] === "TOT";
+    const etiquetaGrupo = p2[1] === "__TOTAL__" ? "Total general" : p2[1];
     const lista = DET_V0[DET_SEL].slice().sort(function(a, b){ return b.n - a.n || a.nombre.localeCompare(b.nombre, "es"); });
-    detalle = '<section class="panel detalle"><h2>Detalle · ' + p2[1] + " · " +
+    detalle = '<section class="panel detalle"><h2>Detalle · ' + etiquetaGrupo + " · " +
       (esTotal ? "todas las " + nomTipo : p2[2] + (Number(p2[2]) >= tope ? " o más" : "") + " " + nomTipo) +
       ' <span class="sub">' + lista.length + " persona(s) · toca otra celda para cambiar</span></h2>" +
       '<div class="scroll"><table class="compacta"><thead><tr>' +
@@ -4207,7 +4213,13 @@ function vendedores0Html(){
       }).join("") + "</tbody></table></div></section>";
   }
 
-  return cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas + detalle +
+  const tipoSel = DET_SEL ? DET_SEL.split("|")[0] : "";
+  const cuerpoTablas =
+    htmlOp + (tipoSel === "op" ? detalle : "") +
+    htmlVal + (tipoSel === "val" ? detalle : "") +
+    htmlIns + (tipoSel === "ins" ? detalle : "");
+
+  return cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas +
     alcanceRankingHtml(gente, modoGrupo, rotulo) + cumplimientoRankingHtml(gente, modoGrupo, rotulo) +
     detalleCumplimientoHtml();
 }
