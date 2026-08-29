@@ -1847,19 +1847,12 @@ function fichasPorVendedor(lista){
     };
   });
 
-  // el orden no es solo por operaciones del vendedor: primero se agrupan los líderes
-  // con más operaciones en total, dentro de cada líder los coaches con más operaciones
-  // en total, y dentro de cada coach los vendedores con más operaciones
-  const totLider = {}, totCoach = {};
-  fichas.forEach(function(x){
-    totLider[x.lider] = (totLider[x.lider] || 0) + x.n;
-    const kc = x.lider + "|" + x.coach;
-    totCoach[kc] = (totCoach[kc] || 0) + x.n;
-  });
-
+  // agrupado por líder y, dentro de cada líder, por coach (alfabético, igual que el
+  // panel de Oportunidades rechazadas); dentro de cada coach, el vendedor con más
+  // operaciones primero
   return fichas.sort(function(a, b){
-    return (totLider[b.lider] || 0) - (totLider[a.lider] || 0) ||
-           (totCoach[b.lider + "|" + b.coach] || 0) - (totCoach[a.lider + "|" + a.coach] || 0) ||
+    return a.lider.localeCompare(b.lider, "es") ||
+           a.coach.localeCompare(b.coach, "es") ||
            b.n - a.n || a.nombre.localeCompare(b.nombre, "es");
   });
 }
