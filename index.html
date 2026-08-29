@@ -1552,9 +1552,9 @@ function tablasPeriodo(claves, etiquetas, acc, sufijo, extras, sinTotal, rech){
       filas += "<tr><td>" + g + "</td>" +
         claves.map(function(k, i){
           const n = acc[g][b.tipo][k] || 0;
-          return rg ? celdaRech(n, rg[k], g + " · " + etiquetas[i]) : celdaNum(n);
+          return rg ? celdaRech(n, rg[k], g + " · " + etiquetas[i], undefined, undefined, "periodo") : celdaNum(n);
         }).join("") +
-        (sinTotal ? "" : (rg ? celdaRech(totalTipo(g, b.tipo), claves.reduce(function(l,k){ return l.concat(rg[k] || []); }, []), g + " · Total", "tot")
+        (sinTotal ? "" : (rg ? celdaRech(totalTipo(g, b.tipo), claves.reduce(function(l,k){ return l.concat(rg[k] || []); }, []), g + " · Total", "tot", undefined, "periodo")
                               : celdaNum(totalTipo(g, b.tipo), "tot"))) + extraHtml(g, valAct) + "</tr>";
     });
 
@@ -1575,17 +1575,17 @@ function tablasPeriodo(claves, etiquetas, acc, sufijo, extras, sinTotal, rech){
     filas += '<tr class="total"><td>Total</td>' +
       claves.map(function(k, i){
         const n = sumaCol(b.tipo, k);
-        return (b.tipo === "op" && rech) ? celdaRech(n, rechCol(k), "Total · " + etiquetas[i]) : celdaNum(n);
+        return (b.tipo === "op" && rech) ? celdaRech(n, rechCol(k), "Total · " + etiquetas[i], undefined, undefined, "periodo") : celdaNum(n);
       }).join("") +
       (sinTotal ? "" : ((b.tipo === "op" && rech)
-        ? celdaRech(claves.reduce(function(s,k){ return s + sumaCol(b.tipo, k); }, 0), claves.reduce(function(l,k){ return l.concat(rechCol(k)); }, []), "Total · Total", "tot")
+        ? celdaRech(claves.reduce(function(s,k){ return s + sumaCol(b.tipo, k); }, 0), claves.reduce(function(l,k){ return l.concat(rechCol(k)); }, []), "Total · Total", "tot", undefined, "periodo")
         : celdaNum(claves.reduce(function(s,k){ return s + sumaCol(b.tipo, k); }, 0), "tot"))) + extraT + "</tr>";
 
     html += '<section class="panel"><h2>' + b.titulo.toUpperCase() + " " + sufijo +
       ' <span class="sub">' + b.nota +
       (extras ? " · Dif MA, Proy, Meta y Avance son de " + extras.etqMes : "") + "</span></h2>" +
       '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filas + "</tbody></table></div></section>";
-    if (b.tipo === "op") html += detalleRechazadasHtml();
+    if (b.tipo === "op") html += detalleRechazadasHtml("periodo");
   });
 
   [["val","op","validadas sobre oportunidad"], ["ins","val","instalaciones sobre validadas"]].forEach(function(par){
@@ -1836,7 +1836,7 @@ function fichasPorVendedor(lista){
     const p = f.plan || "SIN PLAN";
     m.planes[p] = (m.planes[p] || 0) + 1;
   });
-  return Object.keys(map).map(function(k){
+  const fichas = Object.keys(map).map(function(k){
     const m = map[k];
     return {
       nombre: m.nombre, coach: m.coach, lider: m.lider,
@@ -1845,7 +1845,23 @@ function fichasPorVendedor(lista){
       planes: Object.keys(m.planes).map(function(p){ return p + " (" + m.planes[p] + ")"; }).join(", "),
       n: m.n
     };
-  }).sort(function(a, b){ return b.n - a.n || a.nombre.localeCompare(b.nombre, "es"); });
+  });
+
+  // el orden no es solo por operaciones del vendedor: primero se agrupan los líderes
+  // con más operaciones en total, dentro de cada líder los coaches con más operaciones
+  // en total, y dentro de cada coach los vendedores con más operaciones
+  const totLider = {}, totCoach = {};
+  fichas.forEach(function(x){
+    totLider[x.lider] = (totLider[x.lider] || 0) + x.n;
+    const kc = x.lider + "|" + x.coach;
+    totCoach[kc] = (totCoach[kc] || 0) + x.n;
+  });
+
+  return fichas.sort(function(a, b){
+    return (totLider[b.lider] || 0) - (totLider[a.lider] || 0) ||
+           (totCoach[b.lider + "|" + b.coach] || 0) - (totCoach[a.lider + "|" + a.coach] || 0) ||
+           b.n - a.n || a.nombre.localeCompare(b.nombre, "es");
+  });
 }
 
 function detalleMatrizHtml(){
@@ -4941,18 +4957,21 @@ const BLOQUES = [
 // celda de conteo que además abre/cierra (misma cubeta DET_SEL de matriz/equipos/etc.)
 // el detalle de las oportunidades rechazadas que caen en ella; sin lista, es una celda
 // normal
-function celdaRech(n, lista, etiqueta, extra, titulo){
+function celdaRech(n, lista, etiqueta, extra, titulo, contexto){
   if (!lista || !lista.length) return celdaNum(n, extra, titulo);
   const id = "rech" + (DET_RECH_N++);
-  DET_RECH[id] = { lista: lista, n: n, etiqueta: etiqueta };
+  DET_RECH[id] = { lista: lista, n: n, etiqueta: etiqueta, contexto: contexto };
   return '<td class="' + ((extra || "") + " clicable").trim() + '" data-det="' + id + '"' +
     (titulo ? ' title="' + titulo.replace(/"/g, "'") + '"' : "") + ">" + num(n) + "</td>";
 }
 
-// panel de detalle: se intercala entre el panel OPORTUNIDAD y VENTA VALIDADA
-function detalleRechazadasHtml(){
+// panel de detalle: se intercala justo después del panel OPORTUNIDAD que se haya
+// tocado (contexto evita que abrir uno también abra el de otro panel Oportunidad que
+// esté en la misma pantalla, ej. semanal vs. "por semana cerrada")
+function detalleRechazadasHtml(contexto){
   if (!DET_SEL || !DET_RECH[DET_SEL]) return "";
   const info = DET_RECH[DET_SEL];
+  if (info.contexto !== contexto) return "";
   const lista = info.lista;
   return '<section class="panel detalle"><h2>Oportunidades rechazadas <span class="sub">' +
     (info.etiqueta ? info.etiqueta + " · " : "") + lista.length + " de " + info.n +
@@ -5159,7 +5178,7 @@ function pintar(){
   } else {
     BLOQUES.forEach(function(b){
       html += bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos);
-      if (b.tipo === "op") html += detalleRechazadasHtml();
+      if (b.tipo === "op") html += detalleRechazadasHtml("semanal");
     });
     html += conversionHtml("Conversión · validadas sobre oportunidad", "val", "op", grupos, act, ant, sem, semAnt);
     html += conversionHtml("Conversión · instalaciones sobre validadas", "ins", "val", grupos, act, ant, sem, semAnt);
@@ -5327,11 +5346,11 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
     const rg = rechAct && rechAct.porGrupo[g] ? rechAct.porGrupo[g] : null;
     const rga = rechAnt && rechAnt.porGrupo[g] ? rechAnt.porGrupo[g].tot : [];
     filas += "<tr><td>" + g + "</td>" +
-             (rechAnt ? celdaRech(A.t, rga, g + " · Semana anterior (" + etiquetaSemana(semAnt) + ")", "sem") : celdaNum(A.t, "sem")) +
+             (rechAnt ? celdaRech(A.t, rga, g + " · Semana anterior (" + etiquetaSemana(semAnt) + ")", "sem", undefined, "semanal") : celdaNum(A.t, "sem")) +
              C.d.map(function(n, j){
-               return rechAct ? celdaRech(n, rg ? rg.dia[j] : [], g + " · " + DIAS_LARGOS[j], j === 0 ? "sem" : "") : celdaNum(n, j === 0 ? "sem" : "");
+               return rechAct ? celdaRech(n, rg ? rg.dia[j] : [], g + " · " + DIAS_LARGOS[j], j === 0 ? "sem" : "", undefined, "semanal") : celdaNum(n, j === 0 ? "sem" : "");
              }).join("") +
-             (rechAct ? celdaRech(C.t, rg ? rg.tot : [], g + " · Total semana " + etiquetaSemana(sem), "tot") : celdaNum(C.t, "tot")) +
+             (rechAct ? celdaRech(C.t, rg ? rg.tot : [], g + " · Total semana " + etiquetaSemana(sem), "tot", undefined, "semanal") : celdaNum(C.t, "tot")) +
              '<td class="dif' + claseSemaforo(difs[i], difs) + '">' + pct(difs[i]) + "</td>" +
              celdaNum(proy, "", tituloProy(info, g)) + m.html + "</tr>";
   });
@@ -5350,11 +5369,11 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
     metaHtml = celdaNum(metaTot, "sem") + '<td class="dif' + cl + '">' + pct(av) + "</td>";
   }
   filas += '<tr class="total"><td>Total</td>' +
-           (rechAnt ? celdaRech(TA.t, rechAnt.total, "Total · Semana anterior (" + etiquetaSemana(semAnt) + ")", "sem") : celdaNum(TA.t, "sem")) +
+           (rechAnt ? celdaRech(TA.t, rechAnt.total, "Total · Semana anterior (" + etiquetaSemana(semAnt) + ")", "sem", undefined, "semanal") : celdaNum(TA.t, "sem")) +
            TC.d.map(function(n, j){
-             return rechAct ? celdaRech(n, rechAct.totalDia[j], "Total · " + DIAS_LARGOS[j], j === 0 ? "sem" : "") : celdaNum(n, j === 0 ? "sem" : "");
+             return rechAct ? celdaRech(n, rechAct.totalDia[j], "Total · " + DIAS_LARGOS[j], j === 0 ? "sem" : "", undefined, "semanal") : celdaNum(n, j === 0 ? "sem" : "");
            }).join("") +
-           (rechAct ? celdaRech(TC.t, rechAct.total, "Total · Total semana " + etiquetaSemana(sem), "tot") : celdaNum(TC.t, "tot")) + '<td class="dif">' + pct(difT) + "</td>" +
+           (rechAct ? celdaRech(TC.t, rechAct.total, "Total · Total semana " + etiquetaSemana(sem), "tot", undefined, "semanal") : celdaNum(TC.t, "tot")) + '<td class="dif">' + pct(difT) + "</td>" +
            celdaNum(proyT, "", tituloProy(infoT, "Total")) + metaHtml + "</tr>";
 
   return '<section class="panel"><h2>' + b.titulo.toUpperCase() +
