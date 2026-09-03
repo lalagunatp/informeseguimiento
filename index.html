@@ -497,6 +497,23 @@
       <div id="revision" class="aviso oculto"></div>
   </section>
 
+  <section class="panel oculto" id="panelCargaDatos">
+    <h2>Actualizar datos · Venta técnico <span class="sub">reemplaza todo el contenido de la pestaña VENTA TECNICO configurada arriba (columnas llave/clave) · solo tú puedes ver y usar esto</span></h2>
+    <div class="controles">
+      <label class="campo">Archivo .csv (columna 1: número de oportunidad · columna 2: código de técnico)
+        <input type="file" id="archivoVentaTecnico" accept=".csv,text/csv">
+      </label>
+      <label class="campo" style="flex-direction:row; align-items:center; gap:8px">
+        <input type="checkbox" id="csvTieneEncabezado" style="width:auto">
+        <span style="text-transform:none; letter-spacing:0; font-size:12px">El archivo trae encabezado (se ignora el primer renglón)</span>
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="btnSubirVentaTecnico" class="sec">Reemplazar VENTA TECNICO con este archivo</button>
+    </div>
+    <div id="avisoCargaVentaTecnico" class="aviso oculto"></div>
+  </section>
+
   <section class="panel oculto" id="cajaDupliFiltros">
     <h2>Periodo de venta o validación <span class="sub">elige Vendido o Validado para poder acotar por semana o mes</span></h2>
     <div class="controles">
@@ -663,6 +680,33 @@ function llamarProxy(params){
     s2.onerror = function(){ limpiar(); rej(new Error("No se pudo contactar el proxy")); };
     temp = setTimeout(function(){ limpiar(); rej(new Error("El proxy tardó demasiado")); }, 180000);
     document.head.appendChild(s2);
+  });
+}
+
+// para mandar datos grandes (reemplazar una pestaña completa) no alcanza con JSONP
+// (todo va en la URL, con límite de tamaño); esto manda un POST de verdad, como
+// formulario (igual que un <form>): así Apps Script lo sigue leyendo con e.parameter,
+// exactamente como ya lee doGet, sin tener que tocar _manejar ni el routing existente.
+// "application/x-www-form-urlencoded" además evita el preflight CORS.
+function llamarProxyPost(params){
+  const base = el("urlProxy").value.trim();
+  if (!base) return Promise.reject(new Error("Falta la URL del proxy en Ajustes de la fuente"));
+  const cuerpo = Object.keys(params).map(function(k){
+    return encodeURIComponent(k) + "=" + encodeURIComponent(params[k] === undefined ? "" : params[k]);
+  }).join("&");
+  return fetch(base, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" },
+    body: cuerpo
+  }).then(function(r){
+    if (!r.ok) throw new Error("El proxy respondió " + r.status);
+    return r.json();
+  }).then(function(r){
+    if (r && r.ok === false && r.expirado){
+      TOKEN = "";
+      throw new Error("La sesión expiró, vuelve a entrar");
+    }
+    return r;
   });
 }
 
@@ -889,6 +933,99 @@ async function cargarMapaTecnico(id){
   }catch(e){
     INFO_TECNICO.estado = "falló: " + e.message;
     marcarFuente("tecnico", e.message);
+  }
+}
+
+// parser de CSV mínimo (soporta comillas con comas/saltos de línea adentro, "" escapada)
+function parseCsvSimple(texto){
+  const filas = [];
+  let fila = [], campo = "", enComillas = false;
+  for (let i = 0; i < texto.length; i++){
+    const c = texto[i];
+    if (enComillas){
+      if (c === '"'){
+        if (texto[i + 1] === '"'){ campo += '"'; i++; }
+        else enComillas = false;
+      } else campo += c;
+    } else if (c === '"'){
+      enComillas = true;
+    } else if (c === ","){
+      fila.push(campo); campo = "";
+    } else if (c === "\r"){
+      // nada, se ignora
+    } else if (c === "\n"){
+      fila.push(campo); filas.push(fila); fila = []; campo = "";
+    } else {
+      campo += c;
+    }
+  }
+  if (campo !== "" || fila.length){ fila.push(campo); filas.push(fila); }
+  return filas.filter(function(f){ return f.some(function(v){ return v.trim() !== ""; }); });
+}
+
+// lee el .csv elegido, arma [llave, clave] por renglón y reemplaza toda la pestaña
+// VENTA TECNICO en el Sheet (vía el Apps Script) con lo que traiga el archivo
+async function subirVentaTecnico(){
+  const caja = el("avisoCargaVentaTecnico");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+  const archivo = el("archivoVentaTecnico").files[0];
+  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return; }
+
+  let texto;
+  try{
+    texto = await archivo.text();
+  }catch(e){
+    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return;
+  }
+
+  let renglones = parseCsvSimple(texto);
+  if (el("csvTieneEncabezado").checked) renglones = renglones.slice(1);
+  const filas = renglones
+    .map(function(r){ return [String(r[0] || "").trim(), String(r[1] || "").trim()]; })
+    .filter(function(r){ return r[0] && r[1]; });
+
+  if (!filas.length){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo no trae renglones con las dos columnas llenas (número de oportunidad y código de técnico).";
+    return;
+  }
+
+  const ok = confirm(
+    "Esto va a BORRAR todo lo que hay hoy en la pestaña VENTA TECNICO y lo va a reemplazar por " +
+    filas.length + " renglón(es) del archivo. No se puede deshacer.\n\n¿Continuar?"
+  );
+  if (!ok) return;
+
+  const btn = el("btnSubirVentaTecnico");
+  btn.disabled = true;
+  caja.innerHTML = "Subiendo " + filas.length + " renglón(es)…";
+  try{
+    const r = await llamarProxyPost({
+      accion: "subirVentaTecnico",
+      token: TOKEN,
+      libro: el("idTecnico").value.trim() || el("hojaId").value.trim(),
+      pestana: el("hojaTecnico").value.trim(),
+      colLlave: (el("colLlave").value.trim() || "E").toUpperCase(),
+      colClave: (el("colClave").value.trim() || "F").toUpperCase(),
+      filas: JSON.stringify(filas)
+    });
+    if (!r || !r.ok){
+      caja.classList.add("error");
+      caja.innerHTML = "No se pudo subir: " + ((r && r.error) || "el proxy no respondió ok");
+      return;
+    }
+    caja.innerHTML = "Listo: se reemplazaron " + (r.filas != null ? r.filas : filas.length) + " renglón(es) en VENTA TECNICO.";
+    el("archivoVentaTecnico").value = "";
+    // refresca lo que ya está cargado en la app con el dato nuevo, sin pedir recargar la página
+    await cargarMapaTecnico(el("hojaId").value.trim());
+    if (FILAS.length) reclasificarCanal();
+    pintar();
+  }catch(e){
+    caja.classList.add("error");
+    caja.innerHTML = "No se pudo subir: " + e.message;
+  }finally{
+    btn.disabled = false;
   }
 }
 
@@ -4202,7 +4339,13 @@ function vendedores0Html(){
     const nomTipo = p2[0] === "op" ? "oportunidades" : (p2[0] === "val" ? "validadas" : "instalaciones");
     const esTotal = p2[2] === "TOT";
     const etiquetaGrupo = p2[1] === "__TOTAL__" ? "Total general" : p2[1];
-    const lista = DET_V0[DET_SEL].slice().sort(function(a, b){ return b.n - a.n || a.nombre.localeCompare(b.nombre, "es"); });
+    // agrupado por líder y, dentro de cada líder, por coach (alfabético, igual que
+    // Detalle por plan y Oportunidades rechazadas)
+    const lista = DET_V0[DET_SEL].slice().sort(function(a, b){
+      return a.lider.localeCompare(b.lider, "es") ||
+             a.coach.localeCompare(b.coach, "es") ||
+             b.n - a.n || a.nombre.localeCompare(b.nombre, "es");
+    });
     detalle = '<section class="panel detalle"><h2>Detalle · ' + etiquetaGrupo + " · " +
       (esTotal ? "todas las " + nomTipo : p2[2] + (Number(p2[2]) >= tope ? " o más" : "") + " " + nomTipo) +
       ' <span class="sub">' + lista.length + " persona(s) · toca otra celda para cambiar</span></h2>" +
@@ -5016,8 +5159,12 @@ function celdaCumpl(n, lista, extra){
 // oportunidades, para el grupo/celda que se haya tocado en "cumplieron su objetivo"
 function detalleCumplimientoHtml(){
   if (!DET_SEL || !DET_CUMPL[DET_SEL]) return "";
+  // agrupado por líder y, dentro de cada líder, por coach (alfabético, igual que
+  // Detalle por plan y Oportunidades rechazadas)
   const lista = DET_CUMPL[DET_SEL].slice().sort(function(a, b){
-    return ORDEN_METAL.indexOf(a.ranking) - ORDEN_METAL.indexOf(b.ranking) ||
+    return a.lider.localeCompare(b.lider, "es") ||
+           a.coach.localeCompare(b.coach, "es") ||
+           ORDEN_METAL.indexOf(a.ranking) - ORDEN_METAL.indexOf(b.ranking) ||
            b.instalaciones - a.instalaciones || a.nombre.localeCompare(b.nombre, "es");
   });
   return '<section class="panel detalle"><h2>Detalle · cumplimiento individual <span class="sub">' + lista.length +
@@ -5550,6 +5697,7 @@ function ajustaCajasDia(){
   const btnAjustes = el("btnVistaAjustes");
   if (btnAjustes) btnAjustes.style.display = vePermiso ? "" : "none";
   el("panelAjustes").classList.toggle("oculto", !(vePermiso && esAjustes));
+  el("panelCargaDatos").classList.toggle("oculto", !(puedeCargarDatos() && esAjustes));
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
@@ -5650,6 +5798,7 @@ el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
+el("btnSubirVentaTecnico").addEventListener("click", subirVentaTecnico);
 ["gidRanking","gidEntrena","gidPlantilla"].forEach(function(id){
   el(id).addEventListener("change", function(){ INFO_EQ.estado = "sin cargar"; if (VISTA === "equipos") cargarEquipos(); });
 });
@@ -5727,6 +5876,13 @@ function puedeVerAjustes(){
   if (!PERFIL) return false;
   if (puestoEs("DIRECTOR DISTRITAL")) return true;
   return String(PERFIL.numero || "").trim() === "65068028";
+}
+
+// subir/reemplazar datos en el Sheet: solo el número de empleado 65068028, aunque
+// también sea Director Distrital u otro puesto — esto NO es solo de UI, el Apps
+// Script vuelve a checar este mismo número antes de escribir nada
+function puedeCargarDatos(){
+  return !!PERFIL && String(PERFIL.numero || "").trim() === "65068028";
 }
 
 function accesoDe(puesto){
