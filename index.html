@@ -278,6 +278,7 @@
 <aside id="cajon" class="cajon oculto">
   <div class="cajon-tit">Ir a la secci&oacute;n<button id="btnCerrarMenu" aria-label="Cerrar">&times;</button></div>
   <div id="menu"></div>
+  <div id="ultimasCargasMenu"></div>
 </aside>
 
 <div class="wrap oculto" id="app">
@@ -511,7 +512,22 @@
     <div class="acciones">
       <button id="btnSubirVentaTecnico" class="sec">Reemplazar VENTA TECNICO con este archivo</button>
     </div>
+    <div id="ultimaCargaVentaTecnico" class="aviso"></div>
     <div id="avisoCargaVentaTecnico" class="aviso oculto"></div>
+  </section>
+
+  <section class="panel oculto" id="panelCargaOspi">
+    <h2>Actualizar datos · OS por instalar <span class="sub">reemplaza el contenido de la pestaña OS POR INSTALAR (gid configurado arriba), respetando el encabezado · solo Gerente de Operaciones, Supervisor de Planta Interna, Coordinador PE y Analista de Atención a Clientes pueden ver y usar esto</span></h2>
+    <div class="controles">
+      <label class="campo">Archivo .csv (exportado tal cual de la pestaña OS POR INSTALAR, con sus mismas columnas)
+        <input type="file" id="archivoOsPorInstalar" accept=".csv,text/csv">
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="btnSubirOsPorInstalar" class="sec">Reemplazar OS POR INSTALAR con este archivo</button>
+    </div>
+    <div id="ultimaCargaOsPorInstalar" class="aviso"></div>
+    <div id="avisoCargaOsPorInstalar" class="aviso oculto"></div>
   </section>
 
   <section class="panel oculto" id="cajaDupliFiltros">
@@ -1020,6 +1036,90 @@ async function subirVentaTecnico(){
     // refresca lo que ya está cargado en la app con el dato nuevo, sin pedir recargar la página
     await cargarMapaTecnico(el("hojaId").value.trim());
     if (FILAS.length) reclasificarCanal();
+    cargarUltimasCargas();
+    pintar();
+  }catch(e){
+    caja.classList.add("error");
+    caja.innerHTML = "No se pudo subir: " + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+// busca el renglón de encabezado igual que cargarOsPorInstalar() (el que trae "FECHA
+// ASIGNACION"), para saber dónde empiezan los datos dentro del archivo subido
+function detectaEncabezadoOspi(filas){
+  for (let i = 0; i < Math.min(12, filas.length); i++){
+    const fila = filas[i].map(function(v){ return normaliza(v); });
+    if (fila.some(function(h){ return h.indexOf("FECHA ASIGNACION") >= 0; })) return i;
+  }
+  return -1;
+}
+
+async function subirOsPorInstalar(){
+  const caja = el("avisoCargaOsPorInstalar");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+  const archivo = el("archivoOsPorInstalar").files[0];
+  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return; }
+
+  let texto;
+  try{
+    texto = await archivo.text();
+  }catch(e){
+    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return;
+  }
+
+  const renglones = parseCsvSimple(texto);
+  const iEnc = detectaEncabezadoOspi(renglones);
+  if (iEnc < 0){
+    caja.classList.add("error");
+    caja.innerHTML = 'No encontré el renglón de encabezado (busco "FECHA ASIGNACION") en las primeras 12 líneas del archivo. Revisa que sea la exportación completa de OS POR INSTALAR, con sus encabezados.';
+    return;
+  }
+
+  const anchoMax = renglones.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
+  const filas = renglones.slice(iEnc + 1)
+    .map(function(r){
+      const f = r.slice();
+      while (f.length < anchoMax) f.push("");
+      return f;
+    })
+    .filter(function(r){ return r.some(function(v){ return String(v || "").trim() !== ""; }); });
+
+  if (!filas.length){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo no trae renglones de datos después del encabezado.";
+    return;
+  }
+
+  const ok = confirm(
+    "Esto va a BORRAR todo lo que hay hoy en OS POR INSTALAR (debajo del encabezado) y lo va a reemplazar por " +
+    filas.length + " renglón(es) del archivo. No se puede deshacer.\n\n¿Continuar?"
+  );
+  if (!ok) return;
+
+  const btn = el("btnSubirOsPorInstalar");
+  btn.disabled = true;
+  caja.innerHTML = "Subiendo " + filas.length + " renglón(es)…";
+  try{
+    const r = await llamarProxyPost({
+      accion: "subirOsPorInstalar",
+      token: TOKEN,
+      pestana: el("gidOsPorInstalar").value.trim(),
+      filaInicio: String(iEnc + 2),
+      filas: JSON.stringify(filas)
+    });
+    if (!r || !r.ok){
+      caja.classList.add("error");
+      caja.innerHTML = "No se pudo subir: " + ((r && r.error) || "el proxy no respondió ok");
+      return;
+    }
+    caja.innerHTML = "Listo: se reemplazaron " + (r.filas != null ? r.filas : filas.length) + " renglón(es) en OS POR INSTALAR.";
+    el("archivoOsPorInstalar").value = "";
+    OSPI.estado = "sin cargar";
+    await cargarOsPorInstalar();
+    cargarUltimasCargas();
     pintar();
   }catch(e){
     caja.classList.add("error");
@@ -2605,6 +2705,54 @@ function fuentesHtml(){
   }).join("") +
     '<button type="button" id="menuPin" style="border-top:1px solid var(--line2);margin-top:8px">Cambiar mi PIN</button>';
   return '<div class="fuentes"><h4>Origen de la información</h4><ul>' + filas + "</ul></div>";
+}
+
+// última vez (fecha/hora) y quién reemplazó cada hoja subible, para el menú y para
+// cada panel de carga en Ajustes
+let ULTIMAS_CARGAS = {};   // {ventaTecnico:{fecha,numero,nombre,puesto}, osPorInstalar:{...}}
+
+function lineaUltimaCarga(nombre, info){
+  if (!info) return "<li><b>" + nombre + "</b><span>sin registro todavía</span></li>";
+  const f = new Date(info.fecha);
+  return "<li><b>" + nombre + "</b><span>" + fCorta(f) + " " + hora(f) + " · " +
+    (info.nombre || "—") + (info.puesto ? " (" + info.puesto + ")" : "") + "</span></li>";
+}
+
+// bloque del menú (cajón lateral): solo aparecen las hojas que ese perfil puede subir
+function ultimasCargasMenuHtml(){
+  const partes = [];
+  if (puedeCargarDatos()) partes.push(lineaUltimaCarga("Venta técnico", ULTIMAS_CARGAS.ventaTecnico));
+  if (puedeCargarOsPorInstalar()) partes.push(lineaUltimaCarga("OS por instalar", ULTIMAS_CARGAS.osPorInstalar));
+  if (!partes.length) return "";
+  return '<div class="fuentes"><h4>Últimas actualizaciones</h4><ul>' + partes.join("") + "</ul></div>";
+}
+
+// texto corto para el aviso fijo dentro de cada panel de carga en Ajustes
+function textoUltimaCarga(info){
+  if (!info) return "Última actualización: sin registro todavía.";
+  const f = new Date(info.fecha);
+  return "Última actualización: " + fCorta(f) + " " + hora(f) + " · " + (info.nombre || "—") +
+    (info.puesto ? " (" + info.puesto + ")" : "");
+}
+
+function pintarUltimasCargas(){
+  el("ultimasCargasMenu").innerHTML = ultimasCargasMenuHtml();
+  const cVt = el("ultimaCargaVentaTecnico");
+  if (cVt) cVt.textContent = textoUltimaCarga(ULTIMAS_CARGAS.ventaTecnico);
+  const cOs = el("ultimaCargaOsPorInstalar");
+  if (cOs) cOs.textContent = textoUltimaCarga(ULTIMAS_CARGAS.osPorInstalar);
+}
+
+// solo lectura, informativo: si falla no rompe nada más de la app
+async function cargarUltimasCargas(){
+  if (!TOKEN) return;
+  try{
+    const r = await llamarProxy({ accion: "ultimasCargas", token: TOKEN });
+    if (r && r.ok){
+      ULTIMAS_CARGAS = { ventaTecnico: r.ventaTecnico || null, osPorInstalar: r.osPorInstalar || null };
+      pintarUltimasCargas();
+    }
+  }catch(e){ /* silencioso */ }
 }
 
 let CANAL_COACH = new Map();
@@ -5391,6 +5539,7 @@ function pintar(){
   menu.innerHTML = items.map(function(it){
     return '<button type="button" data-ir="' + it.id + '">' + it.rotulo + "</button>";
   }).join("");
+  pintarUltimasCargas();
   const bpin = el("menuPin");
   if (bpin) bpin.addEventListener("click", function(){ cerrarCajon(); pedirCambioPin(true); });
 
@@ -5698,6 +5847,7 @@ function ajustaCajasDia(){
   if (btnAjustes) btnAjustes.style.display = vePermiso ? "" : "none";
   el("panelAjustes").classList.toggle("oculto", !(vePermiso && esAjustes));
   el("panelCargaDatos").classList.toggle("oculto", !(puedeCargarDatos() && esAjustes));
+  el("panelCargaOspi").classList.toggle("oculto", !(puedeCargarOsPorInstalar() && esAjustes));
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
@@ -5799,6 +5949,7 @@ el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
 el("btnSubirVentaTecnico").addEventListener("click", subirVentaTecnico);
+el("btnSubirOsPorInstalar").addEventListener("click", subirOsPorInstalar);
 ["gidRanking","gidEntrena","gidPlantilla"].forEach(function(id){
   el(id).addEventListener("change", function(){ INFO_EQ.estado = "sin cargar"; if (VISTA === "equipos") cargarEquipos(); });
 });
@@ -5883,6 +6034,14 @@ function puedeVerAjustes(){
 // Script vuelve a checar este mismo número antes de escribir nada
 function puedeCargarDatos(){
   return !!PERFIL && String(PERFIL.numero || "").trim() === "65068028";
+}
+
+// subir/reemplazar OS POR INSTALAR: los mismos puestos que ya solo ven Seguimiento OS
+// (Gerente de Operaciones, Supervisor de Planta Interna, Coordinador PE, Analista de
+// Atención a Clientes) — es el mismo "acceso: os" que ya calcula el Apps Script al
+// entrar, así que no hay que repetir la lista de puestos aquí
+function puedeCargarOsPorInstalar(){
+  return !!PERFIL && PERFIL.acceso === "os";
 }
 
 function accesoDe(puesto){
@@ -5980,6 +6139,7 @@ async function intentarEntrar(){
     };
     aviso.className = "acceso-aviso ok";
     aviso.textContent = "Bienvenido " + PERFIL.nombre + " · " + PERFIL.puesto;
+    cargarUltimasCargas();   // informativo, no bloquea el resto del login
     const debe = r.cambio_requerido || r.cambiarPin || r.debeCambiar ||
                  (r.perfil && (r.perfil.cambiarPin || r.perfil.debeCambiar));
     if (debe){
