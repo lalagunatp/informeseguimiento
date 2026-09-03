@@ -2718,12 +2718,14 @@ function lineaUltimaCarga(nombre, info){
     (info.nombre || "—") + (info.puesto ? " (" + info.puesto + ")" : "") + "</span></li>";
 }
 
-// bloque del menú (cajón lateral): solo aparecen las hojas que ese perfil puede subir
+// bloque del menú (cajón lateral): visible para cualquier usuario con sesión, aunque
+// no tenga permiso para subir esas hojas — es informativo (cuándo y quién actualizó)
 function ultimasCargasMenuHtml(){
-  const partes = [];
-  if (puedeCargarDatos()) partes.push(lineaUltimaCarga("Venta técnico", ULTIMAS_CARGAS.ventaTecnico));
-  if (puedeCargarOsPorInstalar()) partes.push(lineaUltimaCarga("OS por instalar", ULTIMAS_CARGAS.osPorInstalar));
-  if (!partes.length) return "";
+  if (!PERFIL) return "";
+  const partes = [
+    lineaUltimaCarga("Venta técnico", ULTIMAS_CARGAS.ventaTecnico),
+    lineaUltimaCarga("OS por instalar", ULTIMAS_CARGAS.osPorInstalar)
+  ];
   return '<div class="fuentes"><h4>Últimas actualizaciones</h4><ul>' + partes.join("") + "</ul></div>";
 }
 
@@ -5839,12 +5841,13 @@ function ajustaCajasDia(){
   const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
   const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
   el("btnCsv").style.display = (esOS || esAjustes || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
-  // Ajustes de la fuente: pestaña aparte, como Semanal/Mensual/etc. Solo aparece el
-  // botón de navegación y el panel para Director o el empleado 65068028; para todos
-  // los demás el botón queda oculto y la vista nunca puede quedar en "ajustes".
+  // Ajustes de la fuente: pestaña aparte, como Semanal/Mensual/etc. El botón de
+  // navegación aparece para Director/65068028 y también para los puestos "os" (ellos
+  // solo van a poder subir OS por instalar); el panel "Ajustes de la fuente" en sí
+  // sigue exclusivo de Director/65068028, nunca se muestra a los puestos "os".
   const vePermiso = puedeVerAjustes();
   const btnAjustes = el("btnVistaAjustes");
-  if (btnAjustes) btnAjustes.style.display = vePermiso ? "" : "none";
+  if (btnAjustes) btnAjustes.style.display = puedeEntrarAjustes() ? "" : "none";
   el("panelAjustes").classList.toggle("oculto", !(vePermiso && esAjustes));
   el("panelCargaDatos").classList.toggle("oculto", !(puedeCargarDatos() && esAjustes));
   el("panelCargaOspi").classList.toggle("oculto", !(puedeCargarOsPorInstalar() && esAjustes));
@@ -6029,6 +6032,14 @@ function puedeVerAjustes(){
   return String(PERFIL.numero || "").trim() === "65068028";
 }
 
+// pestaña Ajustes (el botón de navegación y poder entrar a la vista): además de
+// quien puede ver "Ajustes de la fuente", también entran los puestos "os" — pero
+// solo para subir OS por instalar, nunca ven el panel de Ajustes de la fuente
+function puedeEntrarAjustes(){
+  if (puedeVerAjustes()) return true;
+  return !!PERFIL && PERFIL.acceso === "os";
+}
+
 // subir/reemplazar datos en el Sheet: solo el número de empleado 65068028, aunque
 // también sea Director Distrital u otro puesto — esto NO es solo de UI, el Apps
 // Script vuelve a checar este mismo número antes de escribir nada
@@ -6209,9 +6220,12 @@ function abrirApp(){
   if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os"];
 
+  // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
+  // lista fija de "permitidas" (ese mismo botón ya se oculta/muestra en ajustaCajasDia)
   if (permitidas){
     Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(b){
       const v = b.getAttribute("data-vista");
+      if (v === "ajustes") return;
       if (permitidas.indexOf(v) < 0){ b.style.display = "none"; b.classList.remove("on"); }
     });
     if (permitidas.indexOf(VISTA) < 0){
