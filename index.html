@@ -4614,7 +4614,23 @@ function vendedores0Html(){
         }).join("") + "</tr>";
     }
 
-    let filas = "";
+    // mismo renglón pero en porcentaje: qué parte de los vendedores de ESE renglón
+    // lleva cada cantidad, así que cada renglón suma 100%. VEND y TOT se quedan en
+    // número: VEND es el denominador del porcentaje y TOT son operaciones, no
+    // vendedores, o sea que no forman parte de la distribución. Sin clic: el detalle
+    // se sigue abriendo desde la tabla de cantidades.
+    function renglonPct(etq, o, clase){
+      return "<tr" + (clase ? ' class="' + clase + '"' : "") + "><td>" + etq + "</td>" +
+        celdaNum(o.vend, "sem") + celdaNum(o.tot, "tot") +
+        o.cub.map(function(n, i){
+          const cl = (i === 0 && n ? "dif r" : "");
+          return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" +
+                 (n && o.vend ? (n * 100 / o.vend).toFixed(1) + "%" : '<span class="cero">0%</span>') +
+                 "</td>";
+        }).join("") + "</tr>";
+    }
+
+    let filas = "", filasPct = "";
     let orden;
     if (modoGrupo === "ranking"){
       orden = ORDEN_METAL.concat(["Fuera de HC"]).filter(function(m){ return grupos[m]; });
@@ -4624,20 +4640,31 @@ function vendedores0Html(){
         return grupos[b].vend - grupos[a].vend || a.localeCompare(b, "es");
       });
     }
-    orden.forEach(function(k){ filas += renglon(k, grupos[k], "", k); });
+    orden.forEach(function(k){
+      filas += renglon(k, grupos[k], "", k);
+      filasPct += renglonPct(k, grupos[k], "");
+    });
     const idTotalGeneral = tipo + "|__TOTAL__|TOT";
     DET_V0[idTotalGeneral] = todasFichas;
     for (let i = 0; i <= tope; i++) DET_V0[tipo + "|__TOTAL__|" + i] = porBucketGeneral[i] || [];
     filas += renglon("Total", gran, "total", "__TOTAL__", idTotalGeneral);
+    filasPct += renglonPct("Total", gran, "total");
 
     const cab = [];
     for (let i = 0; i <= tope; i++) cab.push("<th>" + (i === tope ? i + "+" : i) + "</th>");
+    const encabezado = "<tr><th>" + rotulo + "</th>" +
+      '<th class="sem">VEND</th><th class="tot">' + rotuloTot + "</th>" + cab.join("") + "</tr>";
 
-    return '<section class="panel"><h2>' + titulo + ' <span class="sub">' + nota +
-      (fuera ? " · " + fuera + " fuera de HC" : "") + "</span></h2>" +
-      '<div class="scroll"><table class="compacta"><thead><tr><th>' + rotulo + "</th>" +
-      '<th class="sem">VEND</th><th class="tot">' + rotuloTot + "</th>" + cab.join("") +
-      "</tr></thead><tbody>" + filas + "</tbody></table></div></section>";
+    return {
+      conteo: '<section class="panel"><h2>' + titulo + ' <span class="sub">' + nota +
+        (fuera ? " · " + fuera + " fuera de HC" : "") + "</span></h2>" +
+        '<div class="scroll"><table class="compacta"><thead>' + encabezado +
+        "</thead><tbody>" + filas + "</tbody></table></div></section>",
+      pct: '<section class="panel"><h2>' + titulo + ' · distribución % <span class="sub">' +
+        "qué porcentaje de los vendedores de cada renglón lleva esa cantidad · cada renglón suma 100%</span></h2>" +
+        '<div class="scroll"><table class="compacta"><thead>' + encabezado +
+        "</thead><tbody>" + filasPct + "</tbody></table></div></section>"
+    };
   }
 
   let eventos = 0;
@@ -4649,11 +4676,12 @@ function vendedores0Html(){
     " \u00b7 " + gente.length + " personas en plantilla \u00b7 " + eventos +
     " oportunidades en el periodo con los filtros puestos \u00b7 cada columna es cu\u00e1ntos llevan esa cantidad</span></h2></section>";
 
-  // cada tabla se guarda aparte (no se concatena de una vez): el detalle de la celda
-  // tocada se intercala justo debajo de SU tabla, no siempre hasta el final
-  const htmlOp = tabla("op", "OPORTUNIDAD", "por fecha de creación", "OPOR");
-  const htmlVal = tabla("val", "VENTA VALIDADA", "por fecha de validación", "VTA");
-  const htmlIns = tabla("ins", "INSTALACIONES", "por fecha de activación", "INS");
+  // cada evento se arma aparte (no se concatena de una vez): así el detalle de la
+  // celda tocada se intercala en SU bloque, no siempre hasta el final. Cada llamada
+  // devuelve dos tablas: la de cantidades y la de distribución en %
+  const tOp = tabla("op", "OPORTUNIDAD", "por fecha de creación", "OPOR");
+  const tVal = tabla("val", "VENTA VALIDADA", "por fecha de validación", "VTA");
+  const tIns = tabla("ins", "INSTALACIONES", "por fecha de activación", "INS");
 
   let detalle = "";
   if (DET_SEL && DET_V0[DET_SEL]){
@@ -4682,11 +4710,14 @@ function vendedores0Html(){
       }).join("") + "</tbody></table></div></section>";
   }
 
+  // cada evento va como par: la tabla de cantidades y, pegado, su distribución en %.
+  // El detalle que se abre al tocar una celda entra después de ese par, para no
+  // separar las dos tablas que hablan de lo mismo
   const tipoSel = DET_SEL ? DET_SEL.split("|")[0] : "";
   const cuerpoTablas =
-    htmlOp + (tipoSel === "op" ? detalle : "") +
-    htmlVal + (tipoSel === "val" ? detalle : "") +
-    htmlIns + (tipoSel === "ins" ? detalle : "");
+    tOp.conteo + tOp.pct + (tipoSel === "op" ? detalle : "") +
+    tVal.conteo + tVal.pct + (tipoSel === "val" ? detalle : "") +
+    tIns.conteo + tIns.pct + (tipoSel === "ins" ? detalle : "");
 
   return cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas +
     alcanceRankingHtml(gente, modoGrupo, rotulo) + cumplimientoRankingHtml(gente, modoGrupo, rotulo) +
