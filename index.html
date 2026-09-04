@@ -238,7 +238,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 89</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 90</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -556,6 +556,20 @@
     </div>
     <div id="ultimaCargaOsPorInstalar" class="aviso"></div>
     <div id="avisoCargaOsPorInstalar" class="aviso oculto"></div>
+  </section>
+
+  <section class="panel oculto" id="panelCargaOrdenes">
+    <h2>Actualizar datos · Atención de órdenes <span class="sub">reemplaza el contenido de la pestaña ATENCION ORDENES (nombre o gid configurado arriba), respetando el encabezado · lo pueden usar los mismos puestos que suben OS por instalar</span></h2>
+    <div class="controles">
+      <label class="campo">Archivo .csv (el reporte de atención de órdenes tal cual, con todas sus columnas)
+        <input type="file" id="archivoOrdenes" accept=".csv,text/csv">
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="btnSubirOrdenes" class="sec">Reemplazar ATENCION ORDENES con este archivo</button>
+    </div>
+    <div id="ultimaCargaOrdenes" class="aviso"></div>
+    <div id="avisoCargaOrdenes" class="aviso oculto"></div>
   </section>
 
   <section class="panel oculto" id="cajaDupliFiltros">
@@ -1330,6 +1344,109 @@ async function subirOsPorInstalar(){
     el("archivoOsPorInstalar").value = "";
     OSPI.estado = "sin cargar";
     await cargarOsPorInstalar();
+    cargarUltimasCargas();
+    pintar();
+  }catch(e){
+    caja.classList.add("error");
+    caja.innerHTML = "No se pudo subir: " + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+// mismo criterio que cargarOrdenes(): el encabezado es el renglón que trae la fecha de
+// término, así se sabe dónde empiezan los datos dentro del archivo subido
+function detectaEncabezadoOrdenes(filas){
+  for (let i = 0; i < Math.min(12, filas.length); i++){
+    const fila = filas[i].map(function(v){ return normaliza(v); });
+    if (fila.some(function(h){ return h.indexOf("FECHA TERMINO") >= 0; })) return i;
+  }
+  return -1;
+}
+
+async function subirAtencionOrdenes(){
+  const caja = el("avisoCargaOrdenes");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+  const archivo = el("archivoOrdenes").files[0];
+  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return; }
+
+  let texto;
+  try{
+    texto = await archivo.text();
+  }catch(e){
+    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return;
+  }
+
+  const renglones = parseCsvSimple(texto);
+  const iEnc = detectaEncabezadoOrdenes(renglones);
+  if (iEnc < 0){
+    caja.classList.add("error");
+    caja.innerHTML = 'No encontré el renglón de encabezado (busco "Fecha termino") en las primeras 12 líneas del archivo. Revisa que sea la exportación completa de atención de órdenes, con sus encabezados.';
+    return;
+  }
+
+  const anchoMax = renglones.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
+  const filas = renglones.slice(iEnc + 1)
+    .map(function(r){
+      const f = r.slice();
+      while (f.length < anchoMax) f.push("");
+      return f;
+    })
+    .filter(function(r){ return r.some(function(v){ return String(v || "").trim() !== ""; }); });
+
+  if (!filas.length){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo no trae renglones de datos después del encabezado.";
+    return;
+  }
+
+  // comprobación de que es el archivo correcto: la mayoría de los renglones debe traer
+  // tipo de evento y estatus, si no se estaría vaciando la pestaña con otra cosa
+  const enc = renglones[iEnc].map(normaliza);
+  const iTipo = enc.findIndex(function(h){ return h === "TIPO"; });
+  const iEst = enc.findIndex(function(h){ return h.indexOf("ESTATUS") >= 0; });
+  if (iTipo < 0 || iEst < 0){
+    caja.classList.add("error");
+    caja.innerHTML = 'El encabezado del archivo no trae las columnas "Tipo" y "Estatus". Revisa que sea el archivo correcto.';
+    return;
+  }
+  const buenos = filas.filter(function(f){
+    return String(f[iTipo] || "").trim() !== "" && String(f[iEst] || "").trim() !== "";
+  }).length;
+  if (buenos < filas.length / 2){
+    caja.classList.add("error");
+    caja.innerHTML = "Las columnas no cuadran: solo " + buenos + " de " + filas.length +
+      " renglón(es) traen tipo de evento y estatus. Revisa que sea el archivo correcto.";
+    return;
+  }
+
+  const ok = confirm(
+    "Esto va a BORRAR todo lo que hay hoy en la pestaña ATENCION ORDENES (debajo del encabezado) y lo va a reemplazar por " +
+    filas.length + " renglón(es) del archivo, con sus " + anchoMax + " columnas. No se puede deshacer.\n\n¿Continuar?"
+  );
+  if (!ok) return;
+
+  const btn = el("btnSubirOrdenes");
+  btn.disabled = true;
+  caja.innerHTML = "Subiendo " + filas.length + " renglón(es)… con un archivo grande esto puede tardar varios minutos.";
+  try{
+    const r = await llamarProxyPost({
+      accion: "subirAtencionOrdenes",
+      token: TOKEN,
+      pestana: (el("hojaOrdenes").value || "").trim() || "ATENCION ORDENES",
+      filaInicio: String(iEnc + 2),
+      filas: JSON.stringify(filas)
+    });
+    if (!r || !r.ok){
+      caja.classList.add("error");
+      caja.innerHTML = "No se pudo subir: " + ((r && r.error) || "el proxy no respondió ok");
+      return;
+    }
+    caja.innerHTML = "Listo: se reemplazaron " + (r.filas != null ? r.filas : filas.length) + " renglón(es) en ATENCION ORDENES.";
+    el("archivoOrdenes").value = "";
+    ORD.estado = "sin cargar";
+    await cargarOrdenes();
     cargarUltimasCargas();
     pintar();
   }catch(e){
@@ -2944,7 +3061,8 @@ function ultimasCargasMenuHtml(){
   const partes = [
     lineaUltimaCarga("Base de datos", ULTIMAS_CARGAS.baseDatos),
     lineaUltimaCarga("Venta técnico", ULTIMAS_CARGAS.ventaTecnico),
-    lineaUltimaCarga("OS por instalar", ULTIMAS_CARGAS.osPorInstalar)
+    lineaUltimaCarga("OS por instalar", ULTIMAS_CARGAS.osPorInstalar),
+    lineaUltimaCarga("Atención de órdenes", ULTIMAS_CARGAS.atencionOrdenes)
   ];
   return '<div class="fuentes"><h4>Últimas actualizaciones</h4><ul>' + partes.join("") + "</ul></div>";
 }
@@ -2965,6 +3083,8 @@ function pintarUltimasCargas(){
   if (cVt) cVt.textContent = textoUltimaCarga(ULTIMAS_CARGAS.ventaTecnico);
   const cOs = el("ultimaCargaOsPorInstalar");
   if (cOs) cOs.textContent = textoUltimaCarga(ULTIMAS_CARGAS.osPorInstalar);
+  const cAo = el("ultimaCargaOrdenes");
+  if (cAo) cAo.textContent = textoUltimaCarga(ULTIMAS_CARGAS.atencionOrdenes);
 }
 
 // solo lectura, informativo: si falla no rompe nada más de la app
@@ -2976,7 +3096,8 @@ async function cargarUltimasCargas(){
       ULTIMAS_CARGAS = {
         baseDatos: r.baseDatos || null,
         ventaTecnico: r.ventaTecnico || null,
-        osPorInstalar: r.osPorInstalar || null
+        osPorInstalar: r.osPorInstalar || null,
+        atencionOrdenes: r.atencionOrdenes || null
       };
       pintarUltimasCargas();
     }
@@ -6728,6 +6849,7 @@ function ajustaCajasDia(){
   el("panelCargaBase").classList.toggle("oculto", !(puedeCargarBase() && esAjustes));
   el("panelCargaDatos").classList.toggle("oculto", !(puedeCargarDatos() && esAjustes));
   el("panelCargaOspi").classList.toggle("oculto", !(puedeCargarOsPorInstalar() && esAjustes));
+  el("panelCargaOrdenes").classList.toggle("oculto", !(puedeCargarOrdenes() && esAjustes));
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
@@ -6839,6 +6961,7 @@ el("btnRevisarEq").addEventListener("click", revisarEquipos);
 el("btnSubirBase").addEventListener("click", subirBaseDatos);
 el("btnSubirVentaTecnico").addEventListener("click", subirVentaTecnico);
 el("btnSubirOsPorInstalar").addEventListener("click", subirOsPorInstalar);
+el("btnSubirOrdenes").addEventListener("click", subirAtencionOrdenes);
 ["gidRanking","gidEntrena","gidPlantilla"].forEach(function(id){
   el(id).addEventListener("change", function(){ INFO_EQ.estado = "sin cargar"; if (VISTA === "equipos") cargarEquipos(); });
 });
@@ -6947,6 +7070,11 @@ function puedeCargarDatos(){
 // entrar, así que no hay que repetir la lista de puestos aquí
 function puedeCargarOsPorInstalar(){
   return !!PERFIL && PERFIL.acceso === "os";
+}
+
+// ATENCION ORDENES: los mismos que suben OS por instalar
+function puedeCargarOrdenes(){
+  return puedeCargarOsPorInstalar();
 }
 
 function accesoDe(puesto){
