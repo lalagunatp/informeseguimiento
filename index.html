@@ -238,7 +238,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 86</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 87</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -272,6 +272,7 @@
     <button type="button" data-vista="dias30">Últimos 30 días</button>
     <button type="button" data-vista="vend0">Vend X Eventos</button>
     <button type="button" data-vista="os">Seguimiento OS</button>
+    <button type="button" data-vista="ordenes">Atención de órdenes</button>
     <button type="button" data-vista="dupli">Cuentas duplicadas</button>
     <button type="button" data-vista="oprech">Op Rechazadas</button>
     <button type="button" data-vista="equipos">Equipos</button>
@@ -423,6 +424,15 @@
         </label>
         <label class="campo">gid de OS POR INSTALAR
           <input type="text" id="gidOsPorInstalar" value="1188277740">
+        </label>
+        <label class="campo">gid o nombre de ATENCION ORDENES
+          <input type="text" id="hojaOrdenes" value="ATENCION ORDENES" placeholder="ATENCION ORDENES o su gid">
+        </label>
+        <label class="campo">Tipos que cuentan como evento de cliente (;)
+          <input type="text" id="ordTiposCliente" value="Addons; Cambio De Equipo; Factibilidad; Cambio De Plan; Soporte; Addon Wifi Extender; Instalacion; Cambio De Domicilio; Empresarial; Soporte Empresarial">
+        </label>
+        <label class="campo">Subtipos que van en renglón aparte (;)
+          <input type="text" id="ordSubtiposAparte" value="Renovacion Tecnologica">
         </label>
         <label class="campo">gid de PLANTILLA
           <input type="text" id="gidPlantilla" value="913334386">
@@ -592,6 +602,44 @@
       <label class="campo">Motivo de rechazo
         <div id="fMotivoRechazoOp"></div>
       </label>
+    </div>
+  </section>
+
+  <section class="panel oculto" id="cajaOrdenesFiltros">
+    <h2>Atención de órdenes <span class="sub">un evento cuenta en el día en que se cerró (fecha de término) · la cuadrilla es cada usuario instalador distinto con eventos ese día</span></h2>
+    <div class="controles">
+      <label class="campo">Días a mostrar
+        <select id="ordDias">
+          <option value="7">Últimos 7 días</option>
+          <option value="8" selected>Últimos 8 días</option>
+          <option value="14">Últimos 14 días</option>
+          <option value="21">Últimos 21 días</option>
+          <option value="30">Últimos 30 días</option>
+        </select>
+      </label>
+      <label class="campo">Universo de eventos
+        <select id="ordUniverso">
+          <option value="cliente" selected>Eventos de cliente</option>
+          <option value="otros">Planta externa y mantenimiento</option>
+          <option value="todos">Todos los tipos</option>
+        </select>
+      </label>
+      <label class="campo">Proveedor
+        <select id="ordProveedor"><option value="">Todos</option></select>
+      </label>
+      <label class="campo">Tipo de cuadrilla
+        <select id="ordCuadrilla"><option value="">Todas</option></select>
+      </label>
+      <label class="campo">Canal de venta
+        <select id="ordCanal"><option value="">Todos</option></select>
+      </label>
+      <label class="campo">Cluster
+        <select id="ordCluster"><option value="">Todos</option></select>
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="btnRecargarOrdenes" class="sec">Releer ATENCION ORDENES</button>
+      <button id="btnCsvOrdenes" class="sec">Descargar CSV del reporte</button>
     </div>
   </section>
 
@@ -2842,7 +2890,8 @@ const FUENTES = {
   plantilla: { nombre:"PLANTILLA" },
   ranking:   { nombre:"RANKING" },
   entrena:   { nombre:"RANKING ENTRENAMIENTO" },
-  seguim:    { nombre:"SEGUIMIENTO VENTAS" }
+  seguim:    { nombre:"SEGUIMIENTO VENTAS" },
+  ordenes:   { nombre:"ATENCION ORDENES" }
 };
 
 function marcarFuente(k, estado, ultimo, cuantos){
@@ -5387,6 +5436,501 @@ function pendientesHtml(){
     "</tr></thead><tbody>" + cuerpo + "</tbody></table></div></section>";
 }
 
+/* ---------- atención de órdenes: eventos por tipo y productividad por día ---------- */
+
+let ORD = { estado:"sin cargar", filas:[] };
+let CARGANDO_ORD = false;
+
+// la pestaña trae los acentos rotos (UTF-8 leído como Latin-1): "InstalaciÃ³n".
+// Se corrige al leer, no en la hoja, para no depender de que allá lo arreglen.
+function arreglaMojibake(v){
+  const t = String(v === null || v === undefined ? "" : v);
+  if (t.indexOf("Ã") < 0 && t.indexOf("Â") < 0) return t;
+  try {
+    const r = decodeURIComponent(escape(t));
+    return r || t;
+  } catch(e){ return t; }
+}
+
+// limpiaValor ya normaliza lo que llega del proxy (ISO, Date(...) o dd/mm/aaaa) a
+// "dd/mm/aaaa hh:mm"; de ahí sale la fecha con hora
+function fechaOrden(v){
+  const t = limpiaValor(v);
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/.exec(t);
+  if (!m) return null;
+  const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0));
+  return isNaN(d) ? null : d;
+}
+
+function claveDia(d){
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+async function cargarOrdenes(){
+  if (CARGANDO_ORD) return;
+  CARGANDO_ORD = true;
+  ORD = { estado:"cargando", filas:[] };
+  try{
+    const nombre = (el("hojaOrdenes").value || "").trim() || "ATENCION ORDENES";
+    const t = await traerHoja(nombre);
+    const rows = t.rows || [];
+    if (!rows.length){
+      ORD = { estado:"la pestaña llegó vacía", filas:[] };
+    } else {
+      const iEnc = filaEncabezado(rows, ["FECHA TERMINO", "ESTATUS", "SUBTIPO"]);
+      const enc = celdasTexto(rows[iEnc]).map(arreglaMojibake);
+      const c = {
+        cuenta:    buscaCol(enc, ["CUENTA"]),
+        os:        buscaCol(enc, ["OS"]),
+        tipo:      buscaCol(enc, ["TIPO"], ["SUBTIPO", "OPERACION", "CUADRILLA"]),
+        subtipo:   buscaCol(enc, ["SUBTIPO"]),
+        cluster:   buscaCol(enc, ["CLUSTER"]),
+        empresa:   buscaCol(enc, ["EMPRESA", "PROVEEDOR"]),
+        cuadrilla: buscaCol(enc, ["TIPO CUADRILLA"]),
+        usuario:   buscaCol(enc, ["USUARIO INSTALADOR"]),
+        tecnico:   buscaCol(enc, ["NOMBRE TECNICO"]),
+        creacion:  buscaCol(enc, ["FECHA CREACION"]),
+        agenda:    buscaCol(enc, ["FECHA ULTIMA AGENDA"]),
+        termino:   buscaCol(enc, ["FECHA TERMINO"]),
+        estatus:   buscaCol(enc, ["ESTATUS"]),
+        estado:    buscaCol(enc, ["ESTADO"]),
+        motivo:    buscaCol(enc, ["MOTIVO"]),
+        canal:     buscaCol(enc, ["CANAL VENTA"])
+      };
+      if (c.tipo < 0 || c.termino < 0 || c.estatus < 0){
+        ORD = { estado:"no encontré las columnas Tipo / Fecha termino / Estatus en el encabezado", filas:[] };
+      } else {
+        const dame = function(v, i){ return i >= 0 ? arreglaMojibake(v[i]).trim() : ""; };
+        const filas = [];
+        let ultimo = null;
+        for (let i = iEnc + 1; i < rows.length; i++){
+          const v = celdasTexto(rows[i]);
+          if (!v.length) continue;
+          const tipo = dame(v, c.tipo);
+          const est = dame(v, c.estatus);
+          if (!tipo && !est) continue;
+          const fT = c.termino >= 0 ? fechaOrden(v[c.termino]) : null;
+          if (fT && (!ultimo || fT > ultimo)) ultimo = fT;
+          filas.push({
+            cuenta: dame(v, c.cuenta),
+            os: dame(v, c.os),
+            tipo: tipo || "Sin tipo",
+            subtipo: dame(v, c.subtipo),
+            cluster: dame(v, c.cluster),
+            empresa: dame(v, c.empresa) || "Sin proveedor",
+            cuadrilla: dame(v, c.cuadrilla) || "Sin cuadrilla",
+            tecnicoNom: dame(v, c.tecnico),
+            canal: dame(v, c.canal) || "Sin canal",
+            // "Sin Tecnico Asignado" / "Sin Auxiliar" son marcadores de la hoja, no
+            // cuadrillas: si contaran, inflarían las cuadrillas del día y bajarían la
+            // productividad sin que nadie hubiera trabajado de más
+            tecnico: /^SIN\b/.test(normaliza(dame(v, c.usuario) || dame(v, c.tecnico))) ? "" : (dame(v, c.usuario) || dame(v, c.tecnico)),
+            motivo: dame(v, c.motivo),
+            estatus: normaliza(dame(v, c.estatus)),
+            estado: dame(v, c.estado),
+            fTer: fT,
+            fCre: c.creacion >= 0 ? fechaOrden(v[c.creacion]) : null,
+            fAge: c.agenda >= 0 ? fechaOrden(v[c.agenda]) : null
+          });
+        }
+        ORD = { estado:"ok", filas: filas };
+        marcarFuente("ordenes", "ok", ultimo ? fCorta(ultimo) + " " + hora(ultimo) : "", filas.length);
+        llenarSelectoresOrdenes();
+      }
+    }
+    if (ORD.estado !== "ok") marcarFuente("ordenes", ORD.estado, "", 0);
+  }catch(e){
+    ORD = { estado:"falló: " + e.message, filas:[] };
+    marcarFuente("ordenes", e.message);
+  }
+  CARGANDO_ORD = false;
+  pintar();
+}
+
+// los cuatro selectores de la vista se arman con lo que trae la propia pestaña
+function llenarSelectoresOrdenes(){
+  [["ordProveedor", "empresa", "Todos"], ["ordCuadrilla", "cuadrilla", "Todas"],
+   ["ordCanal", "canal", "Todos"], ["ordCluster", "cluster", "Todos"]].forEach(function(par){
+    const s = el(par[0]);
+    if (!s) return;
+    const previo = s.value;
+    const vals = Array.from(new Set(ORD.filas.map(function(o){ return o[par[1]]; }).filter(Boolean)))
+      .sort(function(a, b){ return String(a).localeCompare(String(b), "es"); });
+    s.innerHTML = '<option value="">' + par[2] + "</option>" +
+      vals.map(function(v){ return '<option value="' + v.replace(/"/g, "&quot;") + '">' + v + "</option>"; }).join("");
+    s.value = vals.indexOf(previo) >= 0 ? previo : "";
+  });
+}
+
+// El reporte que llega de los proveedores solo cuenta eventos de cliente: deja fuera
+// mantenimiento, planta externa (gasa, etiquetado, poste, cierre, ruta, detenciones) y
+// recolecciones. La lista vive en Ajustes por si mañana cambia el catálogo.
+function tiposClienteOrdenes(){
+  return el("ordTiposCliente").value.split(";").map(normaliza).filter(Boolean);
+}
+
+// "Renovación Tecnológica" viene como subtipo dentro de Cambio De Equipo, pero en el
+// reporte va en su propio renglón: se separa aquí, no en la hoja.
+function separadosOrdenes(){
+  return el("ordSubtiposAparte").value.split(";").map(function(s){ return s.trim(); }).filter(Boolean)
+    .map(function(s){ return { etq:s, k:normaliza(s) }; });
+}
+
+function tipoEventoFn(){
+  const aparte = separadosOrdenes();
+  if (!aparte.length) return function(o){ return o.tipo; };
+  return function(o){
+    const s = normaliza(o.subtipo);
+    for (let i = 0; i < aparte.length; i++){
+      if (s.indexOf(aparte[i].k) === 0) return aparte[i].etq;
+    }
+    return o.tipo;
+  };
+}
+
+function ordenesFiltradas(){
+  const prov = el("ordProveedor").value;
+  const cua = el("ordCuadrilla").value;
+  const can = el("ordCanal").value;
+  const clu = el("ordCluster").value;
+  const uni = el("ordUniverso").value;
+  const cliente = tiposClienteOrdenes();
+  return ORD.filas.filter(function(o){
+    if (uni !== "todos"){
+      const es = cliente.indexOf(normaliza(o.tipo)) >= 0;
+      if (uni === "cliente" ? !es : es) return false;
+    }
+    if (prov && o.empresa !== prov) return false;
+    if (cua && o.cuadrilla !== cua) return false;
+    if (can && o.canal !== can) return false;
+    if (clu && o.cluster !== clu) return false;
+    return true;
+  });
+}
+
+function esTerminada(o){ return o.estatus === "TERMINADA"; }
+function esCancelada(o){ return o.estatus === "CANCELADA"; }
+function esAbierta(o){ return !esTerminada(o) && !esCancelada(o); }
+
+// celda de variación: verde sube, rojo baja. En cancelaciones el sentido se invierte.
+function celdaDif(actual, base, invertir){
+  if (base === null || base === undefined || !isFinite(base) || base === 0 || actual === null){
+    return '<td class="dif">—</td>';
+  }
+  const d = (actual - base) / base;
+  let cl = Math.abs(d) < 0.005 ? "a" : (d > 0 ? "v" : "r");
+  if (invertir) cl = cl === "v" ? "r" : (cl === "r" ? "v" : "a");
+  return '<td class="dif ' + cl + '">' + (d > 0 ? "+" : "") + (d * 100).toFixed(1) + "%</td>";
+}
+
+function celdaProd(ev, cuad){
+  if (!cuad) return '<td class="cero">—</td>';
+  return "<td>" + (ev / cuad).toFixed(1) + '<span class="mini">' + num(ev) + "/" + num(cuad) + "</span></td>";
+}
+
+// arma, para cada día con movimiento, lo que necesitan las tablas de la vista
+function resumenOrdenes(){
+  const filas = ordenesFiltradas();
+  const tipoEv = tipoEventoFn();
+  const dias = new Map();     // clave del día -> conteos de ese día
+  const abiertas = {};        // tipo -> órdenes vivas hoy (asignadas, pendientes, detenidas)
+  let abiertasTot = 0;
+  let maxDia = null;
+
+  function bucket(k){
+    if (!dias.has(k)) dias.set(k, { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0 });
+    return dias.get(k);
+  }
+
+  filas.forEach(function(o){
+    const tipo = tipoEv(o);
+    if (esAbierta(o)){
+      abiertas[tipo] = (abiertas[tipo] || 0) + 1;
+      abiertasTot++;
+    }
+    if (!o.fTer) return;
+    const dia = soloFecha(o.fTer);
+    if (!maxDia || dia > maxDia) maxDia = dia;
+    const b = bucket(claveDia(dia));
+    if (o.tecnico) b.tec.add(o.tecnico);
+    if (!b.prov[o.empresa]) b.prov[o.empresa] = { ev:0, tec:new Set() };
+    if (o.tecnico) b.prov[o.empresa].tec.add(o.tecnico);
+    if (esTerminada(o)){
+      b.term++;
+      b.tipos[tipo] = (b.tipos[tipo] || 0) + 1;
+      b.prov[o.empresa].ev++;
+      // "del mismo día": se creó y se cerró dentro de la misma fecha
+      if (!b.mismoDia[tipo]) b.mismoDia[tipo] = { si:0, tot:0 };
+      b.mismoDia[tipo].tot++;
+      if (o.fCre && claveDia(soloFecha(o.fCre)) === claveDia(dia)){
+        b.mismoDia[tipo].si++;
+        b.mismoDiaTot++;
+      }
+    } else if (esCancelada(o)){
+      b.canc++;
+      b.cancTipos[tipo] = (b.cancTipos[tipo] || 0) + 1;
+    }
+  });
+
+  return { filas:filas, dias:dias, abiertas:abiertas, abiertasTot:abiertasTot, maxDia:maxDia, tipoEv:tipoEv };
+}
+
+function ordenesHtml(){
+  if (CARGANDO_ORD || ORD.estado === "cargando"){
+    return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">Leyendo la pestaña ATENCION ORDENES…</div></section>';
+  }
+  if (ORD.estado !== "ok"){
+    return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso error">No pude leer ATENCION ORDENES (' +
+      ORD.estado + '). Revisa en Ajustes de la fuente el nombre o gid de la pestaña.</div></section>';
+  }
+
+  const R = resumenOrdenes();
+  if (!R.maxDia){
+    return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">Ningún evento con fecha de término en lo que dejaron los filtros.</div></section>';
+  }
+
+  const nDias = Number(el("ordDias").value) || 8;
+  const cols = [];
+  for (let i = nDias - 1; i >= 0; i--){
+    const d = new Date(R.maxDia.getFullYear(), R.maxDia.getMonth(), R.maxDia.getDate() - i);
+    cols.push({ d:d, k:claveDia(d), b: R.dias.get(claveDia(d)) || null });
+  }
+  const dat = function(col){ return col.b || { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0 }; };
+
+  // el día en curso todavía no cierra: entra en las columnas pero no en el promedio
+  const hoyK = claveDia(soloFecha(new Date()));
+  const hayHoy = cols.some(function(c){ return c.k === hoyK; });
+  const paraProm = cols.filter(function(c){ return c.k !== hoyK; });
+  const promDe = function(fn){
+    if (!paraProm.length) return null;
+    return paraProm.reduce(function(a, c){ return a + fn(dat(c)); }, 0) / paraProm.length;
+  };
+
+  const ult = cols[cols.length - 1];
+
+  // los comparativos se leen contra el último día YA CERRADO: comparar contra el día en
+  // curso, que va a media jornada, marcaría todo en rojo sin que nada hubiera bajado
+  let iRef = cols.length - 1;
+  while (iRef > 0 && cols[iRef].k === hoyK) iRef--;
+  const ref = cols[iRef];
+  const penul = iRef > 0 ? cols[iRef - 1] : null;
+  const semAntD = new Date(ref.d.getFullYear(), ref.d.getMonth(), ref.d.getDate() - 7);
+  const semAnt = R.dias.get(claveDia(semAntD)) || null;
+  const etqDia = function(d){ return d.getDate() + " " + NOMBRE_MES[d.getMonth()].slice(0, 3); };
+  const rotRef = etqDia(ref.d);
+  const rotPrev = penul ? etqDia(penul.d) : "—";
+  const rotSem = etqDia(semAntD);
+
+  // mes en curso, contado hasta el último día con datos
+  const mesK = ult.d.getFullYear() + "-" + String(ult.d.getMonth() + 1).padStart(2, "0");
+  const mesTipos = {};
+  let mesTot = 0;
+  R.filas.forEach(function(o){
+    if (!o.fTer || !esTerminada(o)) return;
+    if (claveDia(soloFecha(o.fTer)).slice(0, 7) !== mesK) return;
+    const t = R.tipoEv(o);
+    mesTipos[t] = (mesTipos[t] || 0) + 1;
+    mesTot++;
+  });
+
+  // renglones: todo tipo con eventos en la ventana, en el mes o con órdenes abiertas
+  const tipos = Array.from(new Set(
+    cols.reduce(function(a, c){ return a.concat(Object.keys(dat(c).tipos), Object.keys(dat(c).cancTipos)); }, [])
+      .concat(Object.keys(mesTipos), Object.keys(R.abiertas))
+  )).sort(function(a, b){
+    const s = function(t){ return cols.reduce(function(x, c){ return x + (dat(c).tipos[t] || 0); }, 0); };
+    return s(b) - s(a) || a.localeCompare(b, "es");
+  });
+
+  const encDias = cols.map(function(c){
+    const hoy = c.k === hoyK ? ' title="día en curso: no entra en el promedio"' : "";
+    return "<th" + hoy + ">" + DIAS[diaIndice(c.d)].toUpperCase() +
+      '<span class="mini">' + c.d.getDate() + " " + NOMBRE_MES[c.d.getMonth()].slice(0, 3) + (c.k === hoyK ? " ·hoy" : "") + "</span></th>";
+  }).join("");
+
+  /* ---- tabla 1: eventos terminados por tipo ---- */
+  let f1 = "";
+  tipos.forEach(function(t){
+    const serie = cols.map(function(c){ return dat(c).tipos[t] || 0; });
+    const prom = promDe(function(b){ return b.tipos[t] || 0; });
+    const refV = serie[iRef];
+    const md = dat(ref).mismoDia[t];
+    f1 += "<tr><td>" + t + "</td>" +
+      serie.map(function(n){ return celdaNum(n); }).join("") +
+      '<td class="tot">' + (prom === null ? "—" : prom.toFixed(1)) + "</td>" +
+      celdaNum(R.abiertas[t] || 0) +
+      celdaDif(refV, penul ? (dat(penul).tipos[t] || 0) : null) +
+      celdaDif(refV, semAnt ? (semAnt.tipos[t] || 0) : null) +
+      celdaDif(refV, prom) +
+      "<td>" + (md && md.tot ? Math.round(md.si / md.tot * 100) + "%" : "—") + "</td>" +
+      celdaNum(mesTipos[t] || 0) +
+      "<td>" + (mesTot ? Math.round((mesTipos[t] || 0) / mesTot * 100) + "%" : "—") + "</td></tr>";
+  });
+
+  const totSerie = cols.map(function(c){ return dat(c).term; });
+  const cancSerie = cols.map(function(c){ return dat(c).canc; });
+  const cuadSerie = cols.map(function(c){ return dat(c).tec.size; });
+  const prodSerie = cols.map(function(c, i){ return cuadSerie[i] ? totSerie[i] / cuadSerie[i] : null; });
+  const promTot = promDe(function(b){ return b.term; });
+  const promCanc = promDe(function(b){ return b.canc; });
+  const promCuad = promDe(function(b){ return b.tec.size; });
+  const promProd = (promCuad && promTot !== null) ? promTot / promCuad : null;
+  const refProd = prodSerie[iRef];
+  const penProd = penul ? (dat(penul).tec.size ? dat(penul).term / dat(penul).tec.size : null) : null;
+  const semProd = semAnt ? (semAnt.tec.size ? semAnt.term / semAnt.tec.size : null) : null;
+  const mdRef = dat(ref);
+
+  f1 += '<tr class="total"><td>Eventos totales</td>' +
+    totSerie.map(function(n){ return celdaNum(n); }).join("") +
+    '<td class="tot">' + (promTot === null ? "—" : promTot.toFixed(1)) + "</td>" +
+    celdaNum(R.abiertasTot) +
+    celdaDif(totSerie[iRef], penul ? dat(penul).term : null) +
+    celdaDif(totSerie[iRef], semAnt ? semAnt.term : null) +
+    celdaDif(totSerie[iRef], promTot) +
+    "<td>" + (mdRef.term ? Math.round(mdRef.mismoDiaTot / mdRef.term * 100) + "%" : "—") + "</td>" +
+    celdaNum(mesTot) + "<td>100%</td></tr>";
+
+  f1 += '<tr class="total"><td>Cuadrillas que trabajaron</td>' +
+    cuadSerie.map(function(n){ return celdaNum(n); }).join("") +
+    '<td class="tot">' + (promCuad === null ? "—" : promCuad.toFixed(1)) + "</td>" +
+    "<td>—</td>" +
+    celdaDif(cuadSerie[iRef], penul ? dat(penul).tec.size : null) +
+    celdaDif(cuadSerie[iRef], semAnt ? semAnt.tec.size : null) +
+    celdaDif(cuadSerie[iRef], promCuad) +
+    "<td>—</td><td>—</td><td>—</td></tr>";
+
+  f1 += '<tr class="total"><td>Productividad (eventos por cuadrilla)</td>' +
+    prodSerie.map(function(p){ return p === null ? '<td class="cero">—</td>' : "<td>" + p.toFixed(1) + "</td>"; }).join("") +
+    '<td class="tot">' + (promProd === null ? "—" : promProd.toFixed(1)) + "</td>" +
+    "<td>—</td>" +
+    celdaDif(refProd, penProd) +
+    celdaDif(refProd, semProd) +
+    celdaDif(refProd, promProd) +
+    "<td>—</td><td>—</td><td>—</td></tr>";
+
+  f1 += '<tr class="total"><td>Canceladas</td>' +
+    cancSerie.map(function(n){ return celdaNum(n); }).join("") +
+    '<td class="tot">' + (promCanc === null ? "—" : promCanc.toFixed(1)) + "</td>" +
+    "<td>—</td>" +
+    celdaDif(cancSerie[iRef], penul ? dat(penul).canc : null, true) +
+    celdaDif(cancSerie[iRef], semAnt ? semAnt.canc : null, true) +
+    celdaDif(cancSerie[iRef], promCanc, true) +
+    "<td>—</td><td>—</td><td>—</td></tr>";
+
+  const uni = el("ordUniverso").value;
+  const rotUni = uni === "cliente" ? "eventos de cliente" : (uni === "otros" ? "planta externa y mantenimiento" : "todos los tipos");
+
+  const tabla1 = '<section class="panel"><h2>Eventos terminados por tipo y productividad por día' +
+    ' <span class="sub">' + rotUni + " · " + fCorta(cols[0].d) + " al " + fCorta(ult.d) +
+    (hayHoy ? " · el día en curso se muestra pero no entra en el promedio" : "") +
+    " · las columnas de variación comparan el " + rotRef + " (último día cerrado)" +
+    " · productividad = eventos terminados ÷ cuadrillas que trabajaron ese día</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Tipo de evento</th>" + encDias +
+    '<th class="tot">Prom</th><th title="órdenes vivas: asignadas, pendientes o detenidas">Abiertas</th>' +
+    '<th title="' + rotRef + " contra " + rotPrev + '">vs ' + rotPrev + "</th>" +
+    '<th title="' + rotRef + " contra " + rotSem + '">vs ' + rotSem + "</th>" +
+    '<th title="' + rotRef + ' contra el promedio del periodo">vs prom.</th>' +
+    '<th title="del ' + rotRef + ': eventos creados y cerrados el mismo día">% mismo día</th>' +
+    "<th>Mes</th><th>% del mes</th>" +
+    "</tr></thead><tbody>" + f1 + "</tbody></table></div></section>";
+
+  /* ---- tabla 2: productividad por proveedor ---- */
+  const provs = Array.from(new Set(
+    cols.reduce(function(a, c){ return a.concat(Object.keys(dat(c).prov)); }, [])
+  )).filter(function(p){
+    // proveedor que en la ventana no cerró nada ni puso cuadrilla: solo ensucia la tabla
+    return cols.some(function(c){
+      const x = dat(c).prov[p];
+      return x && (x.ev > 0 || x.tec.size > 0);
+    });
+  }).sort(function(a, b){
+    const s = function(p){ return cols.reduce(function(x, c){ return x + ((dat(c).prov[p] || {}).ev || 0); }, 0); };
+    return s(b) - s(a) || a.localeCompare(b, "es");
+  });
+
+  let f2 = "";
+  provs.forEach(function(p){
+    let ev = 0, cd = 0;
+    const celdas = cols.map(function(c){
+      const x = dat(c).prov[p] || { ev:0, tec:new Set() };
+      ev += x.ev; cd += x.tec.size;
+      return celdaProd(x.ev, x.tec.size);
+    }).join("");
+    f2 += "<tr><td>" + p + "</td>" + celdas +
+      '<td class="tot">' + (cd ? (ev / cd).toFixed(1) : "—") + '<span class="mini">' + num(ev) + "/" + num(cd) + "</span></td></tr>";
+  });
+  let evT = 0, cdT = 0;
+  const celdasT = cols.map(function(c, i){
+    evT += totSerie[i]; cdT += cuadSerie[i];
+    return celdaProd(totSerie[i], cuadSerie[i]);
+  }).join("");
+  f2 += '<tr class="total"><td>Total</td>' + celdasT +
+    '<td class="tot">' + (cdT ? (evT / cdT).toFixed(1) : "—") + '<span class="mini">' + num(evT) + "/" + num(cdT) + "</span></td></tr>";
+
+  const tabla2 = '<section class="panel"><h2>Productividad por proveedor' +
+    ' <span class="sub">cada celda es la productividad del día y abajo, en chico, eventos terminados entre cuadrillas · la columna de la derecha suma los ' +
+    nDias + " días</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Proveedor</th>' + encDias +
+    '<th class="tot">Periodo</th></tr></thead><tbody>' + f2 + "</tbody></table></div></section>";
+
+  /* ---- tabla 3: canceladas por tipo ---- */
+  const tiposC = tipos.filter(function(t){
+    return cols.some(function(c){ return (dat(c).cancTipos[t] || 0) > 0; });
+  });
+  let f3 = "";
+  tiposC.forEach(function(t){
+    const serie = cols.map(function(c){ return dat(c).cancTipos[t] || 0; });
+    const prom = promDe(function(b){ return b.cancTipos[t] || 0; });
+    const term = cols.reduce(function(a, c){ return a + (dat(c).tipos[t] || 0); }, 0);
+    const canc = serie.reduce(function(a, n){ return a + n; }, 0);
+    f3 += "<tr><td>" + t + "</td>" +
+      serie.map(function(n){ return celdaNum(n); }).join("") +
+      '<td class="tot">' + (prom === null ? "—" : prom.toFixed(1)) + "</td>" +
+      celdaDif(serie[iRef], penul ? (dat(penul).cancTipos[t] || 0) : null, true) +
+      celdaDif(serie[iRef], semAnt ? (semAnt.cancTipos[t] || 0) : null, true) +
+      "<td>" + (term + canc ? Math.round(canc / (term + canc) * 100) + "%" : "—") + "</td></tr>";
+  });
+  const cancT = cancSerie.reduce(function(a, n){ return a + n; }, 0);
+  const termT = totSerie.reduce(function(a, n){ return a + n; }, 0);
+  f3 += '<tr class="total"><td>Total canceladas</td>' +
+    cancSerie.map(function(n){ return celdaNum(n); }).join("") +
+    '<td class="tot">' + (promCanc === null ? "—" : promCanc.toFixed(1)) + "</td>" +
+    celdaDif(cancSerie[iRef], penul ? dat(penul).canc : null, true) +
+    celdaDif(cancSerie[iRef], semAnt ? semAnt.canc : null, true) +
+    "<td>" + (termT + cancT ? Math.round(cancT / (termT + cancT) * 100) + "%" : "—") + "</td></tr>";
+
+  const tabla3 = !tiposC.length ? "" :
+    '<section class="panel"><h2>Órdenes canceladas por día' +
+    ' <span class="sub">aquí el verde es bajar: la última columna es qué parte de los eventos atendidos de ese tipo terminó en cancelación</span></h2>' +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' + encDias +
+    '<th class="tot">Prom</th><th>vs ' + rotPrev + "</th><th>vs " + rotSem + '</th><th>% de cancelación</th>' +
+    "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>";
+
+  /* ---- tabla 4: motivos de cancelación de la ventana ---- */
+  const desde = cols[0].d;
+  const hasta = new Date(ult.d.getFullYear(), ult.d.getMonth(), ult.d.getDate(), 23, 59, 59);
+  const motivos = {};
+  let motTot = 0;
+  R.filas.forEach(function(o){
+    if (!esCancelada(o) || !o.fTer || o.fTer < desde || o.fTer > hasta) return;
+    const m = o.motivo || "Sin motivo";
+    motivos[m] = (motivos[m] || 0) + 1;
+    motTot++;
+  });
+  const listaMot = Object.keys(motivos).sort(function(a, b){ return motivos[b] - motivos[a]; }).slice(0, 15);
+  const tabla4 = !listaMot.length ? "" :
+    '<section class="panel"><h2>Motivos de cancelación' +
+    ' <span class="sub">' + fCorta(desde) + " al " + fCorta(ult.d) + " · " + num(motTot) + " canceladas</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Motivo</th><th>Órdenes</th><th>% del total</th></tr></thead><tbody>' +
+    listaMot.map(function(m){
+      return "<tr><td>" + m + "</td>" + celdaNum(motivos[m]) +
+        "<td>" + Math.round(motivos[m] / motTot * 100) + "%</td></tr>";
+    }).join("") + "</tbody></table></div></section>";
+
+  return tabla1 + tabla2 + tabla3 + tabla4;
+}
+
 /* ---------- pintado ---------- */
 
 function grupoDe(f, fecha){
@@ -5681,6 +6225,9 @@ function pintar(){
   } else if (VISTA === "dupli"){
     if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     html = cuentasDuplicadasHtml();
+  } else if (VISTA === "ordenes"){
+    if (ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
+    html = ordenesHtml();
   } else if (VISTA === "oprech"){
     html = opRechazadasHtml();
   } else if (VISTA === "equipos"){
@@ -5776,6 +6323,8 @@ function pintar(){
   }).filter(Boolean).join(" · ");
   const cab = VISTA === "os"
     ? "Seguimiento de OS"
+    : VISTA === "ordenes"
+    ? "Atención de órdenes" + (ORD.estado === "ok" ? " · " + num(ORD.filas.length) + " órdenes leídas" : "")
     : VISTA === "vend0"
     ? "Vend X Eventos"
     : VISTA === "dias30"
@@ -5991,7 +6540,7 @@ function descargarCsv(){
   });
 
   if (!filas.length) return;   // nada que exportar
-  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos" };
+  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos", ordenes:"atencion_ordenes" };
   const csv = "\ufeff" + filas.map(function(f){
     return f.map(function(x){ return '"' + String(x === undefined || x === null ? "" : x).replace(/"/g, '""') + '"'; }).join(",");
   }).join("\n");
@@ -6047,9 +6596,13 @@ function ajustaCajasDia(){
   const esDupli = VISTA === "dupli";
   const esAjustes = VISTA === "ajustes";
   const esOpRech = VISTA === "oprech";
+  const esOrdenes = VISTA === "ordenes";
   Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
-    l.style.display = (esOS || esDupli || esAjustes) ? "none" : "";
+    l.style.display = (esOS || esDupli || esAjustes || esOrdenes) ? "none" : "";
   });
+  // Atención de órdenes no usa nada de los filtros de venta: lleva su propio panel
+  el("cajaOrdenesFiltros").classList.toggle("oculto", !esOrdenes);
+  el("panelConsulta").classList.toggle("oculto", esOrdenes);
   const acc = document.querySelector(".panel > .acciones");
   if (acc) acc.style.display = "";
   const soloOS0 = PERFIL && PERFIL.acceso === "os";
@@ -6153,6 +6706,7 @@ el("btnRecargar").addEventListener("click", function(){
   OSPI.estado = "sin cargar";         // asignaciones
   SEG_TODOS = { estado:"sin cargar", porOS:{} };   // seguimiento de ventas
   SEG_HIST = { os:"", estado:"sin cargar", registros:[] };
+  ORD.estado = "sin cargar";          // atención de órdenes
   cargar();
 });
 ["hojaTecnico","idTecnico","colLlave","colClave"].forEach(function(id){
@@ -6165,6 +6719,12 @@ el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar"
 el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
+["ordDias","ordUniverso","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
+  el(id).addEventListener("change", function(){ if (VISTA === "ordenes") pintar(); });
+});
+el("btnRecargarOrdenes").addEventListener("click", function(){ ORD.estado = "sin cargar"; cargarOrdenes(); });
+el("btnCsvOrdenes").addEventListener("click", descargarCsv);
+el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
 el("btnSubirBase").addEventListener("click", subirBaseDatos);
@@ -6442,8 +7002,8 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli"];
-  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os"];
+  if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes"];
+  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes"];
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
   // lista fija de "permitidas" (ese mismo botón ya se oculta/muestra en ajustaCajasDia)
