@@ -238,7 +238,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 90</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 91</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -434,6 +434,12 @@
         <label class="campo">Subtipos que van en renglón aparte (;)
           <input type="text" id="ordSubtiposAparte" value="Renovacion Tecnologica">
         </label>
+        <label class="campo">Hoja de geocercas
+          <input type="text" id="hojaGeocercas" value="Clusters Colonias" placeholder="Clusters Colonias o su gid">
+        </label>
+        <label class="campo">Geocercas · columnas cluster; geocerca
+          <input type="text" id="colGeocercas" value="A; F">
+        </label>
         <label class="campo">gid de PLANTILLA
           <input type="text" id="gidPlantilla" value="913334386">
         </label>
@@ -627,6 +633,12 @@
       </label>
       <label class="campo">Día de la semana
         <div id="fOrdDiaSem"></div>
+      </label>
+      <label class="campo">Hora de corte
+        <select id="ordHora"><option value="">Todo el día</option></select>
+      </label>
+      <label class="campo">Geocerca
+        <select id="ordGeocerca"><option value="">Todas</option></select>
       </label>
       <label class="campo">Universo de eventos
         <select id="ordUniverso">
@@ -3012,7 +3024,8 @@ const FUENTES = {
   ranking:   { nombre:"RANKING" },
   entrena:   { nombre:"RANKING ENTRENAMIENTO" },
   seguim:    { nombre:"SEGUIMIENTO VENTAS" },
-  ordenes:   { nombre:"ATENCION ORDENES" }
+  ordenes:   { nombre:"ATENCION ORDENES" },
+  geocercas: { nombre:"Clusters Colonias" }
 };
 
 function marcarFuente(k, estado, ultimo, cuantos){
@@ -5592,6 +5605,71 @@ function claveDia(d){
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
+/* --- geocercas: el cluster de la orden se cruza contra la hoja Clusters Colonias --- */
+
+let GEO = { estado:"sin cargar", mapa:new Map() };
+
+// la misma colonia se escribe "LOS ANGELES_A" en la pestaña de órdenes y
+// "LOS ANGELES A" en la de geocercas: el guion bajo cuenta como espacio
+function llaveCluster(v){
+  return normaliza(v).replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function cargarGeocercas(){
+  GEO = { estado:"cargando", mapa:new Map() };
+  try{
+    const nombre = (el("hojaGeocercas").value || "").trim() || "Clusters Colonias";
+    const letras = el("colGeocercas").value.split(";").map(function(x){ return letraAIndice(x); });
+    const iCl = letras[0] >= 0 ? letras[0] : 0;
+    const iGe = letras[1] >= 0 ? letras[1] : 5;
+    const t = await traerHoja(nombre);
+    const rows = t.rows || [];
+    const mapa = new Map();
+    rows.forEach(function(r, i){
+      const v = celdasTexto(r);
+      const k = llaveCluster(v[iCl]);
+      const g = String(v[iGe] || "").trim();
+      // el primer renglón es el encabezado ("Cluster" / "Geocerca")
+      if (!k || !g || i === 0) return;
+      if (!mapa.has(k)) mapa.set(k, g);
+    });
+    GEO = { estado: mapa.size ? "ok" : "la hoja llegó sin cruces", mapa: mapa };
+    marcarFuente("geocercas", GEO.estado, "", mapa.size);
+  }catch(e){
+    GEO = { estado:"falló: " + e.message, mapa:new Map() };
+    marcarFuente("geocercas", e.message);
+  }
+}
+
+function geocercaDe(o){
+  return GEO.mapa.get(llaveCluster(o.cluster)) || "Sin geocerca";
+}
+
+/* --- hora de corte: se cuenta lo cerrado hasta esa hora, en todos los días --- */
+
+function llenarHorasOrdenes(){
+  const s = el("ordHora");
+  if (s.options.length > 1) return;
+  let html = '<option value="">Todo el día</option>';
+  for (let m = 30; m <= 1440; m += 30){
+    const hh = String(Math.floor(m / 60)).padStart(2, "0");
+    const mm = String(m % 60).padStart(2, "0");
+    html += '<option value="' + m + '">Hasta las ' + hh + ":" + mm + "</option>";
+  }
+  s.innerHTML = html;
+}
+
+function corteOrdenes(){
+  const v = Number(el("ordHora").value);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+
+function rotuloCorte(){
+  const c = corteOrdenes();
+  if (!c) return "";
+  return String(Math.floor(c / 60)).padStart(2, "0") + ":" + String(c % 60).padStart(2, "0");
+}
+
 function proveedorDeUsuario(u){
   const t = normaliza(u);
   if (!t || /^SIN\b/.test(t)) return "Sin asignar";
@@ -5697,6 +5775,8 @@ async function cargarOrdenes(){
         }
         ORD = { estado:"ok", filas: filas };
         marcarFuente("ordenes", "ok", ultimo ? fCorta(ultimo) + " " + hora(ultimo) : "", filas.length);
+        // las geocercas se leen antes de armar los selectores: uno de ellos las lista
+        await cargarGeocercas();
         llenarSelectoresOrdenes();
       }
     }
@@ -5714,6 +5794,7 @@ function llenarSelectoresOrdenes(){
   [["ordProveedor", function(o){ return o.prov; }, "Todos"],
    ["ordCuadrilla", function(o){ return o.cuadrilla; }, "Todas"],
    ["ordCanal", canalOrden, "Todos"],
+   ["ordGeocerca", geocercaDe, "Todas"],
    ["ordCluster", function(o){ return o.cluster; }, "Todos"]].forEach(function(par){
     const s = el(par[0]);
     if (!s) return;
@@ -5725,6 +5806,7 @@ function llenarSelectoresOrdenes(){
     s.value = vals.indexOf(previo) >= 0 ? previo : "";
   });
   llenarSemanasOrdenes();
+  llenarHorasOrdenes();
   llenarMulti("orddiasem");
 }
 
@@ -5791,12 +5873,20 @@ function ordenesFiltradas(){
   const can = el("ordCanal").value;
   const clu = el("ordCluster").value;
   const uni = el("ordUniverso").value;
+  const geo = el("ordGeocerca").value;
+  const corte = corteOrdenes();
   const cliente = tiposClienteOrdenes();
   return ORD.filas.filter(function(o){
     if (uni !== "todos"){
       const es = cliente.indexOf(normaliza(o.tipo)) >= 0;
       if (uni === "cliente" ? !es : es) return false;
     }
+    // hora de corte: queda lo cerrado hasta esa hora inclusive (10:29 entra en las
+    // 10:30, 10:35 ya no). Se aplica igual a todos los días, así el comparativo con
+    // ayer y con la semana pasada es a la misma hora. Las órdenes abiertas no tienen
+    // hora de cierre, así que el corte no las toca.
+    if (corte && o.fTer && o.fTer.getHours() * 60 + o.fTer.getMinutes() > corte) return false;
+    if (geo && geocercaDe(o) !== geo) return false;
     if (prov && o.prov !== prov) return false;
     if (cua && o.cuadrilla !== cua) return false;
     if (can && canalOrden(o) !== can) return false;
@@ -6038,9 +6128,13 @@ function ordenesHtml(){
 
   const uni = el("ordUniverso").value;
   const rotUni = uni === "cliente" ? "eventos de cliente" : (uni === "otros" ? "planta externa y mantenimiento" : "todos los tipos");
+  const hCorte = rotuloCorte();
+  const rotGeo = el("ordGeocerca").value ? " · geocerca " + el("ordGeocerca").value : "";
+  // el corte de hora cambia por completo lo que se está leyendo: va en el título
+  const rotHora = hCorte ? " · <b>solo lo cerrado hasta las " + hCorte + "</b>, en todos los días" : "";
 
   const tabla1 = '<section class="panel"><h2>Eventos terminados por tipo y productividad por día' +
-    ' <span class="sub">' + rotUni + " · semana " + etiquetaSemana(semK) + ", " + fCorta(lunes) + " al " + fCorta(domingo) +
+    ' <span class="sub">' + rotUni + rotGeo + rotHora + " · semana " + etiquetaSemana(semK) + ", " + fCorta(lunes) + " al " + fCorta(domingo) +
     " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
     (hayHoy ? " · la semana va abierta: el día en curso entra al acumulado tal como va, pero no al promedio" : "") +
     " · productividad = eventos terminados ÷ cuadrillas que trabajaron</span></h2>" +
@@ -6949,8 +7043,15 @@ el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar"
 el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
-["ordSemana","ordUniverso","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
+["ordSemana","ordUniverso","ordHora","ordGeocerca","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "ordenes") pintar(); });
+});
+["hojaGeocercas","colGeocercas"].forEach(function(id){
+  el(id).addEventListener("change", async function(){
+    await cargarGeocercas();
+    if (ORD.estado === "ok") llenarSelectoresOrdenes();
+    if (VISTA === "ordenes") pintar();
+  });
 });
 llenarMulti("orddiasem");   // que el panel no se vea vacío mientras carga la pestaña
 el("btnRecargarOrdenes").addEventListener("click", function(){ ORD.estado = "sin cargar"; cargarOrdenes(); });
