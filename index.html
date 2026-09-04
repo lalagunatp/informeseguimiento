@@ -498,6 +498,24 @@
       <div id="revision" class="aviso oculto"></div>
   </section>
 
+  <section class="panel oculto" id="panelCargaBase">
+    <h2>Actualizar datos · Base de datos <span class="sub">sube solo lo nuevo: los renglones del archivo entran hasta arriba y enseguida se borran los viejos que traigan la misma oportunidad (columna Q) · lo demás de la base no se toca</span></h2>
+    <div class="controles">
+      <label class="campo">Archivo .csv (exportado tal cual de BASE DE DATOS, con sus mismas columnas y en el mismo orden)
+        <input type="file" id="archivoBase" accept=".csv,text/csv">
+      </label>
+      <label class="campo" style="flex-direction:row; align-items:center; gap:8px">
+        <input type="checkbox" id="csvBaseTieneEncabezado" style="width:auto" checked>
+        <span style="text-transform:none; letter-spacing:0; font-size:12px">El archivo trae encabezado (se ignora el primer renglón)</span>
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="btnSubirBase" class="sec">Subir a BASE DE DATOS y quitar lo duplicado viejo</button>
+    </div>
+    <div id="ultimaCargaBase" class="aviso"></div>
+    <div id="avisoCargaBase" class="aviso oculto"></div>
+  </section>
+
   <section class="panel oculto" id="panelCargaDatos">
     <h2>Actualizar datos · Venta técnico <span class="sub">reemplaza todo el contenido de la pestaña VENTA TECNICO configurada arriba (columnas llave/clave) · solo tú puedes ver y usar esto</span></h2>
     <div class="controles">
@@ -977,6 +995,113 @@ function parseCsvSimple(texto){
   }
   if (campo !== "" || fila.length){ fila.push(campo); filas.push(fila); }
   return filas.filter(function(f){ return f.some(function(v){ return v.trim() !== ""; }); });
+}
+
+// BASE DE DATOS: a diferencia de las otras dos hojas, aquí NO se reemplaza todo. Se
+// sube solo lo nuevo/actualizado del día: esos renglones entran hasta arriba (debajo
+// del encabezado) y enseguida se borran los renglones viejos que traigan la misma
+// oportunidad. Lo que no venga en el archivo se queda tal cual.
+const COL_LLAVE_BASE = "Q";   // columna de la oportunidad en BASE DE DATOS
+
+async function subirBaseDatos(){
+  const caja = el("avisoCargaBase");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+  const archivo = el("archivoBase").files[0];
+  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return; }
+
+  let texto;
+  try{
+    texto = await archivo.text();
+  }catch(e){
+    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return;
+  }
+
+  let renglones = parseCsvSimple(texto);
+  if (el("csvBaseTieneEncabezado").checked) renglones = renglones.slice(1);
+
+  const anchoMax = renglones.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
+  const iLlave = letraAIndice(COL_LLAVE_BASE);
+  if (anchoMax <= iLlave){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo solo trae " + anchoMax + " columna(s) y la oportunidad va en la columna " +
+      COL_LLAVE_BASE + ". Tiene que ser la exportación de BASE DE DATOS con todas sus columnas, en el mismo orden.";
+    return;
+  }
+
+  const filas = renglones
+    .map(function(r){
+      const f = r.slice();
+      while (f.length < anchoMax) f.push("");
+      return f;
+    })
+    .filter(function(r){ return r.some(function(v){ return String(v || "").trim() !== ""; }); });
+
+  if (!filas.length){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo no trae renglones de datos.";
+    return;
+  }
+
+  // llaves del archivo: sirven para avisar de antemano cuántos viejos se van a quitar
+  const llaves = new Set();
+  let sinLlave = 0;
+  filas.forEach(function(f){
+    const k = String(f[iLlave] || "").trim();
+    if (k) llaves.add(k); else sinLlave++;
+  });
+  if (!llaves.size){
+    caja.classList.add("error");
+    caja.innerHTML = "Ningún renglón del archivo trae dato en la columna " + COL_LLAVE_BASE +
+      " (oportunidad). Sin esa llave no hay cómo saber qué está duplicado; revisa que sea el archivo correcto.";
+    return;
+  }
+  const yaEstan = FILAS.filter(function(f){ return llaves.has(String(f.oportunidad || "").trim()); }).length;
+
+  const ok = confirm(
+    "Se van a AGREGAR " + filas.length + " renglón(es) hasta arriba de BASE DE DATOS (" +
+    llaves.size + " oportunidad(es) distintas" + (sinLlave ? ", " + sinLlave + " renglón(es) sin oportunidad" : "") + ").\n\n" +
+    "Enseguida se BORRAN los renglones viejos que traigan esas mismas oportunidades (en la base que tienes cargada son " +
+    yaEstan + "). El resto de la base no se toca.\n\nNo se puede deshacer. ¿Continuar?"
+  );
+  if (!ok) return;
+
+  const cuerpo = JSON.stringify(filas);
+  if (cuerpo.length > 6000000){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo pesa demasiado para subirlo de un jalón (" +
+      Math.round(cuerpo.length / 1048576) + " MB). Pártelo en dos o tres archivos y súbelos uno tras otro; " +
+      "el resultado es el mismo porque cada carga quita sus propios duplicados viejos.";
+    return;
+  }
+
+  const btn = el("btnSubirBase");
+  btn.disabled = true;
+  caja.innerHTML = "Subiendo " + filas.length + " renglón(es)… en una base grande esto puede tardar un poco, no cierres la página.";
+  try{
+    const r = await llamarProxyPost({
+      accion: "subirBaseDatos",
+      token: TOKEN,
+      colLlave: COL_LLAVE_BASE,
+      filas: cuerpo
+    });
+    if (!r || !r.ok){
+      caja.classList.add("error");
+      caja.innerHTML = "No se pudo subir: " + ((r && r.error) || "el proxy no respondió ok");
+      return;
+    }
+    caja.innerHTML = "Listo: entraron " + (r.agregados != null ? r.agregados : filas.length) +
+      " renglón(es) arriba y se quitaron " + (r.eliminados || 0) + " viejo(s) con la misma oportunidad. " +
+      "La base quedó con " + (r.total != null ? r.total : "?") + " renglón(es).";
+    el("archivoBase").value = "";
+    cargarUltimasCargas();
+    await cargar();   // vuelve a leer la base ya actualizada
+  }catch(e){
+    caja.classList.add("error");
+    caja.innerHTML = "No se pudo subir: " + e.message;
+  }finally{
+    btn.disabled = false;
+  }
 }
 
 // lee el .csv elegido, arma [llave, clave] por renglón y reemplaza toda la pestaña
@@ -2709,7 +2834,7 @@ function fuentesHtml(){
 
 // última vez (fecha/hora) y quién reemplazó cada hoja subible, para el menú y para
 // cada panel de carga en Ajustes
-let ULTIMAS_CARGAS = {};   // {ventaTecnico:{fecha,numero,nombre,puesto}, osPorInstalar:{...}}
+let ULTIMAS_CARGAS = {};   // {baseDatos:{fecha,numero,nombre,puesto}, ventaTecnico:{...}, osPorInstalar:{...}}
 
 function lineaUltimaCarga(nombre, info){
   if (!info) return "<li><b>" + nombre + "</b><span>sin registro todavía</span></li>";
@@ -2723,6 +2848,7 @@ function lineaUltimaCarga(nombre, info){
 function ultimasCargasMenuHtml(){
   if (!PERFIL) return "";
   const partes = [
+    lineaUltimaCarga("Base de datos", ULTIMAS_CARGAS.baseDatos),
     lineaUltimaCarga("Venta técnico", ULTIMAS_CARGAS.ventaTecnico),
     lineaUltimaCarga("OS por instalar", ULTIMAS_CARGAS.osPorInstalar)
   ];
@@ -2739,6 +2865,8 @@ function textoUltimaCarga(info){
 
 function pintarUltimasCargas(){
   el("ultimasCargasMenu").innerHTML = ultimasCargasMenuHtml();
+  const cBd = el("ultimaCargaBase");
+  if (cBd) cBd.textContent = textoUltimaCarga(ULTIMAS_CARGAS.baseDatos);
   const cVt = el("ultimaCargaVentaTecnico");
   if (cVt) cVt.textContent = textoUltimaCarga(ULTIMAS_CARGAS.ventaTecnico);
   const cOs = el("ultimaCargaOsPorInstalar");
@@ -2751,7 +2879,11 @@ async function cargarUltimasCargas(){
   try{
     const r = await llamarProxy({ accion: "ultimasCargas", token: TOKEN });
     if (r && r.ok){
-      ULTIMAS_CARGAS = { ventaTecnico: r.ventaTecnico || null, osPorInstalar: r.osPorInstalar || null };
+      ULTIMAS_CARGAS = {
+        baseDatos: r.baseDatos || null,
+        ventaTecnico: r.ventaTecnico || null,
+        osPorInstalar: r.osPorInstalar || null
+      };
       pintarUltimasCargas();
     }
   }catch(e){ /* silencioso */ }
@@ -5849,6 +5981,7 @@ function ajustaCajasDia(){
   const btnAjustes = el("btnVistaAjustes");
   if (btnAjustes) btnAjustes.style.display = puedeEntrarAjustes() ? "" : "none";
   el("panelAjustes").classList.toggle("oculto", !(vePermiso && esAjustes));
+  el("panelCargaBase").classList.toggle("oculto", !(puedeCargarBase() && esAjustes));
   el("panelCargaDatos").classList.toggle("oculto", !(puedeCargarDatos() && esAjustes));
   el("panelCargaOspi").classList.toggle("oculto", !(puedeCargarOsPorInstalar() && esAjustes));
   el("cajaOS").style.display = esOS ? "" : "none";
@@ -5951,6 +6084,7 @@ el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
+el("btnSubirBase").addEventListener("click", subirBaseDatos);
 el("btnSubirVentaTecnico").addEventListener("click", subirVentaTecnico);
 el("btnSubirOsPorInstalar").addEventListener("click", subirOsPorInstalar);
 ["gidRanking","gidEntrena","gidPlantilla"].forEach(function(id){
@@ -6038,6 +6172,14 @@ function puedeVerAjustes(){
 function puedeEntrarAjustes(){
   if (puedeVerAjustes()) return true;
   return !!PERFIL && PERFIL.acceso === "os";
+}
+
+// subir información nueva a BASE DE DATOS: Director Distrital o el número 65068028
+// (el Apps Script vuelve a checar lo mismo antes de escribir o borrar nada)
+function puedeCargarBase(){
+  if (!PERFIL) return false;
+  if (puestoEs("DIRECTOR DISTRITAL")) return true;
+  return String(PERFIL.numero || "").trim() === "65068028";
 }
 
 // subir/reemplazar datos en el Sheet: solo el número de empleado 65068028, aunque
