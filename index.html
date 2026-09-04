@@ -196,6 +196,14 @@
   }
   .formseg textarea{resize:vertical}
   .formseg .acciones{grid-column:1 / -1; padding:0; align-items:center}
+  .dias-sem{display:flex; flex-wrap:wrap; gap:4px}
+  .dias-sem label{
+    display:inline-flex; align-items:center; gap:5px; padding:5px 9px; cursor:pointer;
+    border:1px solid var(--line); border-radius:7px; background:#fff;
+    font-size:12.5px; text-transform:none; letter-spacing:0; color:var(--ink);
+  }
+  .dias-sem label.on{background:var(--azul); border-color:var(--azul); color:#fff}
+  .dias-sem input{width:auto; margin:0}
   .leyenda{padding:8px 14px 12px; font-size:11.5px; color:var(--muted)}
   .pill{display:inline-block; padding:1px 7px; border-radius:20px; background:var(--gris); margin-right:6px; font-size:11px}
   details.ajustes summary{padding:10px 14px; cursor:pointer; font-size:12px; color:var(--azul); text-transform:uppercase; letter-spacing:1px}
@@ -238,7 +246,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 87</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 88</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -606,16 +614,13 @@
   </section>
 
   <section class="panel oculto" id="cajaOrdenesFiltros">
-    <h2>Atención de órdenes <span class="sub">un evento cuenta en el día en que se cerró (fecha de término) · la cuadrilla es cada usuario instalador distinto con eventos ese día</span></h2>
+    <h2>Atención de órdenes <span class="sub">un evento cuenta en el día en que se cerró (fecha de término) · la cuadrilla es cada usuario instalador distinto con eventos ese día · los días que elijas se usan igual en la semana en curso y en el acumulado de la anterior, para que la comparación sea pareja</span></h2>
     <div class="controles">
-      <label class="campo">Días a mostrar
-        <select id="ordDias">
-          <option value="7">Últimos 7 días</option>
-          <option value="8" selected>Últimos 8 días</option>
-          <option value="14">Últimos 14 días</option>
-          <option value="21">Últimos 21 días</option>
-          <option value="30">Últimos 30 días</option>
-        </select>
+      <label class="campo">Semana
+        <select id="ordSemana"></select>
+      </label>
+      <label class="campo">Días de la semana
+        <div id="ordDiasSem" class="dias-sem"></div>
       </label>
       <label class="campo">Universo de eventos
         <select id="ordUniverso">
@@ -1376,6 +1381,9 @@ function reclasificarCanal(){
     if (sinCruzar(f)) sinCruce++;
   });
   INFO_TECNICO.sinCruce = sinCruce;
+  // Atención de órdenes trae el canal de aquí por número de cuenta: el índice caducó
+  IDX_CANAL_CTA = null;
+  if (ORD.estado === "ok") llenarSelectoresOrdenes();
   llenarMulti("canal");
   pintar();
 }
@@ -1498,6 +1506,7 @@ async function cargar(){
   INFO_TECNICO.sinCruce = resultado.sinCruce;
 
   FILAS = nuevas;
+  IDX_CANAL_CTA = null;   // el cruce de canal por cuenta de Atención de órdenes se rearma
   FECHA_MAX = max;
   marcarFuente("base", "ok", max ? fCorta(max) : "", nuevas.length);
   SEMANAS = Array.from(semanas).sort();
@@ -3088,6 +3097,7 @@ async function cargarBaseCompleta(){
     if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no devolvió la base completa");
     const tabla = comoTabla({ datos: r.datos || [] });
     FILAS_COMPLETO = parsearBaseRows(tabla.rows || []).filas;
+    IDX_CANAL_CTA = null;   // ahora hay base completa: el cruce por cuenta mejora
   }catch(e){
     FILAS_COMPLETO = [];
     avisar("No se pudo leer la base completa para Cuentas duplicadas. <b>" + e.message + "</b>", true);
@@ -5466,6 +5476,38 @@ function claveDia(d){
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
+function proveedorDeUsuario(u){
+  const t = normaliza(u);
+  if (!t || /^SIN\b/.test(t)) return "Sin asignar";
+  const c = t.slice(0, 3);
+  return /^[A-Z]{3}$/.test(c) ? c : "Sin asignar";
+}
+
+// El canal que trae la pestaña no distingue la venta técnico de cada proveedor: dice
+// "Base De Datos". El número de cuenta sí está en las dos hojas, así que el canal ya
+// clasificado de BASE DE DATOS (Venta técnico SLK / CRC, Cambaceo, Punto de venta…)
+// se trae por cuenta. Se rearma cuando cambian las reglas de canal o el cruce.
+let IDX_CANAL_CTA = null;
+
+function indiceCanalCuenta(){
+  if (IDX_CANAL_CTA) return IDX_CANAL_CTA;
+  const m = new Map();
+  const base = FILAS_COMPLETO.length ? FILAS_COMPLETO : FILAS;
+  base.forEach(function(f){
+    const k = clave(f.cuenta);
+    if (!k || !f.canal) return;
+    // una cuenta puede repetirse (cambio de plan, reventa): manda la de venta técnico,
+    // que es justo la que se quiere poder separar por proveedor
+    if (!m.has(k) || normaliza(f.canal).indexOf("VENTA TECNICO") >= 0) m.set(k, f.canal);
+  });
+  IDX_CANAL_CTA = m;
+  return m;
+}
+
+function canalOrden(o){
+  return indiceCanalCuenta().get(clave(o.cuenta)) || o.canalHoja || "Sin canal";
+}
+
 async function cargarOrdenes(){
   if (CARGANDO_ORD) return;
   CARGANDO_ORD = true;
@@ -5520,11 +5562,15 @@ async function cargarOrdenes(){
             empresa: dame(v, c.empresa) || "Sin proveedor",
             cuadrilla: dame(v, c.cuadrilla) || "Sin cuadrilla",
             tecnicoNom: dame(v, c.tecnico),
-            canal: dame(v, c.canal) || "Sin canal",
+            canalHoja: dame(v, c.canal) || "Sin canal",
             // "Sin Tecnico Asignado" / "Sin Auxiliar" son marcadores de la hoja, no
             // cuadrillas: si contaran, inflarían las cuadrillas del día y bajarían la
             // productividad sin que nadie hubiera trabajado de más
             tecnico: /^SIN\b/.test(normaliza(dame(v, c.usuario) || dame(v, c.tecnico))) ? "" : (dame(v, c.usuario) || dame(v, c.tecnico)),
+            // el proveedor real sale de las 3 primeras letras del usuario instalador
+            // (SLKE3LAGT0170 -> SLK): la columna Empresa trae el mismo proveedor escrito
+            // de varias formas ("SOLUCIONIKA", "SOLUCIONIKA 2", "SOLUCIONIKA 3")
+            prov: proveedorDeUsuario(dame(v, c.usuario) || dame(v, c.tecnico)),
             motivo: dame(v, c.motivo),
             estatus: normaliza(dame(v, c.estatus)),
             estado: dame(v, c.estado),
@@ -5547,19 +5593,66 @@ async function cargarOrdenes(){
   pintar();
 }
 
-// los cuatro selectores de la vista se arman con lo que trae la propia pestaña
+// los selectores de la vista se arman con lo que trae la propia pestaña
 function llenarSelectoresOrdenes(){
-  [["ordProveedor", "empresa", "Todos"], ["ordCuadrilla", "cuadrilla", "Todas"],
-   ["ordCanal", "canal", "Todos"], ["ordCluster", "cluster", "Todos"]].forEach(function(par){
+  [["ordProveedor", function(o){ return o.prov; }, "Todos"],
+   ["ordCuadrilla", function(o){ return o.cuadrilla; }, "Todas"],
+   ["ordCanal", canalOrden, "Todos"],
+   ["ordCluster", function(o){ return o.cluster; }, "Todos"]].forEach(function(par){
     const s = el(par[0]);
     if (!s) return;
     const previo = s.value;
-    const vals = Array.from(new Set(ORD.filas.map(function(o){ return o[par[1]]; }).filter(Boolean)))
+    const vals = Array.from(new Set(ORD.filas.map(par[1]).filter(Boolean)))
       .sort(function(a, b){ return String(a).localeCompare(String(b), "es"); });
     s.innerHTML = '<option value="">' + par[2] + "</option>" +
       vals.map(function(v){ return '<option value="' + v.replace(/"/g, "&quot;") + '">' + v + "</option>"; }).join("");
     s.value = vals.indexOf(previo) >= 0 ? previo : "";
   });
+  llenarSemanasOrdenes();
+  pintarDiasOrdenes();
+}
+
+/* --- semana y días de la semana: el mismo eje de la vista Semanal --- */
+
+function semanasOrdenes(){
+  const s = new Set();
+  ORD.filas.forEach(function(o){ if (o.fTer) s.add(isoSemana(o.fTer)); });
+  return Array.from(s).sort();
+}
+
+function llenarSemanasOrdenes(){
+  const sel = el("ordSemana");
+  const previo = sel.value;
+  const lista = semanasOrdenes();
+  sel.innerHTML = lista.slice().reverse().map(function(k){
+    const l = lunesDe(k);
+    const d = new Date(l.getFullYear(), l.getMonth(), l.getDate() + 6);
+    return '<option value="' + k + '">Semana ' + etiquetaSemana(k) + "  ·  " + fCorta(l) + " al " + fCorta(d) + "</option>";
+  }).join("");
+  sel.value = (previo && lista.indexOf(previo) >= 0) ? previo : (lista.length ? lista[lista.length - 1] : "");
+}
+
+function pintarDiasOrdenes(){
+  const caja = el("ordDiasSem");
+  if (caja.children.length) return;   // solo la primera vez: respeta lo que ya eligió
+  caja.innerHTML = DIAS_LARGOS.map(function(d, i){
+    return '<label class="on"><input type="checkbox" value="' + i + '" checked>' + DIAS[i] + "</label>";
+  }).join("");
+  Array.prototype.forEach.call(caja.querySelectorAll("input"), function(inp){
+    inp.addEventListener("change", function(){
+      inp.parentNode.classList.toggle("on", inp.checked);
+      if (VISTA === "ordenes") pintar();
+    });
+  });
+}
+
+// sin ninguno marcado no tiene sentido pintar una tabla vacía: se toma la semana completa
+function diasOrdenes(){
+  const marcados = [];
+  Array.prototype.forEach.call(document.querySelectorAll("#ordDiasSem input"), function(inp){
+    if (inp.checked) marcados.push(Number(inp.value));
+  });
+  return marcados.length ? marcados : [0, 1, 2, 3, 4, 5, 6];
 }
 
 // El reporte que llega de los proveedores solo cuenta eventos de cliente: deja fuera
@@ -5600,9 +5693,9 @@ function ordenesFiltradas(){
       const es = cliente.indexOf(normaliza(o.tipo)) >= 0;
       if (uni === "cliente" ? !es : es) return false;
     }
-    if (prov && o.empresa !== prov) return false;
+    if (prov && o.prov !== prov) return false;
     if (cua && o.cuadrilla !== cua) return false;
-    if (can && o.canal !== can) return false;
+    if (can && canalOrden(o) !== can) return false;
     if (clu && o.cluster !== clu) return false;
     return true;
   });
@@ -5623,9 +5716,11 @@ function celdaDif(actual, base, invertir){
   return '<td class="dif ' + cl + '">' + (d > 0 ? "+" : "") + (d * 100).toFixed(1) + "%</td>";
 }
 
-function celdaProd(ev, cuad){
-  if (!cuad) return '<td class="cero">—</td>';
-  return "<td>" + (ev / cuad).toFixed(1) + '<span class="mini">' + num(ev) + "/" + num(cuad) + "</span></td>";
+function celdaProd(ev, cuad, extra){
+  const cl = extra || "";
+  if (!cuad) return '<td class="' + (cl + " cero").trim() + '">—</td>';
+  return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + (ev / cuad).toFixed(1) +
+    '<span class="mini">' + num(ev) + "/" + num(cuad) + "</span></td>";
 }
 
 // arma, para cada día con movimiento, lo que necesitan las tablas de la vista
@@ -5653,12 +5748,12 @@ function resumenOrdenes(){
     if (!maxDia || dia > maxDia) maxDia = dia;
     const b = bucket(claveDia(dia));
     if (o.tecnico) b.tec.add(o.tecnico);
-    if (!b.prov[o.empresa]) b.prov[o.empresa] = { ev:0, tec:new Set() };
-    if (o.tecnico) b.prov[o.empresa].tec.add(o.tecnico);
+    if (!b.prov[o.prov]) b.prov[o.prov] = { ev:0, tec:new Set() };
+    if (o.tecnico) b.prov[o.prov].tec.add(o.tecnico);
     if (esTerminada(o)){
       b.term++;
       b.tipos[tipo] = (b.tipos[tipo] || 0) + 1;
-      b.prov[o.empresa].ev++;
+      b.prov[o.prov].ev++;
       // "del mismo día": se creó y se cerró dentro de la misma fecha
       if (!b.mismoDia[tipo]) b.mismoDia[tipo] = { si:0, tot:0 };
       b.mismoDia[tipo].tot++;
@@ -5689,39 +5784,52 @@ function ordenesHtml(){
     return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">Ningún evento con fecha de término en lo que dejaron los filtros.</div></section>';
   }
 
-  const nDias = Number(el("ordDias").value) || 8;
-  const cols = [];
-  for (let i = nDias - 1; i >= 0; i--){
-    const d = new Date(R.maxDia.getFullYear(), R.maxDia.getMonth(), R.maxDia.getDate() - i);
-    cols.push({ d:d, k:claveDia(d), b: R.dias.get(claveDia(d)) || null });
-  }
-  const dat = function(col){ return col.b || { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0 }; };
+  const vacia = { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0 };
+  const dat = function(col){ return (col && col.b) || vacia; };
+  const bloque = function(k){ return R.dias.get(k) || vacia; };
 
-  // el día en curso todavía no cierra: entra en las columnas pero no en el promedio
+  const semK = el("ordSemana").value || isoSemana(R.maxDia);
+  const lunes = lunesDe(semK);
+  const lunesAnt = lunesDe(claveAnterior(semK));
   const hoyK = claveDia(soloFecha(new Date()));
+
+  // solo los días elegidos, y de ellos solo los que ya ocurrieron: una columna de un día
+  // que todavía no llega se leería como un desplome
+  const cols = diasOrdenes().map(function(i){
+    const d = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + i);
+    return { i:i, d:d, k:claveDia(d), b: R.dias.get(claveDia(d)) || null };
+  }).filter(function(c){ return c.d <= R.maxDia; });
+
+  if (!cols.length){
+    return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">De esa semana no hay días con eventos cerrados. Cambia la semana o marca otros días.</div></section>';
+  }
+
+  // el acumulado de la semana anterior usa exactamente los mismos días de la semana
+  const colsAnt = cols.map(function(c){
+    const d = new Date(lunesAnt.getFullYear(), lunesAnt.getMonth(), lunesAnt.getDate() + c.i);
+    return { i:c.i, d:d, k:claveDia(d), b: R.dias.get(claveDia(d)) || null };
+  });
+  // El día en curso se muestra como columna, pero queda fuera de los acumulados y del
+  // promedio: media jornada contra una semana completa haría ver caídas que no existen.
+  // Los dos acumulados (esta semana y la anterior) usan exactamente los mismos días.
   const hayHoy = cols.some(function(c){ return c.k === hoyK; });
-  const paraProm = cols.filter(function(c){ return c.k !== hoyK; });
+  const iCerr = cols.map(function(c, i){ return c.k === hoyK ? -1 : i; }).filter(function(i){ return i >= 0; });
+  const cerrados = iCerr.length ? iCerr : cols.map(function(c, i){ return i; });
+  const suma = function(fn){ return cerrados.reduce(function(a, i){ return a + fn(dat(cols[i])); }, 0); };
+  const sumaAnt = function(fn){ return cerrados.reduce(function(a, i){ return a + fn(dat(colsAnt[i])); }, 0); };
   const promDe = function(fn){
-    if (!paraProm.length) return null;
-    return paraProm.reduce(function(a, c){ return a + fn(dat(c)); }, 0) / paraProm.length;
+    if (!cerrados.length) return null;
+    return suma(fn) / cerrados.length;
   };
+  const rotAcum = cerrados.length === cols.length
+    ? "acumulado de los días mostrados"
+    : "acumulado de los días ya cerrados: el día en curso se muestra aparte y no suma aquí";
 
   const ult = cols[cols.length - 1];
+  const domingo = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + 6);
+  const rotSemAnt = fCorta(colsAnt[cerrados[0]].d) + " al " + fCorta(colsAnt[cerrados[cerrados.length - 1]].d);
 
-  // los comparativos se leen contra el último día YA CERRADO: comparar contra el día en
-  // curso, que va a media jornada, marcaría todo en rojo sin que nada hubiera bajado
-  let iRef = cols.length - 1;
-  while (iRef > 0 && cols[iRef].k === hoyK) iRef--;
-  const ref = cols[iRef];
-  const penul = iRef > 0 ? cols[iRef - 1] : null;
-  const semAntD = new Date(ref.d.getFullYear(), ref.d.getMonth(), ref.d.getDate() - 7);
-  const semAnt = R.dias.get(claveDia(semAntD)) || null;
-  const etqDia = function(d){ return d.getDate() + " " + NOMBRE_MES[d.getMonth()].slice(0, 3); };
-  const rotRef = etqDia(ref.d);
-  const rotPrev = penul ? etqDia(penul.d) : "—";
-  const rotSem = etqDia(semAntD);
-
-  // mes en curso, contado hasta el último día con datos
+  // mes en curso, contado hasta el último día mostrado
   const mesK = ult.d.getFullYear() + "-" + String(ult.d.getMonth() + 1).padStart(2, "0");
   const mesTipos = {};
   let mesTot = 0;
@@ -5747,91 +5855,89 @@ function ordenesHtml(){
     return "<th" + hoy + ">" + DIAS[diaIndice(c.d)].toUpperCase() +
       '<span class="mini">' + c.d.getDate() + " " + NOMBRE_MES[c.d.getMonth()].slice(0, 3) + (c.k === hoyK ? " ·hoy" : "") + "</span></th>";
   }).join("");
+  const encSemAnt = '<th class="tot" title="mismos días de la semana anterior: ' + rotSemAnt + '">SEM ANT<span class="mini">acumulado</span></th>';
 
   /* ---- tabla 1: eventos terminados por tipo ---- */
   let f1 = "";
   tipos.forEach(function(t){
     const serie = cols.map(function(c){ return dat(c).tipos[t] || 0; });
     const prom = promDe(function(b){ return b.tipos[t] || 0; });
-    const refV = serie[iRef];
-    const md = dat(ref).mismoDia[t];
+    const tot = suma(function(b){ return b.tipos[t] || 0; });
+    const ant = sumaAnt(function(b){ return b.tipos[t] || 0; });
+    const md = { si:0, tot:0 };
+    cerrados.forEach(function(i){
+      const x = dat(cols[i]).mismoDia[t];
+      if (x){ md.si += x.si; md.tot += x.tot; }
+    });
     f1 += "<tr><td>" + t + "</td>" +
+      celdaNum(ant, "tot") +
       serie.map(function(n){ return celdaNum(n); }).join("") +
+      celdaNum(tot, "tot") +
       '<td class="tot">' + (prom === null ? "—" : prom.toFixed(1)) + "</td>" +
+      celdaDif(tot, ant) +
       celdaNum(R.abiertas[t] || 0) +
-      celdaDif(refV, penul ? (dat(penul).tipos[t] || 0) : null) +
-      celdaDif(refV, semAnt ? (semAnt.tipos[t] || 0) : null) +
-      celdaDif(refV, prom) +
-      "<td>" + (md && md.tot ? Math.round(md.si / md.tot * 100) + "%" : "—") + "</td>" +
+      "<td>" + (md.tot ? Math.round(md.si / md.tot * 100) + "%" : "—") + "</td>" +
       celdaNum(mesTipos[t] || 0) +
       "<td>" + (mesTot ? Math.round((mesTipos[t] || 0) / mesTot * 100) + "%" : "—") + "</td></tr>";
   });
 
   const totSerie = cols.map(function(c){ return dat(c).term; });
-  const cancSerie = cols.map(function(c){ return dat(c).canc; });
   const cuadSerie = cols.map(function(c){ return dat(c).tec.size; });
   const prodSerie = cols.map(function(c, i){ return cuadSerie[i] ? totSerie[i] / cuadSerie[i] : null; });
   const promTot = promDe(function(b){ return b.term; });
-  const promCanc = promDe(function(b){ return b.canc; });
   const promCuad = promDe(function(b){ return b.tec.size; });
   const promProd = (promCuad && promTot !== null) ? promTot / promCuad : null;
-  const refProd = prodSerie[iRef];
-  const penProd = penul ? (dat(penul).tec.size ? dat(penul).term / dat(penul).tec.size : null) : null;
-  const semProd = semAnt ? (semAnt.tec.size ? semAnt.term / semAnt.tec.size : null) : null;
-  const mdRef = dat(ref);
+
+  const totSem = suma(function(b){ return b.term; });
+  const totSemAnt = sumaAnt(function(b){ return b.term; });
+  const cuadSem = suma(function(b){ return b.tec.size; });
+  const cuadSemAnt = sumaAnt(function(b){ return b.tec.size; });
+  const prodSem = cuadSem ? totSem / cuadSem : null;
+  const prodSemAnt = cuadSemAnt ? totSemAnt / cuadSemAnt : null;
+  const mdSem = { si: suma(function(b){ return b.mismoDiaTot; }), tot: totSem };
 
   f1 += '<tr class="total"><td>Eventos totales</td>' +
+    celdaNum(totSemAnt, "tot") +
     totSerie.map(function(n){ return celdaNum(n); }).join("") +
+    celdaNum(totSem, "tot") +
     '<td class="tot">' + (promTot === null ? "—" : promTot.toFixed(1)) + "</td>" +
+    celdaDif(totSem, totSemAnt) +
     celdaNum(R.abiertasTot) +
-    celdaDif(totSerie[iRef], penul ? dat(penul).term : null) +
-    celdaDif(totSerie[iRef], semAnt ? semAnt.term : null) +
-    celdaDif(totSerie[iRef], promTot) +
-    "<td>" + (mdRef.term ? Math.round(mdRef.mismoDiaTot / mdRef.term * 100) + "%" : "—") + "</td>" +
+    "<td>" + (mdSem.tot ? Math.round(mdSem.si / mdSem.tot * 100) + "%" : "—") + "</td>" +
     celdaNum(mesTot) + "<td>100%</td></tr>";
 
-  f1 += '<tr class="total"><td>Cuadrillas que trabajaron</td>' +
+  // en las columnas de acumulado son jornadas (suma de cuadrillas por día), no técnicos
+  // distintos: así la productividad de la semana sigue siendo eventos entre jornadas
+  f1 += '<tr class="total"><td title="en las columnas de acumulado es la suma de cuadrillas por día (jornadas), no técnicos distintos">Cuadrillas que trabajaron</td>' +
+    celdaNum(cuadSemAnt, "tot") +
     cuadSerie.map(function(n){ return celdaNum(n); }).join("") +
+    celdaNum(cuadSem, "tot") +
     '<td class="tot">' + (promCuad === null ? "—" : promCuad.toFixed(1)) + "</td>" +
-    "<td>—</td>" +
-    celdaDif(cuadSerie[iRef], penul ? dat(penul).tec.size : null) +
-    celdaDif(cuadSerie[iRef], semAnt ? semAnt.tec.size : null) +
-    celdaDif(cuadSerie[iRef], promCuad) +
-    "<td>—</td><td>—</td><td>—</td></tr>";
+    celdaDif(cuadSem, cuadSemAnt) +
+    "<td>—</td><td>—</td><td>—</td><td>—</td></tr>";
 
   f1 += '<tr class="total"><td>Productividad (eventos por cuadrilla)</td>' +
+    '<td class="tot">' + (prodSemAnt === null ? "—" : prodSemAnt.toFixed(1)) + "</td>" +
     prodSerie.map(function(p){ return p === null ? '<td class="cero">—</td>' : "<td>" + p.toFixed(1) + "</td>"; }).join("") +
+    '<td class="tot">' + (prodSem === null ? "—" : prodSem.toFixed(1)) + "</td>" +
     '<td class="tot">' + (promProd === null ? "—" : promProd.toFixed(1)) + "</td>" +
-    "<td>—</td>" +
-    celdaDif(refProd, penProd) +
-    celdaDif(refProd, semProd) +
-    celdaDif(refProd, promProd) +
-    "<td>—</td><td>—</td><td>—</td></tr>";
-
-  f1 += '<tr class="total"><td>Canceladas</td>' +
-    cancSerie.map(function(n){ return celdaNum(n); }).join("") +
-    '<td class="tot">' + (promCanc === null ? "—" : promCanc.toFixed(1)) + "</td>" +
-    "<td>—</td>" +
-    celdaDif(cancSerie[iRef], penul ? dat(penul).canc : null, true) +
-    celdaDif(cancSerie[iRef], semAnt ? semAnt.canc : null, true) +
-    celdaDif(cancSerie[iRef], promCanc, true) +
-    "<td>—</td><td>—</td><td>—</td></tr>";
+    celdaDif(prodSem, prodSemAnt) +
+    "<td>—</td><td>—</td><td>—</td><td>—</td></tr>";
 
   const uni = el("ordUniverso").value;
   const rotUni = uni === "cliente" ? "eventos de cliente" : (uni === "otros" ? "planta externa y mantenimiento" : "todos los tipos");
 
   const tabla1 = '<section class="panel"><h2>Eventos terminados por tipo y productividad por día' +
-    ' <span class="sub">' + rotUni + " · " + fCorta(cols[0].d) + " al " + fCorta(ult.d) +
-    (hayHoy ? " · el día en curso se muestra pero no entra en el promedio" : "") +
-    " · las columnas de variación comparan el " + rotRef + " (último día cerrado)" +
-    " · productividad = eventos terminados ÷ cuadrillas que trabajaron ese día</span></h2>" +
+    ' <span class="sub">' + rotUni + " · semana " + etiquetaSemana(semK) + ", " + fCorta(lunes) + " al " + fCorta(domingo) +
+    " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
+    (hayHoy ? " · el día en curso se muestra aparte: no suma en los acumulados ni en el promedio" : "") +
+    " · productividad = eventos terminados ÷ cuadrillas que trabajaron</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Tipo de evento</th>" + encDias +
-    '<th class="tot">Prom</th><th title="órdenes vivas: asignadas, pendientes o detenidas">Abiertas</th>' +
-    '<th title="' + rotRef + " contra " + rotPrev + '">vs ' + rotPrev + "</th>" +
-    '<th title="' + rotRef + " contra " + rotSem + '">vs ' + rotSem + "</th>" +
-    '<th title="' + rotRef + ' contra el promedio del periodo">vs prom.</th>' +
-    '<th title="del ' + rotRef + ': eventos creados y cerrados el mismo día">% mismo día</th>' +
+    "<th>Tipo de evento</th>" + encSemAnt + encDias +
+    '<th class="tot" title="' + rotAcum + '">Semana</th><th class="tot" title="promedio por día de los días cerrados">Prom</th>' +
+    '<th title="acumulado de la semana contra los mismos días de la anterior">vs sem. ant.</th>' +
+    '<th title="órdenes vivas: asignadas, pendientes o detenidas">Abiertas</th>' +
+    '<th title="de la semana: eventos creados y cerrados el mismo día">% mismo día</th>' +
     "<th>Mes</th><th>% del mes</th>" +
     "</tr></thead><tbody>" + f1 + "</tbody></table></div></section>";
 
@@ -5849,71 +5955,78 @@ function ordenesHtml(){
     return s(b) - s(a) || a.localeCompare(b, "es");
   });
 
+  const provDe = function(col, p){ return dat(col).prov[p] || { ev:0, tec:new Set() }; };
   let f2 = "";
   provs.forEach(function(p){
-    let ev = 0, cd = 0;
+    let ev = 0, cd = 0, evA = 0, cdA = 0;
+    cerrados.forEach(function(i){
+      const a = provDe(colsAnt[i], p);  evA += a.ev; cdA += a.tec.size;
+      const x = provDe(cols[i], p);     ev  += x.ev; cd  += x.tec.size;
+    });
     const celdas = cols.map(function(c){
-      const x = dat(c).prov[p] || { ev:0, tec:new Set() };
-      ev += x.ev; cd += x.tec.size;
+      const x = provDe(c, p);
       return celdaProd(x.ev, x.tec.size);
     }).join("");
-    f2 += "<tr><td>" + p + "</td>" + celdas +
-      '<td class="tot">' + (cd ? (ev / cd).toFixed(1) : "—") + '<span class="mini">' + num(ev) + "/" + num(cd) + "</span></td></tr>";
+    f2 += "<tr><td>" + p + "</td>" + celdaProd(evA, cdA, "tot") + celdas + celdaProd(ev, cd, "tot") +
+      celdaDif(cd ? ev / cd : null, cdA ? evA / cdA : null) + "</tr>";
   });
-  let evT = 0, cdT = 0;
-  const celdasT = cols.map(function(c, i){
-    evT += totSerie[i]; cdT += cuadSerie[i];
-    return celdaProd(totSerie[i], cuadSerie[i]);
-  }).join("");
-  f2 += '<tr class="total"><td>Total</td>' + celdasT +
-    '<td class="tot">' + (cdT ? (evT / cdT).toFixed(1) : "—") + '<span class="mini">' + num(evT) + "/" + num(cdT) + "</span></td></tr>";
+  f2 += '<tr class="total"><td>Total</td>' +
+    celdaProd(totSemAnt, cuadSemAnt, "tot") +
+    cols.map(function(c, i){ return celdaProd(totSerie[i], cuadSerie[i]); }).join("") +
+    celdaProd(totSem, cuadSem, "tot") +
+    celdaDif(prodSem, prodSemAnt) + "</tr>";
 
   const tabla2 = '<section class="panel"><h2>Productividad por proveedor' +
-    ' <span class="sub">cada celda es la productividad del día y abajo, en chico, eventos terminados entre cuadrillas · la columna de la derecha suma los ' +
-    nDias + " días</span></h2>" +
-    '<div class="scroll"><table class="compacta"><thead><tr><th>Proveedor</th>' + encDias +
-    '<th class="tot">Periodo</th></tr></thead><tbody>' + f2 + "</tbody></table></div></section>";
+    ' <span class="sub">el proveedor sale de las 3 primeras letras del usuario instalador · cada celda es la productividad y abajo, en chico, eventos terminados entre cuadrillas</span></h2>' +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Proveedor</th>' + encSemAnt + encDias +
+    '<th class="tot">Semana</th><th>vs sem. ant.</th></tr></thead><tbody>' + f2 + "</tbody></table></div></section>";
 
   /* ---- tabla 3: canceladas por tipo ---- */
   const tiposC = tipos.filter(function(t){
     return cols.some(function(c){ return (dat(c).cancTipos[t] || 0) > 0; });
   });
+  const cancSerie = cols.map(function(c){ return dat(c).canc; });
+  const promCanc = promDe(function(b){ return b.canc; });
+  const cancSem = suma(function(b){ return b.canc; });
+  const cancSemAnt = sumaAnt(function(b){ return b.canc; });
+
   let f3 = "";
   tiposC.forEach(function(t){
     const serie = cols.map(function(c){ return dat(c).cancTipos[t] || 0; });
     const prom = promDe(function(b){ return b.cancTipos[t] || 0; });
-    const term = cols.reduce(function(a, c){ return a + (dat(c).tipos[t] || 0); }, 0);
-    const canc = serie.reduce(function(a, n){ return a + n; }, 0);
+    const term = suma(function(b){ return b.tipos[t] || 0; });
+    const canc = suma(function(b){ return b.cancTipos[t] || 0; });
+    const ant = sumaAnt(function(b){ return b.cancTipos[t] || 0; });
     f3 += "<tr><td>" + t + "</td>" +
+      celdaNum(ant, "tot") +
       serie.map(function(n){ return celdaNum(n); }).join("") +
+      celdaNum(canc, "tot") +
       '<td class="tot">' + (prom === null ? "—" : prom.toFixed(1)) + "</td>" +
-      celdaDif(serie[iRef], penul ? (dat(penul).cancTipos[t] || 0) : null, true) +
-      celdaDif(serie[iRef], semAnt ? (semAnt.cancTipos[t] || 0) : null, true) +
+      celdaDif(canc, ant, true) +
       "<td>" + (term + canc ? Math.round(canc / (term + canc) * 100) + "%" : "—") + "</td></tr>";
   });
-  const cancT = cancSerie.reduce(function(a, n){ return a + n; }, 0);
-  const termT = totSerie.reduce(function(a, n){ return a + n; }, 0);
   f3 += '<tr class="total"><td>Total canceladas</td>' +
+    celdaNum(cancSemAnt, "tot") +
     cancSerie.map(function(n){ return celdaNum(n); }).join("") +
+    celdaNum(cancSem, "tot") +
     '<td class="tot">' + (promCanc === null ? "—" : promCanc.toFixed(1)) + "</td>" +
-    celdaDif(cancSerie[iRef], penul ? dat(penul).canc : null, true) +
-    celdaDif(cancSerie[iRef], semAnt ? semAnt.canc : null, true) +
-    "<td>" + (termT + cancT ? Math.round(cancT / (termT + cancT) * 100) + "%" : "—") + "</td></tr>";
+    celdaDif(cancSem, cancSemAnt, true) +
+    "<td>" + (totSem + cancSem ? Math.round(cancSem / (totSem + cancSem) * 100) + "%" : "—") + "</td></tr>";
 
   const tabla3 = !tiposC.length ? "" :
     '<section class="panel"><h2>Órdenes canceladas por día' +
     ' <span class="sub">aquí el verde es bajar: la última columna es qué parte de los eventos atendidos de ese tipo terminó en cancelación</span></h2>' +
-    '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' + encDias +
-    '<th class="tot">Prom</th><th>vs ' + rotPrev + "</th><th>vs " + rotSem + '</th><th>% de cancelación</th>' +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' + encSemAnt + encDias +
+    '<th class="tot">Semana</th><th class="tot">Prom</th><th>vs sem. ant.</th><th>% de cancelación</th>' +
     "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>";
 
-  /* ---- tabla 4: motivos de cancelación de la ventana ---- */
-  const desde = cols[0].d;
-  const hasta = new Date(ult.d.getFullYear(), ult.d.getMonth(), ult.d.getDate(), 23, 59, 59);
+  /* ---- tabla 4: motivos de cancelación de los días mostrados ---- */
+  // por clave de día, no por rango: los días marcados no tienen que ser seguidos
+  const clavesDia = new Set(cols.map(function(c){ return c.k; }));
   const motivos = {};
   let motTot = 0;
   R.filas.forEach(function(o){
-    if (!esCancelada(o) || !o.fTer || o.fTer < desde || o.fTer > hasta) return;
+    if (!esCancelada(o) || !o.fTer || !clavesDia.has(claveDia(soloFecha(o.fTer)))) return;
     const m = o.motivo || "Sin motivo";
     motivos[m] = (motivos[m] || 0) + 1;
     motTot++;
@@ -5921,7 +6034,7 @@ function ordenesHtml(){
   const listaMot = Object.keys(motivos).sort(function(a, b){ return motivos[b] - motivos[a]; }).slice(0, 15);
   const tabla4 = !listaMot.length ? "" :
     '<section class="panel"><h2>Motivos de cancelación' +
-    ' <span class="sub">' + fCorta(desde) + " al " + fCorta(ult.d) + " · " + num(motTot) + " canceladas</span></h2>" +
+    ' <span class="sub">semana ' + etiquetaSemana(semK) + " · " + fCorta(cols[0].d) + " al " + fCorta(ult.d) + " · " + num(motTot) + " canceladas</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr><th>Motivo</th><th>Órdenes</th><th>% del total</th></tr></thead><tbody>' +
     listaMot.map(function(m){
       return "<tr><td>" + m + "</td>" + celdaNum(motivos[m]) +
@@ -6546,7 +6659,8 @@ function descargarCsv(){
   }).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" }));
-  a.download = (nombres[VISTA] || "reporte") + "_" + (el("semana").value || "") + ".csv";
+  const semArchivo = VISTA === "ordenes" ? el("ordSemana").value : el("semana").value;
+  a.download = (nombres[VISTA] || "reporte") + "_" + (semArchivo || "") + ".csv";
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
 }
@@ -6719,9 +6833,10 @@ el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar"
 el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
-["ordDias","ordUniverso","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
+["ordSemana","ordUniverso","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "ordenes") pintar(); });
 });
+pintarDiasOrdenes();   // que el panel no se vea vacío mientras carga la pestaña
 el("btnRecargarOrdenes").addEventListener("click", function(){ ORD.estado = "sin cargar"; cargarOrdenes(); });
 el("btnCsvOrdenes").addEventListener("click", descargarCsv);
 el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
