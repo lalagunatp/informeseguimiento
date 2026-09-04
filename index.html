@@ -196,14 +196,6 @@
   }
   .formseg textarea{resize:vertical}
   .formseg .acciones{grid-column:1 / -1; padding:0; align-items:center}
-  .dias-sem{display:flex; flex-wrap:wrap; gap:4px}
-  .dias-sem label{
-    display:inline-flex; align-items:center; gap:5px; padding:5px 9px; cursor:pointer;
-    border:1px solid var(--line); border-radius:7px; background:#fff;
-    font-size:12.5px; text-transform:none; letter-spacing:0; color:var(--ink);
-  }
-  .dias-sem label.on{background:var(--azul); border-color:var(--azul); color:#fff}
-  .dias-sem input{width:auto; margin:0}
   .leyenda{padding:8px 14px 12px; font-size:11.5px; color:var(--muted)}
   .pill{display:inline-block; padding:1px 7px; border-radius:20px; background:var(--gris); margin-right:6px; font-size:11px}
   details.ajustes summary{padding:10px 14px; cursor:pointer; font-size:12px; color:var(--azul); text-transform:uppercase; letter-spacing:1px}
@@ -246,7 +238,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 88</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 89</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -619,8 +611,8 @@
       <label class="campo">Semana
         <select id="ordSemana"></select>
       </label>
-      <label class="campo">Días de la semana
-        <div id="ordDiasSem" class="dias-sem"></div>
+      <label class="campo">Día de la semana
+        <div id="fOrdDiaSem"></div>
       </label>
       <label class="campo">Universo de eventos
         <select id="ordUniverso">
@@ -1639,6 +1631,7 @@ function llenarSelectores(){
   llenarMulti("mes");
   llenarMulti("diasem");
   llenarMulti("diames");
+  llenarMulti("orddiasem");
 }
 
 /* ---------- filtros de selección múltiple ---------- */
@@ -1653,7 +1646,9 @@ const MULTI = {
   motivoRechazoOp: { contId:"fMotivoRechazoOp", sel:new Set(), valores:[] },
   mes:      { contId:"fMes",      sel:new Set(), valores:[], manual:true },
   diasem:   { contId:"fDiaSem",   sel:new Set(), valores:[], manual:true },
-  diames:   { contId:"fDiaMes",   sel:new Set(), valores:[], manual:true }
+  diames:   { contId:"fDiaMes",   sel:new Set(), valores:[], manual:true },
+  // el mismo filtro de días, pero para Atención de órdenes: esa vista no toca FILAS
+  orddiasem:{ contId:"fOrdDiaSem", sel:new Set(), valores:[], manual:true }
 };
 
 function armarMulti(campo){
@@ -1737,7 +1732,7 @@ function llenarMulti(campo){
     }
     m.valores = valores.sort(function(a, b){ return a.localeCompare(b, "es"); });
   } else if (m.manual){
-    if (campo === "diasem") m.valores = DIAS_LARGOS.slice();
+    if (campo === "diasem" || campo === "orddiasem") m.valores = DIAS_LARGOS.slice();
     else if (campo === "diames") m.valores = Array.from({length:31}, function(_, i){ return String(i + 1); });
     else m.valores = MESES.map(function(x){ return x.etq; });
   } else {
@@ -5609,7 +5604,7 @@ function llenarSelectoresOrdenes(){
     s.value = vals.indexOf(previo) >= 0 ? previo : "";
   });
   llenarSemanasOrdenes();
-  pintarDiasOrdenes();
+  llenarMulti("orddiasem");
 }
 
 /* --- semana y días de la semana: el mismo eje de la vista Semanal --- */
@@ -5632,27 +5627,15 @@ function llenarSemanasOrdenes(){
   sel.value = (previo && lista.indexOf(previo) >= 0) ? previo : (lista.length ? lista[lista.length - 1] : "");
 }
 
-function pintarDiasOrdenes(){
-  const caja = el("ordDiasSem");
-  if (caja.children.length) return;   // solo la primera vez: respeta lo que ya eligió
-  caja.innerHTML = DIAS_LARGOS.map(function(d, i){
-    return '<label class="on"><input type="checkbox" value="' + i + '" checked>' + DIAS[i] + "</label>";
-  }).join("");
-  Array.prototype.forEach.call(caja.querySelectorAll("input"), function(inp){
-    inp.addEventListener("change", function(){
-      inp.parentNode.classList.toggle("on", inp.checked);
-      if (VISTA === "ordenes") pintar();
-    });
-  });
-}
-
-// sin ninguno marcado no tiene sentido pintar una tabla vacía: se toma la semana completa
+// mismo criterio que el filtro "Día de la semana" de la vista Semanal: sin nada
+// marcado son todos, y "Quitar todos" deja la tabla vacía a propósito
 function diasOrdenes(){
+  const m = MULTI.orddiasem;
+  if (!m || m.sel.size === 0) return [0, 1, 2, 3, 4, 5, 6];
+  if (m.sel.has("\u0000")) return [];
   const marcados = [];
-  Array.prototype.forEach.call(document.querySelectorAll("#ordDiasSem input"), function(inp){
-    if (inp.checked) marcados.push(Number(inp.value));
-  });
-  return marcados.length ? marcados : [0, 1, 2, 3, 4, 5, 6];
+  DIAS_LARGOS.forEach(function(d, i){ if (m.sel.has(d)) marcados.push(i); });
+  return marcados;
 }
 
 // El reporte que llega de los proveedores solo cuenta eventos de cliente: deja fuera
@@ -5715,6 +5698,10 @@ function celdaDif(actual, base, invertir){
   if (invertir) cl = cl === "v" ? "r" : (cl === "r" ? "v" : "a");
   return '<td class="dif ' + cl + '">' + (d > 0 ? "+" : "") + (d * 100).toFixed(1) + "%</td>";
 }
+
+// el promedio de conteos va cerrado: "9 eventos" se lee mejor que "8.6"; la
+// productividad es la excepción, ahí el decimal es la información
+function promTxt(n){ return (n === null || !isFinite(n)) ? "—" : String(Math.round(n)); }
 
 function celdaProd(ev, cuad, extra){
   const cl = extra || "";
@@ -5801,7 +5788,11 @@ function ordenesHtml(){
   }).filter(function(c){ return c.d <= R.maxDia; });
 
   if (!cols.length){
-    return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">De esa semana no hay días con eventos cerrados. Cambia la semana o marca otros días.</div></section>';
+    const sinDias = !diasOrdenes().length;
+    return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">' +
+      (sinDias ? "No hay ningún día de la semana marcado en el filtro."
+               : "De esa semana no hay días con eventos cerrados. Cambia la semana o marca otros días.") +
+      "</div></section>";
   }
 
   // el acumulado de la semana anterior usa exactamente los mismos días de la semana
@@ -5809,25 +5800,25 @@ function ordenesHtml(){
     const d = new Date(lunesAnt.getFullYear(), lunesAnt.getMonth(), lunesAnt.getDate() + c.i);
     return { i:c.i, d:d, k:claveDia(d), b: R.dias.get(claveDia(d)) || null };
   });
-  // El día en curso se muestra como columna, pero queda fuera de los acumulados y del
-  // promedio: media jornada contra una semana completa haría ver caídas que no existen.
-  // Los dos acumulados (esta semana y la anterior) usan exactamente los mismos días.
+  // Los dos acumulados suman exactamente los mismos días: los que se marcaron en el
+  // filtro y ya ocurrieron. Igual que la vista Semanal, si la semana va abierta el
+  // acumulado incluye el día en curso tal como va.
   const hayHoy = cols.some(function(c){ return c.k === hoyK; });
-  const iCerr = cols.map(function(c, i){ return c.k === hoyK ? -1 : i; }).filter(function(i){ return i >= 0; });
-  const cerrados = iCerr.length ? iCerr : cols.map(function(c, i){ return i; });
-  const suma = function(fn){ return cerrados.reduce(function(a, i){ return a + fn(dat(cols[i])); }, 0); };
-  const sumaAnt = function(fn){ return cerrados.reduce(function(a, i){ return a + fn(dat(colsAnt[i])); }, 0); };
+  const todos = cols.map(function(c, i){ return i; });
+  const suma = function(fn){ return todos.reduce(function(a, i){ return a + fn(dat(cols[i])); }, 0); };
+  const sumaAnt = function(fn){ return todos.reduce(function(a, i){ return a + fn(dat(colsAnt[i])); }, 0); };
+
+  // el promedio por día sí deja fuera el día en curso: media jornada lo hundiría
+  const cerrados = todos.filter(function(i){ return cols[i].k !== hoyK; });
   const promDe = function(fn){
     if (!cerrados.length) return null;
-    return suma(fn) / cerrados.length;
+    return cerrados.reduce(function(a, i){ return a + fn(dat(cols[i])); }, 0) / cerrados.length;
   };
-  const rotAcum = cerrados.length === cols.length
-    ? "acumulado de los días mostrados"
-    : "acumulado de los días ya cerrados: el día en curso se muestra aparte y no suma aquí";
+  const rotAcum = "acumulado de los días mostrados" + (hayHoy ? ", con el día en curso tal como va" : "");
 
   const ult = cols[cols.length - 1];
   const domingo = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + 6);
-  const rotSemAnt = fCorta(colsAnt[cerrados[0]].d) + " al " + fCorta(colsAnt[cerrados[cerrados.length - 1]].d);
+  const rotSemAnt = fCorta(colsAnt[0].d) + " al " + fCorta(colsAnt[colsAnt.length - 1].d);
 
   // mes en curso, contado hasta el último día mostrado
   const mesK = ult.d.getFullYear() + "-" + String(ult.d.getMonth() + 1).padStart(2, "0");
@@ -5873,7 +5864,7 @@ function ordenesHtml(){
       celdaNum(ant, "tot") +
       serie.map(function(n){ return celdaNum(n); }).join("") +
       celdaNum(tot, "tot") +
-      '<td class="tot">' + (prom === null ? "—" : prom.toFixed(1)) + "</td>" +
+      '<td class="tot">' + promTxt(prom) + "</td>" +
       celdaDif(tot, ant) +
       celdaNum(R.abiertas[t] || 0) +
       "<td>" + (md.tot ? Math.round(md.si / md.tot * 100) + "%" : "—") + "</td>" +
@@ -5900,7 +5891,7 @@ function ordenesHtml(){
     celdaNum(totSemAnt, "tot") +
     totSerie.map(function(n){ return celdaNum(n); }).join("") +
     celdaNum(totSem, "tot") +
-    '<td class="tot">' + (promTot === null ? "—" : promTot.toFixed(1)) + "</td>" +
+    '<td class="tot">' + promTxt(promTot) + "</td>" +
     celdaDif(totSem, totSemAnt) +
     celdaNum(R.abiertasTot) +
     "<td>" + (mdSem.tot ? Math.round(mdSem.si / mdSem.tot * 100) + "%" : "—") + "</td>" +
@@ -5912,7 +5903,7 @@ function ordenesHtml(){
     celdaNum(cuadSemAnt, "tot") +
     cuadSerie.map(function(n){ return celdaNum(n); }).join("") +
     celdaNum(cuadSem, "tot") +
-    '<td class="tot">' + (promCuad === null ? "—" : promCuad.toFixed(1)) + "</td>" +
+    '<td class="tot">' + promTxt(promCuad) + "</td>" +
     celdaDif(cuadSem, cuadSemAnt) +
     "<td>—</td><td>—</td><td>—</td><td>—</td></tr>";
 
@@ -5930,7 +5921,7 @@ function ordenesHtml(){
   const tabla1 = '<section class="panel"><h2>Eventos terminados por tipo y productividad por día' +
     ' <span class="sub">' + rotUni + " · semana " + etiquetaSemana(semK) + ", " + fCorta(lunes) + " al " + fCorta(domingo) +
     " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
-    (hayHoy ? " · el día en curso se muestra aparte: no suma en los acumulados ni en el promedio" : "") +
+    (hayHoy ? " · la semana va abierta: el día en curso entra al acumulado tal como va, pero no al promedio" : "") +
     " · productividad = eventos terminados ÷ cuadrillas que trabajaron</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Tipo de evento</th>" + encSemAnt + encDias +
@@ -6001,7 +5992,7 @@ function ordenesHtml(){
       celdaNum(ant, "tot") +
       serie.map(function(n){ return celdaNum(n); }).join("") +
       celdaNum(canc, "tot") +
-      '<td class="tot">' + (prom === null ? "—" : prom.toFixed(1)) + "</td>" +
+      '<td class="tot">' + promTxt(prom) + "</td>" +
       celdaDif(canc, ant, true) +
       "<td>" + (term + canc ? Math.round(canc / (term + canc) * 100) + "%" : "—") + "</td></tr>";
   });
@@ -6009,7 +6000,7 @@ function ordenesHtml(){
     celdaNum(cancSemAnt, "tot") +
     cancSerie.map(function(n){ return celdaNum(n); }).join("") +
     celdaNum(cancSem, "tot") +
-    '<td class="tot">' + (promCanc === null ? "—" : promCanc.toFixed(1)) + "</td>" +
+    '<td class="tot">' + promTxt(promCanc) + "</td>" +
     celdaDif(cancSem, cancSemAnt, true) +
     "<td>" + (totSem + cancSem ? Math.round(cancSem / (totSem + cancSem) * 100) + "%" : "—") + "</td></tr>";
 
@@ -6428,10 +6419,13 @@ function pintar(){
       else if (destino) window.location.hash = destino.id;
     });
   });
-  const filtros = ["director","lider","coach","canal","plan","mes", VISTA === "mes" ? "diames" : "diasem"].map(function(c){
+  const campos = VISTA === "ordenes"
+    ? ["orddiasem"]
+    : ["director","lider","coach","canal","plan","mes", VISTA === "mes" ? "diames" : "diasem"];
+  const filtros = campos.map(function(c){
     const t = seleccionTexto(c);
     if (!t) return "";
-    const nom = c === "lider" ? "líder" : (c === "mes" ? "meses" : (c === "diasem" ? "día" : (c === "diames" ? "día del mes" : c)));
+    const nom = c === "lider" ? "líder" : (c === "mes" ? "meses" : ((c === "diasem" || c === "orddiasem") ? "día" : (c === "diames" ? "día del mes" : c)));
     return nom.toUpperCase() + " " + t.toUpperCase();
   }).filter(Boolean).join(" · ");
   const cab = VISTA === "os"
@@ -6836,7 +6830,7 @@ el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin
 ["ordSemana","ordUniverso","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "ordenes") pintar(); });
 });
-pintarDiasOrdenes();   // que el panel no se vea vacío mientras carga la pestaña
+llenarMulti("orddiasem");   // que el panel no se vea vacío mientras carga la pestaña
 el("btnRecargarOrdenes").addEventListener("click", function(){ ORD.estado = "sin cargar"; cargarOrdenes(); });
 el("btnCsvOrdenes").addEventListener("click", descargarCsv);
 el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
