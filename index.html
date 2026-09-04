@@ -169,6 +169,10 @@
   td.dif.a{background:var(--a-bg); color:var(--a-tx)}
   td.dif.r{background:var(--r-bg); color:var(--r-tx)}
   td.cero{color:#a8b3bf}
+  /* Vend X Eventos: la tabla de cantidades y la de distribución % se leen una debajo
+     de la otra, así que comparten geometría exacta (mismo colgroup + layout fijo) para
+     que VEND, el total y cada cubeta caigan en la misma columna en las dos */
+  table.alineada{table-layout:fixed}
   table.compacta{min-width:0}
   table.compacta th, table.compacta td{padding:5px 7px; font-size:12.5px}
   td.clicable{cursor:pointer; text-decoration:underline; text-decoration-style:dotted}
@@ -4654,16 +4658,20 @@ function vendedores0Html(){
     for (let i = 0; i <= tope; i++) cab.push("<th>" + (i === tope ? i + "+" : i) + "</th>");
     const encabezado = "<tr><th>" + rotulo + "</th>" +
       '<th class="sem">VEND</th><th class="tot">' + rotuloTot + "</th>" + cab.join("") + "</tr>";
+    // mismas anchuras en las dos tablas; con table-layout fijo el navegador las respeta
+    // y reparte igual el espacio sobrante, así que cada columna cae en la misma posición
+    let cols = '<colgroup><col style="width:210px"><col style="width:66px"><col style="width:78px">';
+    for (let i = 0; i <= tope; i++) cols += '<col style="width:54px">';
+    cols += "</colgroup>";
+    const abre = '<div class="scroll"><table class="compacta alineada">' + cols + "<thead>";
 
     return {
       conteo: '<section class="panel"><h2>' + titulo + ' <span class="sub">' + nota +
         (fuera ? " · " + fuera + " fuera de HC" : "") + "</span></h2>" +
-        '<div class="scroll"><table class="compacta"><thead>' + encabezado +
-        "</thead><tbody>" + filas + "</tbody></table></div></section>",
+        abre + encabezado + "</thead><tbody>" + filas + "</tbody></table></div></section>",
       pct: '<section class="panel"><h2>' + titulo + ' · distribución % <span class="sub">' +
         "qué porcentaje de los vendedores de cada renglón lleva esa cantidad · cada renglón suma 100%</span></h2>" +
-        '<div class="scroll"><table class="compacta"><thead>' + encabezado +
-        "</thead><tbody>" + filasPct + "</tbody></table></div></section>"
+        abre + encabezado + "</thead><tbody>" + filasPct + "</tbody></table></div></section>"
     };
   }
 
