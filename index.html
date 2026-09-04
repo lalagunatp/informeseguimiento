@@ -3251,11 +3251,14 @@ function vendedorDeFila(f){
   return f.vendedor;
 }
 // igual que vendedorDeFila, pero solo el nombre (sin el código técnico al frente): lo
-// que usa el filtro "Vendedor", para comparar contra los nombres de PLANTILLA
+// que usan el filtro "Vendedor" y el agrupado por vendedor, para comparar contra los
+// nombres de PLANTILLA. Si el código no está en la plantilla se queda el número de
+// empleado (el propio código), nunca la columna R de la base: para venta técnico esa
+// columna viene vacía o con otro dato, y agruparía a varios técnicos en un renglón.
 function nombreVendedorDeFila(f){
   if (f.codTec){
     const per = MAPA_TEC_PERSONA.get(f.codTec);
-    if (per && per.nombre) return per.nombre;
+    return (per && per.nombre) ? per.nombre : f.codTec;
   }
   return f.vendedor;
 }
@@ -5351,6 +5354,10 @@ function grupoDe(f, fecha){
   const campo = el("agrupar").value;
   if (campo === "diames") return fecha ? String(fecha.getDate()) : "-";
   if (campo === "diasem") return fecha ? DIAS_LARGOS[diaIndice(fecha)] : "-";
+  // venta técnico (CRC, SLK y los demás códigos): el vendedor sale del código cruzado
+  // con PLANTILLA, no de la columna R de la base; es el mismo criterio que ya usaba el
+  // filtro "Vendedor", así que ahora agrupado y filtro coinciden
+  if (campo === "vendedor") return nombreVendedorDeFila(f) || "SIN ASIGNAR";
   return f[campo] || "SIN ASIGNAR";
 }
 
