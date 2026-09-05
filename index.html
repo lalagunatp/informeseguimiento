@@ -5023,24 +5023,33 @@ function limpiaValor(v){
 
 let COMENT_OS = { os:"", texto:"", estado:"" };
 
-// última agenda de la OS: sale de ATENCION ORDENES cruzando por OS (columna C) y, si
-// ahí no aparece, por cuenta (columna A). De varios renglones gana la agenda más
-// reciente, que es la que sigue vigente.
+// última agenda por OS (columna C) y por cuenta (columna A) de ATENCION ORDENES. El
+// detalle de pendientes lo consulta renglón por renglón, así que el índice se arma una
+// sola vez al leer la hoja en lugar de recorrerla en cada consulta. De varios renglones
+// gana la agenda más reciente, que es la que sigue vigente.
+let ORD_AGENDA = { porOs:new Map(), porCuenta:new Map() };
+
+function armarIndiceAgendas(){
+  const porOs = new Map(), porCuenta = new Map();
+  const mete = function(m, k, o){
+    if (!k) return;
+    const previo = m.get(k);
+    if (!previo || o.fAge > previo.fAge) m.set(k, o);
+  };
+  ORD.filas.forEach(function(o){
+    if (!o.fAge) return;
+    mete(porOs, normOS(o.os), o);
+    mete(porCuenta, clave(o.cuenta), o);
+  });
+  ORD_AGENDA = { porOs:porOs, porCuenta:porCuenta };
+}
+
 function ultimaAgendaDeOs(os, cuenta){
   if (CARGANDO_ORD || ORD.estado === "cargando") return "Cargando…";
   if (ORD.estado !== "ok") return "—";
-  const qOs = normOS(os), qCta = clave(cuenta);
-  let mejor = null;
-  const busca = function(cumple){
-    ORD.filas.forEach(function(o){
-      if (!o.fAge || !cumple(o)) return;
-      if (!mejor || o.fAge > mejor.fAge) mejor = o;
-    });
-  };
-  if (qOs) busca(function(o){ return normOS(o.os) === qOs; });
-  if (!mejor && qCta) busca(function(o){ return clave(o.cuenta) === qCta; });
-  if (!mejor) return "—";
-  return fCorta(mejor.fAge) + (mejor.turno ? " / " + mejor.turno : "");
+  const o = ORD_AGENDA.porOs.get(normOS(os)) || ORD_AGENDA.porCuenta.get(clave(cuenta));
+  if (!o) return "—";
+  return fCorta(o.fAge) + (o.turno ? " / " + o.turno : "");
 }
 
 function seguimientoOsHtml(){
@@ -5280,6 +5289,7 @@ function textoWhats(os, fila){
 
 function seguimientoVentasHtml(os, fila){
   const filasHist = SEG_HIST.os === os ? SEG_HIST.registros : [];
+  const cargandoSeg = SEG_HIST.os === os && SEG_HIST.estado === "cargando";
   let tabla = "";
   if (SEG_HIST.os === os && SEG_HIST.estado === "cargando"){
     tabla = '<div class="aviso">Leyendo la bitácora…</div>';
@@ -5317,6 +5327,10 @@ function seguimientoVentasHtml(os, fila){
       '<div class="acciones">' +
         '<button id="segGuardar">Guardar seguimiento</button>' +
         '<button id="segWhats" class="sec">Enviar por WhatsApp</button>' +
+        // vuelve a traer lo capturado (también lo que registró alguien más) sin tener
+        // que salir y volver a entrar a la liga
+        '<button id="segRecargar" class="sec"' + (cargandoSeg ? " disabled" : "") + ">" +
+        (cargandoSeg ? "Actualizando…" : "Actualizar bitácora") + "</button>" +
         '<span id="segAviso" class="mini"></span>' +
       "</div>" +
     "</div>";
@@ -5346,6 +5360,16 @@ function activarSeguimiento(os, fila){
     ev.preventDefault();
     leerForm();
     window.open("https://wa.me/?text=" + encodeURIComponent(textoWhats(os, fila)), "_blank");
+  });
+
+  // releer la bitácora en caliente: lo que ya se escribió en el formulario se guarda
+  // antes, para que el repintado no lo borre
+  const rec = el("segRecargar");
+  if (rec) rec.addEventListener("click", function(ev){
+    ev.preventDefault();
+    leerForm();
+    SEG_TODOS = { estado:"sin cargar", porOS:{} };
+    cargarSeguimiento(os);
   });
 
   g.addEventListener("click", async function(ev){
@@ -5517,6 +5541,7 @@ function pendientesRows(){
     salida.push({
       lider: lider || "SIN LÍDER", coach: coach || "SIN COACH", vendedor: vendedor || "—",
       cuenta: f.cuenta, os: f.os, oportunidad: f.oportunidad, validacion: fCorta(f.fVal), dias: dias,
+      ultimaAgenda: ultimaAgendaDeOs(f.os, f.cuenta),
       cliente: f.cliente, colonia: f.colonia, cluster: f.cluster, plan: f.plan, canal: f.canal,
       duplicidad: dupSet.has(f.osNorm) ? "SI" : "NO",
       asignaciones: a.asignaciones, inicios: a.inicios, desasignaciones: a.desasignaciones,
@@ -5536,7 +5561,8 @@ function pendientesRows(){
 const COLS_PEND = [
   ["lider","Líder"], ["coach","Coach"], ["vendedor","Vendedor"], ["cuenta","Cuenta"], ["os","OS"],
   ["oportunidad","Oportunidad"],
-  ["validacion","Validación"], ["dias","Días"], ["cliente","Cliente"], ["colonia","Colonia"],
+  ["validacion","Validación"], ["dias","Días"], ["ultimaAgenda","Última agenda"],
+  ["cliente","Cliente"], ["colonia","Colonia"],
   ["cluster","Cluster"], ["plan","Plan"], ["canal","Canal"], ["duplicidad","Duplicidad"],
   ["asignaciones","Asignada"], ["inicios","Iniciada"], ["desasignaciones","Desasignada"],
   ["motivoDes","Último motivo desasignación"], ["motivoDet","Último motivo detención"],
@@ -5569,6 +5595,8 @@ function pendientesHtml(){
   if (SEG_TODOS.estado === "cargando") avisos.push("leyendo el seguimiento de ventas…");
   else if (SEG_TODOS.estado !== "ok") avisos.push("sin seguimiento de ventas (" + SEG_TODOS.estado + ")");
   else avisos.push(Object.keys(SEG_TODOS.porOS).length + " OS con seguimiento capturado");
+  if (CARGANDO_ORD || ORD.estado === "cargando") avisos.push("leyendo ATENCION ORDENES…");
+  else if (ORD.estado !== "ok") avisos.push("sin última agenda (" + ORD.estado + ")");
 
   if (!filas.length){
     return '<section class="panel"><h2>Validaciones pendientes por instalar</h2>' +
@@ -5791,6 +5819,7 @@ async function cargarOrdenes(){
   if (CARGANDO_ORD) return;
   CARGANDO_ORD = true;
   ORD = { estado:"cargando", filas:[] };
+  ORD_AGENDA = { porOs:new Map(), porCuenta:new Map() };
   try{
     const nombre = (el("hojaOrdenes").value || "").trim() || "ATENCION ORDENES";
     const t = await traerHoja(nombre);
@@ -5864,6 +5893,7 @@ async function cargarOrdenes(){
           });
         }
         ORD = { estado:"ok", filas: filas };
+        armarIndiceAgendas();
         marcarFuente("ordenes", "ok", ultimo ? fCorta(ultimo) + " " + hora(ultimo) : "", filas.length);
         // las geocercas se leen antes de armar los selectores: uno de ellos las lista
         await cargarGeocercas();
@@ -6871,6 +6901,8 @@ function pintar(){
   } else if (VISTA === "dias30"){
     if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     if (SEG_TODOS.estado === "sin cargar") cargarSeguimientoTodos();
+    // de ATENCION ORDENES sale la última agenda de cada pendiente
+    if (ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
     if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     // atención a clientes solo ve el detalle de pendientes
     html = (PERFIL && PERFIL.acceso === "os" ? "" : dias30Html()) + pendientesHtml();
