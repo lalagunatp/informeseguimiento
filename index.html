@@ -6252,8 +6252,10 @@ function ordenesHtml(){
   const provDe = function(col, p){ return dat(col).prov[p] || { ev:0, tec:new Set() }; };
   let f2 = "";
   provs.forEach(function(p){
+    // el acumulado de cada proveedor toma todos los días mostrados, con el día en curso
+    // incluido: así los proveedores suman lo mismo que el renglón Total
     let ev = 0, cd = 0, evA = 0, cdA = 0;
-    cerrados.forEach(function(i){
+    todos.forEach(function(i){
       const a = provDe(colsAnt[i], p);  evA += a.ev; cdA += a.tec.size;
       const x = provDe(cols[i], p);     ev  += x.ev; cd  += x.tec.size;
     });
