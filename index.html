@@ -6495,8 +6495,9 @@ function ordenesHtml(){
     "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>" +
     detalleCancelacionesHtml();
 
-  // las canceladas van pegadas a los eventos terminados: se leen juntas
-  return tabla1 + tabla3 + tabla2 + tabla2b;
+  // primero el total del día y cómo lo repartieron los proveedores, luego lo que se
+  // canceló y hasta el final el detalle cuadrilla por cuadrilla
+  return tabla1 + tabla2 + tabla3 + tabla2b;
 }
 
 /* --- detalle de una celda de canceladas: quién canceló y por qué --- */
