@@ -6111,6 +6111,19 @@ function ordenesHtml(){
     mesTot++;
   });
 
+  // días del mes que ya trabajaron, hasta el último día mostrado: con ellos se saca el
+  // promedio de cuadrillas del mes y, de ahí, la productividad de la columna Mes
+  const diasMes = [];
+  R.dias.forEach(function(b, k){
+    if (k.slice(0, 7) === mesK && k <= ult.k && (b.tec.size || b.term)) diasMes.push(b);
+  });
+  const cuadMes = diasMes.length
+    ? diasMes.reduce(function(a, b){ return a + b.tec.size; }, 0) / diasMes.length : null;
+  // eventos del mes ÷ cuadrillas promedio ÷ días considerados: lo que hizo una cuadrilla
+  // en un día promedio del mes, comparable con la productividad diaria de la izquierda
+  const prodMes = (cuadMes && diasMes.length) ? mesTot / cuadMes / diasMes.length : null;
+  const rotMes = diasMes.length + " día(s) del mes con trabajo, hasta el " + fCorta(ult.d);
+
   // renglones: todo tipo con eventos en la ventana, en el mes o con órdenes abiertas
   const tipos = Array.from(new Set(
     cols.reduce(function(a, c){ return a.concat(Object.keys(dat(c).tipos), Object.keys(dat(c).cancTipos)); }, [])
@@ -6184,7 +6197,9 @@ function ordenesHtml(){
     celdaNum(cuadSem, "tot") +
     '<td class="tot">' + promTxt(promCuad) + "</td>" +
     celdaDif(cuadSem, cuadSemAnt) +
-    "<td>—</td><td>—</td><td>—</td><td>—</td></tr>";
+    "<td>—</td><td>—</td>" +
+    '<td title="promedio de cuadrillas por día · ' + rotMes + '">' + promTxt(cuadMes) + "</td>" +
+    "<td>—</td></tr>";
 
   f1 += '<tr class="total"><td>Productividad (eventos por cuadrilla)</td>' +
     '<td class="tot">' + (prodSemAnt === null ? "—" : prodSemAnt.toFixed(1)) + "</td>" +
@@ -6192,7 +6207,10 @@ function ordenesHtml(){
     '<td class="tot">' + (prodSem === null ? "—" : prodSem.toFixed(1)) + "</td>" +
     '<td class="tot">' + (promProd === null ? "—" : promProd.toFixed(1)) + "</td>" +
     celdaDif(prodSem, prodSemAnt) +
-    "<td>—</td><td>—</td><td>—</td><td>—</td></tr>";
+    "<td>—</td><td>—</td>" +
+    '<td title="eventos del mes ÷ cuadrillas promedio ÷ ' + rotMes + '">' +
+    (prodMes === null ? "—" : prodMes.toFixed(1)) + "</td>" +
+    "<td>—</td></tr>";
 
   const uni = el("ordUniverso").value;
   const rotUni = uni === "cliente" ? "eventos de cliente" : (uni === "otros" ? "planta externa y mantenimiento" : "todos los tipos");
