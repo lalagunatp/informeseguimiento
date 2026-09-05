@@ -5023,6 +5023,26 @@ function limpiaValor(v){
 
 let COMENT_OS = { os:"", texto:"", estado:"" };
 
+// última agenda de la OS: sale de ATENCION ORDENES cruzando por OS (columna C) y, si
+// ahí no aparece, por cuenta (columna A). De varios renglones gana la agenda más
+// reciente, que es la que sigue vigente.
+function ultimaAgendaDeOs(os, cuenta){
+  if (CARGANDO_ORD || ORD.estado === "cargando") return "Cargando…";
+  if (ORD.estado !== "ok") return "—";
+  const qOs = normOS(os), qCta = clave(cuenta);
+  let mejor = null;
+  const busca = function(cumple){
+    ORD.filas.forEach(function(o){
+      if (!o.fAge || !cumple(o)) return;
+      if (!mejor || o.fAge > mejor.fAge) mejor = o;
+    });
+  };
+  if (qOs) busca(function(o){ return normOS(o.os) === qOs; });
+  if (!mejor && qCta) busca(function(o){ return clave(o.cuenta) === qCta; });
+  if (!mejor) return "—";
+  return fCorta(mejor.fAge) + (mejor.turno ? " / " + mejor.turno : "");
+}
+
 function seguimientoOsHtml(){
   const q = normOS(OS_BUSCADA);
   if (!q){
@@ -5082,6 +5102,7 @@ function seguimientoOsHtml(){
     ["Cuenta", fila.cuenta || "—"],
     ["Duplicidad", duplicidadTxt],
     ["Fecha de validación", fila.fVal ? fCorta(fila.fVal) : "—"],
+    ["Última agenda", ultimaAgendaDeOs(fila.os, fila.cuenta)],
     ["Nombre del cliente", fila.cliente],
     ["Plan", fila.plan],
     ["Cluster", fila.cluster],
@@ -5791,6 +5812,10 @@ async function cargarOrdenes(){
         tecnico:   buscaCol(enc, ["NOMBRE TECNICO"]),
         creacion:  buscaCol(enc, ["FECHA CREACION"]),
         agenda:    buscaCol(enc, ["FECHA ULTIMA AGENDA"]),
+        // turno de esa misma agenda (columna AC): va junto a la fecha en Seguimiento OS
+        turno:     buscaCol(enc, ["TURNO ULTIMA AGENDA"]) >= 0
+                     ? buscaCol(enc, ["TURNO ULTIMA AGENDA"])
+                     : buscaCol(enc, ["TURNO"]),
         termino:   buscaCol(enc, ["FECHA TERMINO"]),
         estatus:   buscaCol(enc, ["ESTATUS"]),
         estado:    buscaCol(enc, ["ESTADO"]),
@@ -5834,7 +5859,8 @@ async function cargarOrdenes(){
             estado: dame(v, c.estado),
             fTer: fT,
             fCre: c.creacion >= 0 ? fechaOrden(v[c.creacion]) : null,
-            fAge: c.agenda >= 0 ? fechaOrden(v[c.agenda]) : null
+            fAge: c.agenda >= 0 ? fechaOrden(v[c.agenda]) : null,
+            turno: dame(v, c.turno)
           });
         }
         ORD = { estado:"ok", filas: filas };
@@ -6835,6 +6861,9 @@ function pintar(){
     if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
+    // de ATENCION ORDENES sale la última agenda de la ficha; solo se lee cuando ya hay
+    // una OS capturada, para no bajar una hoja grande sin que nadie la haya pedido
+    if (OS_BUSCADA && ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
     html = seguimientoOsHtml();
   } else if (VISTA === "vend0"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
