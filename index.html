@@ -6147,8 +6147,10 @@ function ordenesHtml(){
     const prom = promDe(function(b){ return b.tipos[t] || 0; });
     const tot = suma(function(b){ return b.tipos[t] || 0; });
     const ant = sumaAnt(function(b){ return b.tipos[t] || 0; });
+    // el % mismo día acumula todos los días mostrados, con el día en curso incluido:
+    // así cuadra con el mismo dato del renglón de Eventos totales
     const md = { si:0, tot:0 };
-    cerrados.forEach(function(i){
+    todos.forEach(function(i){
       const x = dat(cols[i]).mismoDia[t];
       if (x){ md.si += x.si; md.tot += x.tot; }
     });
