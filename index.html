@@ -5679,13 +5679,13 @@ function indiceCancelaciones(){
   return m;
 }
 
-// etiqueta de la cuadrilla que canceló: si el mismo día hubo dos intentos, van las
-// dos juntas en un solo renglón, para que la suma del detalle cuadre con la celda
-function cuadrillaQueCancelo(o){
-  if (!o.fTer) return "Sin cuadrilla identificada";
+// cuadrillas que cancelaron: si el mismo día hubo dos intentos, se devuelven las dos y
+// el detalle abre un renglón por cada una, para que ninguna se quede escondida
+function cuadrillasQueCancelaron(o){
+  if (!o.fTer) return ["Sin cuadrilla identificada"];
   const s = indiceCancelaciones().get(clave(o.cuenta) + "|" + claveDia(soloFecha(o.fTer)));
-  if (!s || !s.size) return "Sin cuadrilla identificada";
-  return Array.from(s).sort().join(" + ");
+  if (!s || !s.size) return ["Sin cuadrilla identificada"];
+  return Array.from(s).sort();
 }
 
 /* --- hora de corte: se cuenta lo cerrado hasta esa hora, en todos los días --- */
@@ -6327,64 +6327,76 @@ function detalleCancelacionesHtml(){
   if (!DET_SEL || !DET_CANC[DET_SEL]) return "";
   const info = DET_CANC[DET_SEL];
 
-  // cuadrilla -> motivo -> cuántas
-  const cuads = new Map();
+  // una orden es siempre un renglón; cuando el mismo día hubo dos intentos, las dos
+  // cuadrillas van una debajo de otra dentro de la misma celda y ese renglón crece
+  const SIN_CANAL = "Sin canal de venta";
+  const SIN_CUAD = "Sin cuadrilla identificada";
+  const renglones = [];
   const motivos = new Map();
-  const canales = new Set();
+  const canales = new Map();
+  const cuadrillas = new Set();
   info.lista.forEach(function(o){
-    const c = cuadrillaQueCancelo(o);
     const m = o.motivo || "Sin motivo";
-    if (esOrdenDeVenta(o)) canales.add(canalOrden(o));
-    if (!cuads.has(c)) cuads.set(c, { n:0, mot:new Map(), ordenes:[] });
-    const x = cuads.get(c);
-    x.n++;
-    x.ordenes.push(o);
-    x.mot.set(m, (x.mot.get(m) || 0) + 1);
+    // fuera de instalación y factibilidad el canal y el coach no aplican
+    const venta = esOrdenDeVenta(o);
+    const canal = venta ? canalOrden(o) : SIN_CANAL;
+    const coach = (venta && coachOrden(o)) || "";
+    const cuads = cuadrillasQueCancelaron(o);
+    if (venta) canales.set(canal, (canales.get(canal) || 0) + 1);
     motivos.set(m, (motivos.get(m) || 0) + 1);
+    cuads.forEach(function(c){ cuadrillas.add(c); });
+    renglones.push({ canal:canal, coach:coach, cuads:cuads, o:o, motivo:m });
   });
 
-  // primero por cuadrilla (las que más cancelaron), y dentro por motivo; las que no
-  // se pudieron identificar quedan al final
-  const orden = Array.from(cuads.keys()).sort(function(a, b){
-    const sinA = a === "Sin cuadrilla identificada", sinB = b === "Sin cuadrilla identificada";
+  // el panel se lee por canal, y dentro de cada canal por coach; los canales con más
+  // cancelaciones van primero y lo que no es venta (ni canal ni coach) queda al final
+  const porCanal = new Map();
+  renglones.forEach(function(r){
+    if (!porCanal.has(r.canal)) porCanal.set(r.canal, []);
+    porCanal.get(r.canal).push(r);
+  });
+  const ordenCanal = Array.from(porCanal.keys()).sort(function(a, b){
+    const sinA = a === SIN_CANAL, sinB = b === SIN_CANAL;
     if (sinA !== sinB) return sinA ? 1 : -1;
-    return cuads.get(b).n - cuads.get(a).n || a.localeCompare(b, "es");
+    return porCanal.get(b).length - porCanal.get(a).length || a.localeCompare(b, "es");
   });
 
   let filas = "";
-  orden.forEach(function(c){
-    const x = cuads.get(c);
-    // dentro de cada cuadrilla, primero los motivos que más se repiten, y dentro de
-    // cada motivo las cuentas en orden
-    const ordenadas = x.ordenes.slice().sort(function(a, b){
-      const ma = a.motivo || "Sin motivo", mb = b.motivo || "Sin motivo";
-      return (x.mot.get(mb) - x.mot.get(ma)) || ma.localeCompare(mb, "es") ||
-             String(a.cuenta).localeCompare(String(b.cuenta), "es");
+  ordenCanal.forEach(function(canal){
+    const lista = porCanal.get(canal).slice().sort(function(a, b){
+      // coach (los que no tienen, al final), luego cuadrilla, motivo y cuenta
+      if (!a.coach !== !b.coach) return a.coach ? -1 : 1;
+      return a.coach.localeCompare(b.coach, "es") ||
+             (a.cuads[0] === SIN_CUAD) - (b.cuads[0] === SIN_CUAD) ||
+             a.cuads[0].localeCompare(b.cuads[0], "es") ||
+             a.motivo.localeCompare(b.motivo, "es") ||
+             String(a.o.cuenta).localeCompare(String(b.o.cuenta), "es");
     });
-    ordenadas.forEach(function(o, i){
-      // fuera de instalación y factibilidad el canal y el coach no aplican
-      const venta = esOrdenDeVenta(o);
-      filas += "<tr><td>" + (i === 0 ? c : "") + "</td>" +
-        "<td>" + (o.cuenta || "—") + "</td><td>" + (o.os || "—") + "</td>" +
-        "<td>" + (venta ? canalOrden(o) : "—") + "</td>" +
-        "<td>" + ((venta && coachOrden(o)) || "—") + "</td>" +
-        '<td class="envuelve">' + (o.motivo || "Sin motivo") + "</td></tr>";
+    lista.forEach(function(r, i){
+      const mismoCoach = i > 0 && lista[i - 1].coach === r.coach;
+      filas += "<tr><td>" + (i === 0 ? canal : "") + "</td>" +
+        "<td>" + (mismoCoach ? "" : (r.coach || "—")) + "</td>" +
+        '<td class="envuelve">' + r.cuads.join("<br>") + "</td>" +
+        "<td>" + (r.o.cuenta || "—") + "</td><td>" + (r.o.os || "—") + "</td>" +
+        '<td class="envuelve">' + r.motivo + "</td></tr>";
     });
-    if (ordenadas.length > 1){
+    if (lista.length > 1){
       filas += '<tr><td class="tot">Subtotal</td><td class="tot"></td><td class="tot"></td>' +
         '<td class="tot"></td><td class="tot"></td>' +
-        '<td class="tot">' + num(x.n) + " orden(es)</td></tr>";
+        '<td class="tot">' + num(lista.length) + " orden(es)</td></tr>";
     }
   });
-  filas += '<tr class="total"><td>Total</td><td>' + orden.length + " cuadrilla(s)</td><td>" +
-    num(info.lista.length) + " orden(es)</td><td>" + canales.size + " canal(es)</td><td></td><td>" +
+  filas += '<tr class="total"><td>Total</td><td>' + canales.size + " canal(es)</td><td>" +
+    cuadrillas.size + " cuadrilla(s)</td><td>" + num(info.lista.length) + " orden(es)</td><td></td><td>" +
     motivos.size + " motivo(s)</td></tr>";
 
   const porMotivo = Array.from(motivos.keys()).sort(function(a, b){
     return motivos.get(b) - motivos.get(a) || a.localeCompare(b, "es");
   });
 
-  const sinCruce = (cuads.get("Sin cuadrilla identificada") || { n:0 }).n;
+  const sinCruce = info.lista.filter(function(o){
+    return cuadrillasQueCancelaron(o)[0] === SIN_CUAD;
+  }).length;
   const aviso = sinCruce
     ? ' · <b>' + sinCruce + " sin cuadrilla</b>: OS POR INSTALAR solo trae instalaciones, así que de los demás tipos no hay a quién cruzar"
     : "";
@@ -6393,7 +6405,7 @@ function detalleCancelacionesHtml(){
     info.rotulo + " · " + info.lista.length + " orden(es)" + aviso +
     " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Cuadrilla</th><th>Cuenta</th><th>OS</th><th>Canal de Ventas</th><th>Coach</th>" +
+    "<th>Canal de Ventas</th><th>Coach</th><th>Cuadrilla</th><th>Cuenta</th><th>OS</th>" +
     "<th>Motivo de cancelación</th>" +
     "</tr></thead><tbody>" + filas + "</tbody></table></div>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
