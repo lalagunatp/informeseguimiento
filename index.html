@@ -5995,7 +5995,7 @@ function resumenOrdenes(){
   let maxDia = null;
 
   function bucket(k){
-    if (!dias.has(k)) dias.set(k, { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0, cancLista:[], cancListaTipo:{} });
+    if (!dias.has(k)) dias.set(k, { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, cua:{}, mismoDia:{}, mismoDiaTot:0, cancLista:[], cancListaTipo:{} });
     return dias.get(k);
   }
 
@@ -6012,10 +6012,17 @@ function resumenOrdenes(){
     if (o.tecnico) b.tec.add(o.tecnico);
     if (!b.prov[o.prov]) b.prov[o.prov] = { ev:0, tec:new Set() };
     if (o.tecnico) b.prov[o.prov].tec.add(o.tecnico);
+    // cada cuadrilla por día: el día en que aparece cuenta como día trabajado, aunque
+    // todo lo que traiga sea cancelado (es el mismo criterio de "cuadrillas que trabajaron")
+    if (o.tecnico){
+      if (!b.cua[o.tecnico]) b.cua[o.tecnico] = { ev:0, canc:0, nom:"" };
+      if (!b.cua[o.tecnico].nom && o.tecnicoNom) b.cua[o.tecnico].nom = o.tecnicoNom;
+    }
     if (esTerminada(o)){
       b.term++;
       b.tipos[tipo] = (b.tipos[tipo] || 0) + 1;
       b.prov[o.prov].ev++;
+      if (o.tecnico) b.cua[o.tecnico].ev++;
       // "del mismo día": se creó y se cerró dentro de la misma fecha
       if (!b.mismoDia[tipo]) b.mismoDia[tipo] = { si:0, tot:0 };
       b.mismoDia[tipo].tot++;
@@ -6026,6 +6033,7 @@ function resumenOrdenes(){
     } else if (esCancelada(o)){
       b.canc++;
       b.cancTipos[tipo] = (b.cancTipos[tipo] || 0) + 1;
+      if (o.tecnico) b.cua[o.tecnico].canc++;
       // se guardan las órdenes, no solo el conteo: el detalle de cada celda las necesita
       b.cancLista.push(o);
       if (!b.cancListaTipo[tipo]) b.cancListaTipo[tipo] = [];
@@ -6050,7 +6058,7 @@ function ordenesHtml(){
     return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">Ningún evento con fecha de término en lo que dejaron los filtros.</div></section>';
   }
 
-  const vacia = { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0, cancLista:[], cancListaTipo:{} };
+  const vacia = { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, cua:{}, mismoDia:{}, mismoDiaTot:0, cancLista:[], cancListaTipo:{} };
   const dat = function(col){ return (col && col.b) || vacia; };
   const bloque = function(k){ return R.dias.get(k) || vacia; };
 
@@ -6282,6 +6290,104 @@ function ordenesHtml(){
     '<div class="scroll"><table class="compacta"><thead><tr><th>Proveedor</th>' + encSemAnt + encDias +
     '<th class="tot">Semana</th><th>vs sem. ant.</th></tr></thead><tbody>' + f2 + "</tbody></table></div></section>";
 
+  /* ---- tabla 2b: productividad por cuadrilla ---- */
+  // una cuadrilla es un usuario instalador; su productividad es eventos terminados entre
+  // los días que trabajó, no entre los días del periodo: quien descansó no sale castigado
+  const cuas = new Map();
+  const cuaDe = function(k, nom){
+    if (!cuas.has(k)){
+      cuas.set(k, { nom:"", ev:0, dias:0, canc:0, evA:0, diasA:0, evM:0, diasM:0, cancM:0 });
+    }
+    const x = cuas.get(k);
+    if (!x.nom && nom) x.nom = nom;
+    return x;
+  };
+  const acumulaCua = function(b, campoEv, campoDias, campoCanc){
+    Object.keys(b.cua).forEach(function(k){
+      const d = b.cua[k];
+      const x = cuaDe(k, d.nom);
+      x[campoEv] += d.ev;
+      x[campoDias]++;
+      if (campoCanc) x[campoCanc] += d.canc;
+    });
+  };
+  cols.forEach(function(c){ acumulaCua(dat(c), "ev", "dias", "canc"); });
+  colsAnt.forEach(function(c){ acumulaCua(dat(c), "evA", "diasA", null); });
+  diasMes.forEach(function(b){ acumulaCua(b, "evM", "diasM", "cancM"); });
+
+  const prodCua = function(ev, dias){ return dias ? ev / dias : null; };
+  // se listan las que trabajaron en la semana mostrada o en lo que va del mes; las que
+  // solo tienen semana anterior ya no dicen nada del periodo que se está viendo
+  const listaCuas = Array.from(cuas.keys()).filter(function(k){
+    const x = cuas.get(k);
+    return x.dias > 0 || x.diasM > 0;
+  }).sort(function(a, b){
+    const xa = cuas.get(a), xb = cuas.get(b);
+    const pa = prodCua(xa.ev, xa.dias), pb = prodCua(xb.ev, xb.dias);
+    if ((pa === null) !== (pb === null)) return pa === null ? 1 : -1;   // sin semana, al final
+    if (pa !== null && pb !== pa) return pb - pa;
+    return (prodCua(xb.evM, xb.diasM) || 0) - (prodCua(xa.evM, xa.diasM) || 0) ||
+           (xa.nom || a).localeCompare(xb.nom || b, "es");
+  });
+
+  const celdaProdCua = function(ev, dias, extra){
+    const cl = extra || "";
+    if (!dias) return '<td class="' + (cl + " cero").trim() + '">—</td>';
+    return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + (ev / dias).toFixed(1) +
+      '<span class="mini">' + num(ev) + " en " + num(dias) + "d</span></td>";
+  };
+
+  let f2b = "";
+  listaCuas.forEach(function(k){
+    const x = cuas.get(k);
+    f2b += "<tr><td>" + (x.nom || k) + '<span class="mini">' + k + "</span></td>" +
+      celdaProdCua(x.evA, x.diasA, "tot") +
+      cols.map(function(c){
+        const d = dat(c).cua[k];
+        return d ? celdaNum(d.ev) : '<td class="cero">—</td>';
+      }).join("") +
+      celdaProdCua(x.ev, x.dias, "tot") +
+      celdaNum(x.canc, "tot") +
+      celdaDif(prodCua(x.ev, x.dias), prodCua(x.evA, x.diasA)) +
+      celdaProdCua(x.evM, x.diasM, "tot") +
+      celdaNum(x.cancM) + "</tr>";
+  });
+
+  const totCua = listaCuas.reduce(function(a, k){
+    const x = cuas.get(k);
+    a.ev += x.ev; a.dias += x.dias; a.canc += x.canc;
+    a.evA += x.evA; a.diasA += x.diasA;
+    a.evM += x.evM; a.diasM += x.diasM; a.cancM += x.cancM;
+    return a;
+  }, { ev:0, dias:0, canc:0, evA:0, diasA:0, evM:0, diasM:0, cancM:0 });
+
+  // el total del día suma solo lo que trae cuadrilla: los eventos sin usuario instalador
+  // no entran en ningún renglón, así que tampoco deben entrar aquí
+  f2b += '<tr class="total"><td>Total</td>' +
+    celdaProdCua(totCua.evA, totCua.diasA, "tot") +
+    cols.map(function(c){
+      const cua = dat(c).cua;
+      return celdaNum(Object.keys(cua).reduce(function(a, k){ return a + cua[k].ev; }, 0));
+    }).join("") +
+    celdaProdCua(totCua.ev, totCua.dias, "tot") +
+    celdaNum(totCua.canc, "tot") +
+    celdaDif(prodCua(totCua.ev, totCua.dias), prodCua(totCua.evA, totCua.diasA)) +
+    celdaProdCua(totCua.evM, totCua.diasM, "tot") +
+    celdaNum(totCua.cancM) + "</tr>";
+
+  const tabla2b = !listaCuas.length ? "" :
+    '<section class="panel"><h2>Productividad de las cuadrillas' +
+    ' <span class="sub">' + rotUni + rotGeo + rotHora +
+    ' · una cuadrilla es un usuario instalador · en SEM ANT, Semana y Mes cada celda es eventos terminados ÷ días que trabajó, y abajo en chico el par que la formó' +
+    " · las columnas de cada día son los eventos terminados de ese día · " + listaCuas.length + " cuadrilla(s), primero la de mayor productividad de la semana</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Cuadrilla</th>' + encSemAnt + encDias +
+    '<th class="tot" title="' + rotAcum + '">Semana</th>' +
+    '<th class="tot" title="eventos cancelados de la cuadrilla en los días mostrados">Canceladas</th>' +
+    '<th title="productividad de la semana contra los mismos días de la anterior">vs sem. ant.</th>' +
+    '<th class="tot" title="' + rotMes + '">Mes</th>' +
+    '<th title="eventos cancelados de la cuadrilla en el mes">Canceladas mes</th>' +
+    "</tr></thead><tbody>" + f2b + "</tbody></table></div></section>";
+
   /* ---- tabla 3: canceladas por tipo ---- */
   const tiposC = tipos.filter(function(t){
     return cols.some(function(c){ return (dat(c).cancTipos[t] || 0) > 0; });
@@ -6333,7 +6439,7 @@ function ordenesHtml(){
     "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>" +
     detalleCancelacionesHtml();
 
-  return tabla1 + tabla2 + tabla3;
+  return tabla1 + tabla2 + tabla2b + tabla3;
 }
 
 /* --- detalle de una celda de canceladas: quién canceló y por qué --- */
