@@ -238,7 +238,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 91</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 92</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -4982,6 +4982,7 @@ async function cargarOsPorInstalar(){
       if (t2 && (!ultAsig || t2 > ultAsig)) ultAsig = t2;
     });
     INFO_OSPI_REPETIDAS = repetidas;
+    IDX_CANCELA = null;   // quién canceló cada orden se rearma con lo recién leído
     marcarFuente("ospi", "ok", ultAsig || "", OSPI.filas.length);
   }catch(e){
     OSPI = { estado:"falló: " + e.message, enc:[], arriba:[], filas:[], iEnc:0 };
@@ -5645,6 +5646,48 @@ function geocercaDe(o){
   return GEO.mapa.get(llaveCluster(o.cluster)) || "Sin geocerca";
 }
 
+/* --- quién canceló: se cruza contra OS POR INSTALAR por cuenta y día --- */
+
+// OS POR INSTALAR trae la cuenta, la fecha de cancelación y el técnico que la canceló.
+// La llave es cuenta + día, porque una misma cuenta puede cancelarse varias veces en
+// fechas distintas; y un mismo día puede traer dos técnicos (dos intentos), así que
+// se guardan todos.
+let IDX_CANCELA = null;
+
+function indiceCancelaciones(){
+  if (IDX_CANCELA) return IDX_CANCELA;
+  const m = new Map();
+  if (OSPI.estado !== "ok") return m;   // sin cachear: al cargar la hoja se rearma
+  const enc = OSPI.enc || [];
+  let iCta = buscaCol(enc, ["CUENTA"]);
+  let iTec = buscaCol(enc, ["TECNICO"], ["NOMBRE"]);
+  let iFec = buscaCol(enc, ["FECHA CANCELADO"]);
+  if (iCta < 0) iCta = letraAIndice("C");
+  if (iTec < 0) iTec = letraAIndice("N");
+  if (iFec < 0) iFec = letraAIndice("Z");
+  OSPI.filas.forEach(function(r){
+    const v = celdasTexto(r);
+    const cta = clave(v[iCta]);
+    const f = fechaOrden(v[iFec]);
+    if (!cta || !f) return;
+    const k = cta + "|" + claveDia(soloFecha(f));
+    if (!m.has(k)) m.set(k, new Set());
+    const t = String(v[iTec] || "").trim();
+    if (t) m.get(k).add(t);
+  });
+  IDX_CANCELA = m;
+  return m;
+}
+
+// etiqueta de la cuadrilla que canceló: si el mismo día hubo dos intentos, van las
+// dos juntas en un solo renglón, para que la suma del detalle cuadre con la celda
+function cuadrillaQueCancelo(o){
+  if (!o.fTer) return "Sin cuadrilla identificada";
+  const s = indiceCancelaciones().get(clave(o.cuenta) + "|" + claveDia(soloFecha(o.fTer)));
+  if (!s || !s.size) return "Sin cuadrilla identificada";
+  return Array.from(s).sort().join(" + ");
+}
+
 /* --- hora de corte: se cuenta lo cerrado hasta esa hora, en todos los días --- */
 
 function llenarHorasOrdenes(){
@@ -5931,7 +5974,7 @@ function resumenOrdenes(){
   let maxDia = null;
 
   function bucket(k){
-    if (!dias.has(k)) dias.set(k, { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0 });
+    if (!dias.has(k)) dias.set(k, { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0, cancLista:[], cancListaTipo:{} });
     return dias.get(k);
   }
 
@@ -5962,6 +6005,10 @@ function resumenOrdenes(){
     } else if (esCancelada(o)){
       b.canc++;
       b.cancTipos[tipo] = (b.cancTipos[tipo] || 0) + 1;
+      // se guardan las órdenes, no solo el conteo: el detalle de cada celda las necesita
+      b.cancLista.push(o);
+      if (!b.cancListaTipo[tipo]) b.cancListaTipo[tipo] = [];
+      b.cancListaTipo[tipo].push(o);
     }
   });
 
@@ -5982,7 +6029,7 @@ function ordenesHtml(){
     return '<section class="panel"><h2>Atención de órdenes</h2><div class="aviso">Ningún evento con fecha de término en lo que dejaron los filtros.</div></section>';
   }
 
-  const vacia = { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0 };
+  const vacia = { term:0, canc:0, tipos:{}, cancTipos:{}, tec:new Set(), prov:{}, mismoDia:{}, mismoDiaTot:0, cancLista:[], cancListaTipo:{} };
   const dat = function(col){ return (col && col.b) || vacia; };
   const bloque = function(k){ return R.dias.get(k) || vacia; };
 
@@ -6196,58 +6243,131 @@ function ordenesHtml(){
   const cancSem = suma(function(b){ return b.canc; });
   const cancSemAnt = sumaAnt(function(b){ return b.canc; });
 
+  // juntar las listas de varias columnas en una sola, para las celdas de acumulado
+  const juntar = function(arr, fn){
+    return arr.reduce(function(a, c){ return a.concat(fn(dat(c)) || []); }, []);
+  };
+
   let f3 = "";
   tiposC.forEach(function(t){
+    const lista = function(b){ return b.cancListaTipo[t]; };
     const serie = cols.map(function(c){ return dat(c).cancTipos[t] || 0; });
     const prom = promDe(function(b){ return b.cancTipos[t] || 0; });
     const term = suma(function(b){ return b.tipos[t] || 0; });
     const canc = suma(function(b){ return b.cancTipos[t] || 0; });
     const ant = sumaAnt(function(b){ return b.cancTipos[t] || 0; });
     f3 += "<tr><td>" + t + "</td>" +
-      celdaNum(ant, "tot") +
-      serie.map(function(n){ return celdaNum(n); }).join("") +
-      celdaNum(canc, "tot") +
+      celdaCanc(ant, juntar(colsAnt, lista), t + " · semana anterior", "tot") +
+      cols.map(function(c){
+        return celdaCanc(dat(c).cancTipos[t] || 0, lista(dat(c)), t + " · " + fCorta(c.d));
+      }).join("") +
+      celdaCanc(canc, juntar(cols, lista), t + " · semana " + etiquetaSemana(semK), "tot") +
       '<td class="tot">' + promTxt(prom) + "</td>" +
       celdaDif(canc, ant, true) +
       "<td>" + (term + canc ? Math.round(canc / (term + canc) * 100) + "%" : "—") + "</td></tr>";
   });
+  const listaTot = function(b){ return b.cancLista; };
   f3 += '<tr class="total"><td>Total canceladas</td>' +
-    celdaNum(cancSemAnt, "tot") +
-    cancSerie.map(function(n){ return celdaNum(n); }).join("") +
-    celdaNum(cancSem, "tot") +
+    celdaCanc(cancSemAnt, juntar(colsAnt, listaTot), "Todas · semana anterior", "tot") +
+    cols.map(function(c){
+      return celdaCanc(dat(c).canc, dat(c).cancLista, "Todas · " + fCorta(c.d));
+    }).join("") +
+    celdaCanc(cancSem, juntar(cols, listaTot), "Todas · semana " + etiquetaSemana(semK), "tot") +
     '<td class="tot">' + promTxt(promCanc) + "</td>" +
     celdaDif(cancSem, cancSemAnt, true) +
     "<td>" + (totSem + cancSem ? Math.round(cancSem / (totSem + cancSem) * 100) + "%" : "—") + "</td></tr>";
 
   const tabla3 = !tiposC.length ? "" :
     '<section class="panel"><h2>Órdenes canceladas por día' +
-    ' <span class="sub">aquí el verde es bajar: la última columna es qué parte de los eventos atendidos de ese tipo terminó en cancelación</span></h2>' +
+    ' <span class="sub">aquí el verde es bajar · la última columna es qué parte de los eventos atendidos de ese tipo terminó en cancelación · <b>toca un número</b> para ver quién canceló y por qué</span></h2>' +
     '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' + encSemAnt + encDias +
     '<th class="tot">Semana</th><th class="tot">Prom</th><th>vs sem. ant.</th><th>% de cancelación</th>' +
-    "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>";
+    "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>" +
+    detalleCancelacionesHtml();
 
-  /* ---- tabla 4: motivos de cancelación de los días mostrados ---- */
-  // por clave de día, no por rango: los días marcados no tienen que ser seguidos
-  const clavesDia = new Set(cols.map(function(c){ return c.k; }));
-  const motivos = {};
-  let motTot = 0;
-  R.filas.forEach(function(o){
-    if (!esCancelada(o) || !o.fTer || !clavesDia.has(claveDia(soloFecha(o.fTer)))) return;
+  return tabla1 + tabla2 + tabla3;
+}
+
+/* --- detalle de una celda de canceladas: quién canceló y por qué --- */
+
+let DET_CANC = {};
+let DET_CANC_N = 0;
+
+// celda de canceladas que abre/cierra su detalle (misma cubeta DET_SEL que el resto
+// de la app); sin órdenes detrás, es una celda normal
+function celdaCanc(n, lista, rotulo, extra){
+  if (!n || !lista || !lista.length) return celdaNum(n, extra);
+  const id = "canc" + (DET_CANC_N++);
+  DET_CANC[id] = { lista: lista, rotulo: rotulo };
+  return '<td class="' + ((extra || "") + " clicable").trim() + '" data-det="' + id + '">' + num(n) + "</td>";
+}
+
+function detalleCancelacionesHtml(){
+  if (!DET_SEL || !DET_CANC[DET_SEL]) return "";
+  const info = DET_CANC[DET_SEL];
+
+  // cuadrilla -> motivo -> cuántas
+  const cuads = new Map();
+  const motivos = new Map();
+  info.lista.forEach(function(o){
+    const c = cuadrillaQueCancelo(o);
     const m = o.motivo || "Sin motivo";
-    motivos[m] = (motivos[m] || 0) + 1;
-    motTot++;
+    if (!cuads.has(c)) cuads.set(c, { n:0, mot:new Map() });
+    const x = cuads.get(c);
+    x.n++;
+    x.mot.set(m, (x.mot.get(m) || 0) + 1);
+    motivos.set(m, (motivos.get(m) || 0) + 1);
   });
-  const listaMot = Object.keys(motivos).sort(function(a, b){ return motivos[b] - motivos[a]; }).slice(0, 15);
-  const tabla4 = !listaMot.length ? "" :
-    '<section class="panel"><h2>Motivos de cancelación' +
-    ' <span class="sub">semana ' + etiquetaSemana(semK) + " · " + fCorta(cols[0].d) + " al " + fCorta(ult.d) + " · " + num(motTot) + " canceladas</span></h2>" +
-    '<div class="scroll"><table class="compacta"><thead><tr><th>Motivo</th><th>Órdenes</th><th>% del total</th></tr></thead><tbody>' +
-    listaMot.map(function(m){
-      return "<tr><td>" + m + "</td>" + celdaNum(motivos[m]) +
-        "<td>" + Math.round(motivos[m] / motTot * 100) + "%</td></tr>";
-    }).join("") + "</tbody></table></div></section>";
 
-  return tabla1 + tabla2 + tabla3 + tabla4;
+  // primero por cuadrilla (las que más cancelaron), y dentro por motivo; las que no
+  // se pudieron identificar quedan al final
+  const orden = Array.from(cuads.keys()).sort(function(a, b){
+    const sinA = a === "Sin cuadrilla identificada", sinB = b === "Sin cuadrilla identificada";
+    if (sinA !== sinB) return sinA ? 1 : -1;
+    return cuads.get(b).n - cuads.get(a).n || a.localeCompare(b, "es");
+  });
+
+  let filas = "";
+  orden.forEach(function(c){
+    const x = cuads.get(c);
+    const mots = Array.from(x.mot.keys()).sort(function(a, b){
+      return x.mot.get(b) - x.mot.get(a) || a.localeCompare(b, "es");
+    });
+    mots.forEach(function(m, i){
+      filas += "<tr><td>" + (i === 0 ? c : "") + '</td><td class="envuelve">' + m + "</td>" +
+        celdaNum(x.mot.get(m)) + "</tr>";
+    });
+    if (mots.length > 1){
+      filas += '<tr><td></td><td class="tot">Subtotal</td>' + celdaNum(x.n, "tot") + "</tr>";
+    }
+  });
+  filas += '<tr class="total"><td>Total</td><td>' + orden.length + " cuadrilla(s) · " + motivos.size +
+    " motivo(s)</td>" + celdaNum(info.lista.length) + "</tr>";
+
+  const porMotivo = Array.from(motivos.keys()).sort(function(a, b){
+    return motivos.get(b) - motivos.get(a) || a.localeCompare(b, "es");
+  });
+
+  const sinCruce = (cuads.get("Sin cuadrilla identificada") || { n:0 }).n;
+  const aviso = sinCruce
+    ? ' · <b>' + sinCruce + " sin cuadrilla</b>: OS POR INSTALAR solo trae instalaciones, así que de los demás tipos no hay a quién cruzar"
+    : "";
+
+  return '<section class="panel detalle"><h2>Quién canceló y por qué <span class="sub">' +
+    info.rotulo + " · " + info.lista.length + " orden(es)" + aviso +
+    " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Cuadrilla</th><th>Motivo de cancelación</th><th>Órdenes</th>" +
+    "</tr></thead><tbody>" + filas + "</tbody></table></div>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Total por motivo</th><th>Órdenes</th><th>% del total</th>" +
+    "</tr></thead><tbody>" +
+    porMotivo.map(function(m){
+      return '<tr><td class="envuelve">' + m + "</td>" + celdaNum(motivos.get(m)) +
+        "<td>" + Math.round(motivos.get(m) / info.lista.length * 100) + "%</td></tr>";
+    }).join("") +
+    '<tr class="total"><td>Total</td>' + celdaNum(info.lista.length) + "<td>100%</td></tr>" +
+    "</tbody></table></div></section>";
 }
 
 /* ---------- pintado ---------- */
@@ -6481,6 +6601,8 @@ function pintar(){
   DET_RECH_N = 0;
   DET_CUMPL = {};
   DET_CUMPL_N = 0;
+  DET_CANC = {};
+  DET_CANC_N = 0;
 
   const sem = el("semana").value;
   const semAnt = claveAnterior(sem);
@@ -6546,6 +6668,8 @@ function pintar(){
     html = cuentasDuplicadasHtml();
   } else if (VISTA === "ordenes"){
     if (ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
+    // de ahí sale quién canceló cada orden
+    if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     html = ordenesHtml();
   } else if (VISTA === "oprech"){
     html = opRechazadasHtml();
