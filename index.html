@@ -6372,22 +6372,21 @@ function detalleCancelacionesHtml(){
              a.motivo.localeCompare(b.motivo, "es") ||
              String(a.o.cuenta).localeCompare(String(b.o.cuenta), "es");
     });
-    lista.forEach(function(r, i){
-      const mismoCoach = i > 0 && lista[i - 1].coach === r.coach;
-      filas += "<tr><td>" + (i === 0 ? canal : "") + "</td>" +
-        "<td>" + (mismoCoach ? "" : (r.coach || "—")) + "</td>" +
-        '<td class="envuelve">' + r.cuads.join("<br>") + "</td>" +
+    lista.forEach(function(r){
+      filas += '<tr><td class="envuelve">' + r.cuads.join("<br>") + "</td>" +
         "<td>" + (r.o.cuenta || "—") + "</td><td>" + (r.o.os || "—") + "</td>" +
+        "<td>" + (r.canal === SIN_CANAL ? "—" : r.canal) + "</td>" +
+        "<td>" + (r.coach || "—") + "</td>" +
         '<td class="envuelve">' + r.motivo + "</td></tr>";
     });
     if (lista.length > 1){
       filas += '<tr><td class="tot">Subtotal</td><td class="tot"></td><td class="tot"></td>' +
-        '<td class="tot"></td><td class="tot"></td>' +
+        '<td class="tot">' + (canal === SIN_CANAL ? "—" : canal) + '</td><td class="tot"></td>' +
         '<td class="tot">' + num(lista.length) + " orden(es)</td></tr>";
     }
   });
-  filas += '<tr class="total"><td>Total</td><td>' + canales.size + " canal(es)</td><td>" +
-    cuadrillas.size + " cuadrilla(s)</td><td>" + num(info.lista.length) + " orden(es)</td><td></td><td>" +
+  filas += '<tr class="total"><td>Total</td><td>' + cuadrillas.size + " cuadrilla(s)</td><td>" +
+    num(info.lista.length) + " orden(es)</td><td>" + canales.size + " canal(es)</td><td></td><td>" +
     motivos.size + " motivo(s)</td></tr>";
 
   const porMotivo = Array.from(motivos.keys()).sort(function(a, b){
@@ -6405,7 +6404,7 @@ function detalleCancelacionesHtml(){
     info.rotulo + " · " + info.lista.length + " orden(es)" + aviso +
     " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Canal de Ventas</th><th>Coach</th><th>Cuadrilla</th><th>Cuenta</th><th>OS</th>" +
+    "<th>Cuadrilla</th><th>Cuenta</th><th>OS</th><th>Canal de Ventas</th><th>Coach</th>" +
     "<th>Motivo de cancelación</th>" +
     "</tr></thead><tbody>" + filas + "</tbody></table></div>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
