@@ -5735,14 +5735,35 @@ function indiceCanalCuenta(){
     if (!k || !f.canal) return;
     // una cuenta puede repetirse (cambio de plan, reventa): manda la de venta técnico,
     // que es justo la que se quiere poder separar por proveedor
-    if (!m.has(k) || normaliza(f.canal).indexOf("VENTA TECNICO") >= 0) m.set(k, f.canal);
+    if (!m.has(k) || normaliza(f.canal).indexOf("VENTA TECNICO") >= 0){
+      m.set(k, { canal: f.canal, coach: f.coach || "" });
+    }
   });
   IDX_CANAL_CTA = m;
   return m;
 }
 
 function canalOrden(o){
-  return indiceCanalCuenta().get(clave(o.cuenta)) || o.canalHoja || "Sin canal";
+  const x = indiceCanalCuenta().get(clave(o.cuenta));
+  return (x && x.canal) || o.canalHoja || "Sin canal";
+}
+
+// solo en estos canales el coach identifica al equipo que vendió la cuenta; en los
+// foráneos y en los demás canales el dato no dice nada útil, así que no se muestra
+const CANALES_CON_COACH = ["CAMBACEO", "PUNTO DE VENTA", "VENTA TECNICO CRC", "VENTA TECNICO SLK"];
+
+function coachOrden(o){
+  const x = indiceCanalCuenta().get(clave(o.cuenta));
+  if (!x || !x.coach) return "";
+  return CANALES_CON_COACH.indexOf(normaliza(x.canal)) >= 0 ? x.coach : "";
+}
+
+// el canal y el coach son de la venta que dio origen a la cuenta: solo dicen algo en la
+// instalación y en su factibilidad. En soporte, cambio de equipo, addons, etc. la cuenta
+// ya viene de antes y el equipo que vendió no tiene que ver con esa orden.
+function esOrdenDeVenta(o){
+  const t = normaliza(o.tipo);
+  return t.indexOf("INSTALACION") === 0 || t.indexOf("FACTIBILIDAD") === 0;
 }
 
 async function cargarOrdenes(){
@@ -6309,12 +6330,15 @@ function detalleCancelacionesHtml(){
   // cuadrilla -> motivo -> cuántas
   const cuads = new Map();
   const motivos = new Map();
+  const canales = new Set();
   info.lista.forEach(function(o){
     const c = cuadrillaQueCancelo(o);
     const m = o.motivo || "Sin motivo";
-    if (!cuads.has(c)) cuads.set(c, { n:0, mot:new Map() });
+    if (esOrdenDeVenta(o)) canales.add(canalOrden(o));
+    if (!cuads.has(c)) cuads.set(c, { n:0, mot:new Map(), ordenes:[] });
     const x = cuads.get(c);
     x.n++;
+    x.ordenes.push(o);
     x.mot.set(m, (x.mot.get(m) || 0) + 1);
     motivos.set(m, (motivos.get(m) || 0) + 1);
   });
@@ -6330,19 +6354,31 @@ function detalleCancelacionesHtml(){
   let filas = "";
   orden.forEach(function(c){
     const x = cuads.get(c);
-    const mots = Array.from(x.mot.keys()).sort(function(a, b){
-      return x.mot.get(b) - x.mot.get(a) || a.localeCompare(b, "es");
+    // dentro de cada cuadrilla, primero los motivos que más se repiten, y dentro de
+    // cada motivo las cuentas en orden
+    const ordenadas = x.ordenes.slice().sort(function(a, b){
+      const ma = a.motivo || "Sin motivo", mb = b.motivo || "Sin motivo";
+      return (x.mot.get(mb) - x.mot.get(ma)) || ma.localeCompare(mb, "es") ||
+             String(a.cuenta).localeCompare(String(b.cuenta), "es");
     });
-    mots.forEach(function(m, i){
-      filas += "<tr><td>" + (i === 0 ? c : "") + '</td><td class="envuelve">' + m + "</td>" +
-        celdaNum(x.mot.get(m)) + "</tr>";
+    ordenadas.forEach(function(o, i){
+      // fuera de instalación y factibilidad el canal y el coach no aplican
+      const venta = esOrdenDeVenta(o);
+      filas += "<tr><td>" + (i === 0 ? c : "") + "</td>" +
+        "<td>" + (o.cuenta || "—") + "</td><td>" + (o.os || "—") + "</td>" +
+        "<td>" + (venta ? canalOrden(o) : "—") + "</td>" +
+        "<td>" + ((venta && coachOrden(o)) || "—") + "</td>" +
+        '<td class="envuelve">' + (o.motivo || "Sin motivo") + "</td></tr>";
     });
-    if (mots.length > 1){
-      filas += '<tr><td></td><td class="tot">Subtotal</td>' + celdaNum(x.n, "tot") + "</tr>";
+    if (ordenadas.length > 1){
+      filas += '<tr><td class="tot">Subtotal</td><td class="tot"></td><td class="tot"></td>' +
+        '<td class="tot"></td><td class="tot"></td>' +
+        '<td class="tot">' + num(x.n) + " orden(es)</td></tr>";
     }
   });
-  filas += '<tr class="total"><td>Total</td><td>' + orden.length + " cuadrilla(s) · " + motivos.size +
-    " motivo(s)</td>" + celdaNum(info.lista.length) + "</tr>";
+  filas += '<tr class="total"><td>Total</td><td>' + orden.length + " cuadrilla(s)</td><td>" +
+    num(info.lista.length) + " orden(es)</td><td>" + canales.size + " canal(es)</td><td></td><td>" +
+    motivos.size + " motivo(s)</td></tr>";
 
   const porMotivo = Array.from(motivos.keys()).sort(function(a, b){
     return motivos.get(b) - motivos.get(a) || a.localeCompare(b, "es");
@@ -6357,7 +6393,8 @@ function detalleCancelacionesHtml(){
     info.rotulo + " · " + info.lista.length + " orden(es)" + aviso +
     " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
-    "<th>Cuadrilla</th><th>Motivo de cancelación</th><th>Órdenes</th>" +
+    "<th>Cuadrilla</th><th>Cuenta</th><th>OS</th><th>Canal de Ventas</th><th>Coach</th>" +
+    "<th>Motivo de cancelación</th>" +
     "</tr></thead><tbody>" + filas + "</tbody></table></div>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Total por motivo</th><th>Órdenes</th><th>% del total</th>" +
