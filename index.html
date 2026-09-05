@@ -6179,6 +6179,11 @@ function ordenesHtml(){
   const cuadSemAnt = sumaAnt(function(b){ return b.tec.size; });
   const prodSem = cuadSem ? totSem / cuadSem : null;
   const prodSemAnt = cuadSemAnt ? totSemAnt / cuadSemAnt : null;
+  // en SEM ANT y Semana el renglón de cuadrillas muestra el promedio por día, no la
+  // suma de jornadas; la productividad sigue saliendo de las jornadas, que da lo mismo
+  // (eventos ÷ jornadas = eventos por día ÷ cuadrillas promedio)
+  const cuadSemProm = cols.length ? cuadSem / cols.length : null;
+  const cuadSemAntProm = cols.length ? cuadSemAnt / cols.length : null;
   const mdSem = { si: suma(function(b){ return b.mismoDiaTot; }), tot: totSem };
 
   f1 += '<tr class="total"><td>Eventos totales</td>' +
@@ -6191,12 +6196,11 @@ function ordenesHtml(){
     "<td>" + (mdSem.tot ? Math.round(mdSem.si / mdSem.tot * 100) + "%" : "—") + "</td>" +
     celdaNum(mesTot) + "<td>100%</td></tr>";
 
-  // en las columnas de acumulado son jornadas (suma de cuadrillas por día), no técnicos
-  // distintos: así la productividad de la semana sigue siendo eventos entre jornadas
-  f1 += '<tr class="total"><td title="en las columnas de acumulado es la suma de cuadrillas por día (jornadas), no técnicos distintos">Cuadrillas que trabajaron</td>' +
-    celdaNum(cuadSemAnt, "tot") +
+  const rotCuadProm = "promedio de cuadrillas por día de los " + cols.length + " día(s) mostrados";
+  f1 += '<tr class="total"><td title="cada día son las cuadrillas distintas que trabajaron; en SEM ANT y Semana es el promedio por día de esos mismos días">Cuadrillas que trabajaron</td>' +
+    '<td class="tot" title="' + rotCuadProm + '">' + promTxt(cuadSemAntProm) + "</td>" +
     cuadSerie.map(function(n){ return celdaNum(n); }).join("") +
-    celdaNum(cuadSem, "tot") +
+    '<td class="tot" title="' + rotCuadProm + '">' + promTxt(cuadSemProm) + "</td>" +
     '<td class="tot">' + promTxt(promCuad) + "</td>" +
     celdaDif(cuadSem, cuadSemAnt) +
     "<td>—</td><td>—</td>" +
@@ -6225,7 +6229,8 @@ function ordenesHtml(){
     ' <span class="sub">' + rotUni + rotGeo + rotHora + " · semana " + etiquetaSemana(semK) + ", " + fCorta(lunes) + " al " + fCorta(domingo) +
     " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
     (hayHoy ? " · la semana va abierta: el día en curso entra al acumulado tal como va, pero no al promedio" : "") +
-    " · productividad = eventos terminados ÷ cuadrillas que trabajaron</span></h2>" +
+    " · productividad = eventos terminados ÷ cuadrillas que trabajaron; en los acumulados," +
+    " eventos del periodo ÷ cuadrillas promedio ÷ días</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Tipo de evento</th>" + encSemAnt + encDias +
     '<th class="tot" title="' + rotAcum + '">Semana</th><th class="tot" title="promedio por día de los días cerrados">Prom</th>' +
