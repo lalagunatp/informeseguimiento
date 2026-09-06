@@ -537,13 +537,14 @@
   </section>
 
   <section class="panel oculto" id="panelCargaDatos">
-    <h2>Actualizar datos · Venta técnico <span class="sub">reemplaza el contenido de la pestaña VENTA TECNICO (gid configurado arriba) con el archivo completo, respetando el encabezado · solo tú puedes ver y usar esto</span></h2>
+    <h2>Actualizar datos · Venta técnico <span class="sub">pestaña VENTA TECNICO (gid configurado arriba), respetando el encabezado · puedes subir el reporte completo (reemplaza todo) o solo un pedazo (entra hasta arriba y se borran los viejos con la misma oportunidad, columna E) · solo tú puedes ver y usar esto</span></h2>
     <div class="controles">
-      <label class="campo">Archivo .csv (el reporte Vta_Inst_Venta_Tecnico tal cual, con todas sus columnas)
+      <label class="campo">Archivo .csv (el reporte Vta_Inst_Venta_Tecnico, con todas sus columnas — completo o solo los días que quieras actualizar)
         <input type="file" id="archivoVentaTecnico" accept=".csv,text/csv">
       </label>
     </div>
     <div class="acciones">
+      <button id="btnSubirVentaTecnicoNuevo" class="sec">Subir solo lo nuevo y quitar lo duplicado viejo</button>
       <button id="btnSubirVentaTecnico" class="sec">Reemplazar VENTA TECNICO con este archivo</button>
     </div>
     <div id="ultimaCargaVentaTecnico" class="aviso"></div>
@@ -1185,18 +1186,18 @@ function esEncabezadoTecnico(fila, iLlave){
   return !/^\d+$/.test(v);
 }
 
-async function subirVentaTecnico(){
-  const caja = el("avisoCargaVentaTecnico");
-  caja.classList.remove("oculto");
-  caja.classList.remove("error");
+// lee el .csv elegido y lo deja listo para subir, con las mismas comprobaciones para
+// los dos botones del panel (reemplazar todo / subir solo lo nuevo). Devuelve null si
+// algo no cuadra, dejando ya escrito el motivo en la caja de aviso.
+async function prepararVentaTecnico(caja){
   const archivo = el("archivoVentaTecnico").files[0];
-  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return; }
+  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return null; }
 
   let texto;
   try{
     texto = await archivo.text();
   }catch(e){
-    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return;
+    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return null;
   }
 
   const colLlave = (el("colLlave").value.trim() || "E").toUpperCase();
@@ -1209,8 +1210,8 @@ async function subirVentaTecnico(){
   if (anchoMax <= Math.max(iLlave, iClave)){
     caja.classList.add("error");
     caja.innerHTML = "El archivo solo trae " + anchoMax + " columna(s), y la oportunidad va en la " + colLlave +
-      " y el código de técnico en la " + colClave + ". Tiene que ser el reporte completo, con todas sus columnas.";
-    return;
+      " y el código de técnico en la " + colClave + ". Tiene que ser el reporte con todas sus columnas.";
+    return null;
   }
 
   // si el primer renglón es el encabezado del reporte, se ignora (la pestaña ya
@@ -1228,7 +1229,7 @@ async function subirVentaTecnico(){
   if (!filas.length){
     caja.classList.add("error");
     caja.innerHTML = "El archivo no trae renglones de datos.";
-    return;
+    return null;
   }
 
   // comprobación de que las columnas cuadran: en el archivo correcto la mayoría de
@@ -1241,8 +1242,108 @@ async function subirVentaTecnico(){
     caja.innerHTML = "Las columnas no cuadran: solo " + cruzan + " de " + filas.length +
       " renglón(es) traen número de oportunidad en la columna " + colLlave + " y código de técnico en la " +
       colClave + ". Revisa que sea el archivo correcto o corrige esas dos letras en Ajustes de la fuente.";
+    return null;
+  }
+
+  return { filas: filas, anchoMax: anchoMax, colLlave: colLlave, colClave: colClave, iLlave: iLlave, iClave: iClave };
+}
+
+// refresca lo que ya está cargado en la app con el dato nuevo, sin pedir recargar la página
+async function refrescarTrasCargaTecnico(){
+  el("archivoVentaTecnico").value = "";
+  await cargarMapaTecnico(el("hojaId").value.trim());
+  if (FILAS.length) reclasificarCanal();
+  cargarUltimasCargas();
+  pintar();
+}
+
+// Sube solo un pedazo del reporte: esos renglones entran hasta arriba de VENTA TECNICO
+// y enseguida se borran los viejos que traigan la misma oportunidad (columna E). Lo que
+// no venga en el archivo se queda tal cual. Mismo criterio que BASE DE DATOS.
+async function subirVentaTecnicoNuevo(){
+  const caja = el("avisoCargaVentaTecnico");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+
+  const prep = await prepararVentaTecnico(caja);
+  if (!prep) return;
+
+  // llaves del archivo: sirven para avisar de antemano cuántos viejos se van a quitar
+  const llaves = new Set();
+  let sinLlave = 0;
+  prep.filas.forEach(function(f){
+    const k = clave(f[prep.iLlave]).replace(/[^0-9A-Z]/g, "");
+    if (k) llaves.add(k); else sinLlave++;
+  });
+  if (!llaves.size){
+    caja.classList.add("error");
+    caja.innerHTML = "Ningún renglón del archivo trae dato en la columna " + prep.colLlave +
+      " (oportunidad). Sin esa llave no hay cómo saber qué está duplicado; revisa que sea el archivo correcto.";
     return;
   }
+  const yaEstan = TEC_FILAS.filter(function(par){
+    return llaves.has(clave(par[0]).replace(/[^0-9A-Z]/g, ""));
+  }).length;
+
+  const ok = confirm(
+    "Se van a AGREGAR " + prep.filas.length + " renglón(es) hasta arriba de VENTA TECNICO (" +
+    llaves.size + " oportunidad(es) distintas" + (sinLlave ? ", " + sinLlave + " renglón(es) sin oportunidad" : "") + ").\n\n" +
+    "Enseguida se BORRAN los renglones viejos que traigan esas mismas oportunidades (en lo que tienes cargado son " +
+    yaEstan + "). El resto de la pestaña no se toca.\n\nNo se puede deshacer. ¿Continuar?"
+  );
+  if (!ok) return;
+
+  const cuerpo = JSON.stringify(prep.filas);
+  if (cuerpo.length > 6000000){
+    caja.classList.add("error");
+    caja.innerHTML = "El archivo pesa demasiado para subirlo de un jalón (" +
+      Math.round(cuerpo.length / 1048576) + " MB). Pártelo en dos o tres archivos y súbelos uno tras otro; " +
+      "el resultado es el mismo porque cada carga quita sus propios duplicados viejos.";
+    return;
+  }
+
+  const btn = el("btnSubirVentaTecnicoNuevo");
+  btn.disabled = true;
+  caja.innerHTML = "Subiendo " + prep.filas.length + " renglón(es)… no cierres la página.";
+  try{
+    const r = await llamarProxyPost({
+      accion: "subirVentaTecnicoNuevo",
+      token: TOKEN,
+      libro: el("idTecnico").value.trim() || el("hojaId").value.trim(),
+      pestana: el("hojaTecnico").value.trim(),
+      colLlave: prep.colLlave,
+      colClave: prep.colClave,
+      filas: cuerpo
+    });
+    if (!r || !r.ok){
+      caja.classList.add("error");
+      caja.innerHTML = "No se pudo subir: " + ((r && r.error) || "el proxy no respondió ok");
+      return;
+    }
+    caja.innerHTML = "Listo: entraron " + (r.agregados != null ? r.agregados : prep.filas.length) +
+      " renglón(es) arriba y se quitaron " + (r.eliminados || 0) + " viejo(s) con la misma oportunidad. " +
+      "VENTA TECNICO quedó con " + (r.total != null ? r.total : "?") + " renglón(es).";
+    await refrescarTrasCargaTecnico();
+  }catch(e){
+    caja.classList.add("error");
+    caja.innerHTML = "No se pudo subir: " + e.message;
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+async function subirVentaTecnico(){
+  const caja = el("avisoCargaVentaTecnico");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+
+  const prep = await prepararVentaTecnico(caja);
+  if (!prep) return;
+
+  const filas = prep.filas;
+  const anchoMax = prep.anchoMax;
+  const colLlave = prep.colLlave;
+  const colClave = prep.colClave;
 
   const ok = confirm(
     "Esto va a BORRAR todo lo que hay hoy en la pestaña VENTA TECNICO (debajo del encabezado) y lo va a reemplazar por " +
@@ -1269,12 +1370,7 @@ async function subirVentaTecnico(){
       return;
     }
     caja.innerHTML = "Listo: se reemplazaron " + (r.filas != null ? r.filas : filas.length) + " renglón(es) en VENTA TECNICO.";
-    el("archivoVentaTecnico").value = "";
-    // refresca lo que ya está cargado en la app con el dato nuevo, sin pedir recargar la página
-    await cargarMapaTecnico(el("hojaId").value.trim());
-    if (FILAS.length) reclasificarCanal();
-    cargarUltimasCargas();
-    pintar();
+    await refrescarTrasCargaTecnico();
   }catch(e){
     caja.classList.add("error");
     caja.innerHTML = "No se pudo subir: " + e.message;
@@ -7428,6 +7524,7 @@ el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin carga
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
 el("btnSubirBase").addEventListener("click", subirBaseDatos);
+el("btnSubirVentaTecnicoNuevo").addEventListener("click", subirVentaTecnicoNuevo);
 el("btnSubirVentaTecnico").addEventListener("click", subirVentaTecnico);
 el("btnSubirOsPorInstalar").addEventListener("click", subirOsPorInstalar);
 el("btnSubirOrdenes").addEventListener("click", subirAtencionOrdenes);

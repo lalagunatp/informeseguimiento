@@ -69,6 +69,11 @@ function _manejar(e) {
         res = _subirVentaTecnico(p.token || '', p.libro || '', p.pestana || '', p.colLlave || '', p.colClave || '', p.filas || '');
         break;
 
+      // ---- SUBIR SOLO LO NUEVO A VENTA TECNICO (y quitar lo duplicado viejo) ----
+      case 'subirVentaTecnicoNuevo':
+        res = _subirVentaTecnicoNuevo(p.token || '', p.libro || '', p.pestana || '', p.colLlave || '', p.colClave || '', p.filas || '');
+        break;
+
       // ---- SUBIR / REEMPLAZAR OS POR INSTALAR ----
       case 'subirOsPorInstalar':
         res = _subirOsPorInstalar(p.token || '', p.pestana || '', p.filaInicio || '', p.filas || '');
@@ -108,7 +113,7 @@ function _manejar(e) {
         break;
 
       default:
-        res = { ok: false, error: 'Acción no reconocida. Acciones válidas: login, validar, datos, hoja, subirVentaTecnico, subirOsPorInstalar, subirAtencionOrdenes, subirBaseDatos, ultimasCargas, cambiarpin, nuevospins, micambiopin, resetpin' };
+        res = { ok: false, error: 'Acción no reconocida. Acciones válidas: login, validar, datos, hoja, subirVentaTecnico, subirVentaTecnicoNuevo, subirOsPorInstalar, subirAtencionOrdenes, subirBaseDatos, ultimasCargas, cambiarpin, nuevospins, micambiopin, resetpin' };
     }
   } catch (err) {
     res = { ok: false, error: 'Error interno: ' + err.message };
@@ -372,6 +377,147 @@ function _subirVentaTecnico(token, libro, pestana, colLlave, colClave, filasJson
 
   _registrarCarga('ventaTecnico', v.perfil);
   return { ok: true, filas: filas.length, columnas: anchoNuevo };
+}
+
+
+// =============================================
+//  SUBIR SOLO LO NUEVO A VENTA TECNICO
+//  (agrega arriba y borra lo duplicado viejo)
+// =============================================
+
+// Igual que _subirBaseDatos(), pero sobre la pestaña VENTA TECNICO y con la
+// oportunidad (columna E por omisión) como llave: el archivo entra hasta arriba,
+// debajo del encabezado, y enseguida se BORRAN los renglones viejos que traigan
+// esa misma oportunidad. Lo que no venga en el archivo no se toca, así se puede
+// subir un pedazo del reporte en lugar del reporte completo.
+function _subirVentaTecnicoNuevo(token, libro, pestana, colLlave, colClave, filasJson) {
+  var v = _validar(token);
+  if (!v.ok) return v;
+
+  // mismo permiso que el reemplazo completo: solo el número 65068028
+  if (_limpiarNum(v.perfil.numero) !== '65068028') {
+    return { ok: false, error: 'No tienes permiso para actualizar VENTA TECNICO.' };
+  }
+
+  if (!pestana) return { ok: false, error: 'Falta la pestaña destino.' };
+
+  var filas;
+  try {
+    filas = JSON.parse(filasJson || '[]');
+  } catch (e) {
+    return { ok: false, error: 'Los renglones no llegaron en un formato válido.' };
+  }
+  if (!filas.length) return { ok: false, error: 'No hay renglones que subir.' };
+
+  var libroId = libro || CFG.LIBRO;
+  var hoja = _obtenerHojaDe(libroId, pestana);
+  if (!hoja) return { ok: false, error: 'No se encontró la pestaña destino (revisa el gid).' };
+
+  var iLlave = _letraAIndice(colLlave || 'E');
+  var iClave = _letraAIndice(colClave || 'F');
+  if (iLlave < 0) return { ok: false, error: 'La columna llave no es válida.' };
+
+  // todos los renglones al mismo ancho
+  var ancho = 0;
+  for (var i = 0; i < filas.length; i++) {
+    if (filas[i].length > ancho) ancho = filas[i].length;
+  }
+  if (ancho <= iLlave || ancho <= iClave) {
+    return { ok: false, error: 'El archivo trae ' + ancho + ' columna(s); no alcanza para las columnas ' + (colLlave || 'E') + ' y ' + (colClave || 'F') + '.' };
+  }
+  if (ancho > hoja.getMaxColumns()) {
+    return { ok: false, error: 'El archivo trae ' + ancho + ' columnas y la hoja solo tiene ' + hoja.getMaxColumns() + '.' };
+  }
+
+  // 1) llaves del archivo; si una oportunidad viene repetida dentro del mismo
+  //    archivo se queda la primera (la de más arriba) y se ignoran las siguientes
+  var vistas = {};
+  var nuevas = [];
+  var repetidasArchivo = 0;
+  for (var f = 0; f < filas.length; f++) {
+    var fila = filas[f];
+    while (fila.length < ancho) fila.push('');
+    var k = _llaveBase(fila[iLlave]);
+    if (k) {
+      if (vistas[k]) { repetidasArchivo++; continue; }
+      vistas[k] = true;
+    }
+    nuevas.push(fila);
+  }
+
+  // 2) qué renglones viejos hay que borrar: los que traen una llave del archivo
+  var ultimaFila = hoja.getLastRow();
+  var borrar = [];   // números de renglón en la hoja (base 1)
+  if (ultimaFila > 1) {
+    var llavesHoja = hoja.getRange(2, iLlave + 1, ultimaFila - 1, 1).getValues();
+    for (var r = 0; r < llavesHoja.length; r++) {
+      var kh = _llaveBase(llavesHoja[r][0]);
+      if (kh && vistas[kh]) borrar.push(r + 2);
+    }
+  }
+
+  var sheetId = hoja.getSheetId();
+
+  // 3) borrar de abajo hacia arriba, agrupando renglones contiguos en un solo
+  //    request; así los índices de los de arriba siguen siendo válidos
+  if (borrar.length) {
+    var bloques = [];
+    var fin = borrar[borrar.length - 1];
+    var ini = fin;
+    for (var b = borrar.length - 2; b >= 0; b--) {
+      if (borrar[b] === ini - 1) { ini = borrar[b]; continue; }
+      bloques.push([ini, fin]);
+      fin = borrar[b];
+      ini = fin;
+    }
+    bloques.push([ini, fin]);   // bloques ya quedan de abajo hacia arriba
+
+    var peticiones = [];
+    for (var q = 0; q < bloques.length; q++) {
+      peticiones.push({
+        deleteDimension: {
+          range: {
+            sheetId: sheetId,
+            dimension: 'ROWS',
+            startIndex: bloques[q][0] - 1,   // base 0
+            endIndex: bloques[q][1]          // exclusivo
+          }
+        }
+      });
+    }
+    for (var t = 0; t < peticiones.length; t += 500) {
+      Sheets.Spreadsheets.batchUpdate({ requests: peticiones.slice(t, t + 500) }, libroId);
+    }
+  }
+
+  // 4) abrir hueco hasta arriba (justo debajo del encabezado) y escribir lo nuevo
+  Sheets.Spreadsheets.batchUpdate({
+    requests: [{
+      insertDimension: {
+        range: { sheetId: sheetId, dimension: 'ROWS', startIndex: 1, endIndex: 1 + nuevas.length },
+        inheritFromBefore: false
+      }
+    }]
+  }, libroId);
+
+  // USER_ENTERED = se interpreta igual que si lo pegaras a mano (fechas y números
+  // quedan como fechas y números, no como texto)
+  Sheets.Spreadsheets.Values.update(
+    { values: nuevas },
+    libroId,
+    "'" + hoja.getName().replace(/'/g, "''") + "'!A2",
+    { valueInputOption: 'USER_ENTERED' }
+  );
+
+  _registrarCarga('ventaTecnico', v.perfil);
+
+  return {
+    ok: true,
+    agregados: nuevas.length,
+    eliminados: borrar.length,
+    repetidasArchivo: repetidasArchivo,
+    total: Math.max(0, ultimaFila - 1 - borrar.length) + nuevas.length
+  };
 }
 
 
