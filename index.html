@@ -177,6 +177,9 @@
   table.compacta th, table.compacta td{padding:5px 7px; font-size:12.5px}
   td.clicable{cursor:pointer; text-decoration:underline; text-decoration-style:dotted}
   td.clicable:hover{background:var(--gris)}
+  /* acordeón: los renglones que se abren debajo de un tipo de evento (por municipio) */
+  tr.hijo td{background:#fbfcfd; color:var(--muted)}
+  tr.hijo td:first-child{background:#fbfcfd; padding-left:22px; font-size:12px}
   table.compacta td.envuelve{white-space:normal; max-width:150px; line-height:1.2}
   table.compacta td.recorta{max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:default}
   table.ficha{min-width:0}
@@ -6229,11 +6232,12 @@ function resumenOrdenes(){
   return { filas:filas, dias:dias, abiertas:abiertas, abiertasTot:abiertasTot, maxDia:maxDia, tipoEv:tipoEv };
 }
 
-/* --- estado de las órdenes del día, por municipio ---
+/* --- estado de las órdenes del día, por tipo de evento ---
    La fecha del día es la columna AC de ATENCION ORDENES y el estado la AF (las dos se
-   configuran en Ajustes de la fuente). El municipio no viene en la pestaña: sale de
-   cruzar el cluster (columna K) contra la columna A de Clusters Colonias, de donde se
-   toma el municipio (columna D). */
+   configuran en Ajustes de la fuente). Cada tipo de evento (instalación, soporte, …) es
+   un renglón que se abre en acordeón y muestra sus municipios. El municipio no viene en
+   la pestaña: sale de cruzar el cluster (columna K) contra la columna A de Clusters
+   Colonias, de donde se toma el municipio (columna D). */
 function estadoHoyHtml(){
   const letras = (el("colOrdDia").value || "AC; AF").split(";").map(function(x){ return x.trim().toUpperCase(); });
   const letraDia = letras[0] || "AC";
@@ -6284,17 +6288,32 @@ function estadoHoyHtml(){
 
   const SIN_EST = "Sin estado";
   const SIN_MUN = "Sin municipio";
-  const matriz = new Map();     // municipio -> { estado -> n }
-  const totEstado = new Map();  // estado -> n
-  const totMuni = new Map();    // municipio -> n
+  const tipoEv = tipoEventoFn();   // el mismo tipo de evento que usan las tablas de arriba
+  const matriz = new Map();        // evento -> { estado -> n }
+  const porMuni = new Map();       // evento -> { municipio -> { estado -> n } }
+  const totEstado = new Map();     // estado -> n
+  const totEvento = new Map();     // evento -> n
+  const totMuniEv = new Map();     // evento -> { municipio -> n }
+  const sinMunicipio = new Set();  // clusters que no cruzaron, para el aviso
   delDia.forEach(function(o){
+    const ev = tipoEv(o);
     const m = municipioDe(o);
     const e = o.estadoDia || SIN_EST;
-    if (!matriz.has(m)) matriz.set(m, new Map());
-    const fila = matriz.get(m);
+    if (m === SIN_MUN && o.cluster) sinMunicipio.add(o.cluster);
+    if (!matriz.has(ev)){
+      matriz.set(ev, new Map());
+      porMuni.set(ev, new Map());
+      totMuniEv.set(ev, new Map());
+    }
+    const fila = matriz.get(ev);
     fila.set(e, (fila.get(e) || 0) + 1);
+    const mun = porMuni.get(ev);
+    if (!mun.has(m)) mun.set(m, new Map());
+    mun.get(m).set(e, (mun.get(m).get(e) || 0) + 1);
+    const tm = totMuniEv.get(ev);
+    tm.set(m, (tm.get(m) || 0) + 1);
     totEstado.set(e, (totEstado.get(e) || 0) + 1);
-    totMuni.set(m, (totMuni.get(m) || 0) + 1);
+    totEvento.set(ev, (totEvento.get(ev) || 0) + 1);
   });
 
   // los estados más frecuentes primero; "Sin estado" hasta el final
@@ -6303,40 +6322,63 @@ function estadoHoyHtml(){
     if (sinA !== sinB) return sinA ? 1 : -1;
     return totEstado.get(b) - totEstado.get(a) || a.localeCompare(b, "es");
   });
-  // los municipios con más órdenes primero; los que no cruzaron, al final
-  const municipios = Array.from(totMuni.keys()).sort(function(a, b){
-    const sinA = a === SIN_MUN, sinB = b === SIN_MUN;
-    if (sinA !== sinB) return sinA ? 1 : -1;
-    return totMuni.get(b) - totMuni.get(a) || a.localeCompare(b, "es");
+  // los eventos con más órdenes primero
+  const eventos = Array.from(totEvento.keys()).sort(function(a, b){
+    return totEvento.get(b) - totEvento.get(a) || a.localeCompare(b, "es");
   });
 
-  const cuerpo = municipios.map(function(m){
-    const fila = matriz.get(m);
-    return "<tr><td>" + m + "</td>" +
+  const total = delDia.length;
+
+  // cada tipo de evento es un renglón que se abre: debajo salen sus municipios. El id
+  // se arma con el nombre del evento (no con un contador) para que siga siendo el mismo
+  // al repintar y el acordeón no se cierre solo.
+  const cuerpo = eventos.map(function(ev){
+    const id = "evmun:" + ev;
+    const abierto = DET_SEL === id;
+    const fila = matriz.get(ev);
+    let html = "<tr>" +
+      '<td class="clicable" data-det="' + id.replace(/"/g, "&quot;") + '" title="ver ' + ev + ' por municipio">' +
+      (abierto ? "▾ " : "▸ ") + ev + "</td>" +
       estados.map(function(e){
-        return celdaNum(fila.get(e) || 0, "", m + " · " + e);
+        return celdaNum(fila.get(e) || 0, "", ev + " · " + e);
       }).join("") +
-      celdaNum(totMuni.get(m), "tot") + "</tr>";
+      celdaNum(totEvento.get(ev), "tot", ev + " · " + pct(totEvento.get(ev) / total) + " del día") + "</tr>";
+
+    if (abierto){
+      const tm = totMuniEv.get(ev);
+      const munis = Array.from(tm.keys()).sort(function(a, b){
+        const sinA = a === SIN_MUN, sinB = b === SIN_MUN;
+        if (sinA !== sinB) return sinA ? 1 : -1;
+        return tm.get(b) - tm.get(a) || a.localeCompare(b, "es");
+      });
+      html += munis.map(function(m){
+        const f = porMuni.get(ev).get(m);
+        return '<tr class="hijo"><td>' + m + "</td>" +
+          estados.map(function(e){
+            return celdaNum(f.get(e) || 0, "", ev + " · " + m + " · " + e);
+          }).join("") +
+          celdaNum(tm.get(m), "tot") + "</tr>";
+      }).join("");
+    }
+    return html;
   }).join("");
 
-  const total = delDia.length;
   const pie = '<tr class="total"><td>Total</td>' +
     estados.map(function(e){
       return celdaNum(totEstado.get(e), "tot", e + " · " + pct(totEstado.get(e) / total) + " del día");
     }).join("") +
     celdaNum(total, "tot") + "</tr>";
 
-  const sinCruce = totMuni.get(SIN_MUN) || 0;
   const avisoCruce = !GEO.muni.size
     ? ' · <b>ojo:</b> la hoja Clusters Colonias no trajo municipios (' + GEO.estado + '), revisa la letra en Ajustes de la fuente'
-    : (sinCruce ? " · " + num(sinCruce) + " orden(es) cuyo cluster no aparece en Clusters Colonias" : "");
+    : (sinMunicipio.size ? " · " + sinMunicipio.size + " cluster(es) sin municipio en Clusters Colonias" : "");
 
-  return '<section class="panel"><h2>Estado de las órdenes de hoy por municipio' +
+  return '<section class="panel"><h2>Estado de las órdenes de hoy por evento' +
     ' <span class="sub">' + (esHoy ? "hoy " : "último día con datos: ") + fCorta(dia) +
     " · " + num(total) + " orden(es) · " + comoSaleElDia +
-    " · el municipio sale de cruzar el cluster contra Clusters Colonias" + avisoCruce +
-    " · aplican los mismos filtros de arriba</span></h2>" +
-    '<div class="scroll"><table class="compacta"><thead><tr><th>Municipio</th>' +
+    " · <b>toca un evento</b> para abrirlo por municipio, que sale de cruzar el cluster contra Clusters Colonias" +
+    avisoCruce + " · aplican los mismos filtros de arriba</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' +
     estados.map(function(e){ return "<th>" + e + "</th>"; }).join("") +
     '<th class="tot">Total</th></tr></thead><tbody>' + cuerpo + pie + "</tbody></table></div></section>";
 }
@@ -6737,7 +6779,7 @@ function ordenesHtml(){
     detalleCancelacionesHtml();
 
   // primero el total del día y cómo lo repartieron los proveedores, luego lo que se
-  // canceló, enseguida cómo va el día por municipio y hasta el final el detalle
+  // canceló, enseguida cómo va el día por tipo de evento y hasta el final el detalle
   // cuadrilla por cuadrilla
   return tabla1 + tabla2 + tabla3 + estadoHoyHtml() + tabla2b;
 }
