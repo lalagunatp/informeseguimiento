@@ -437,8 +437,11 @@
         <label class="campo">Hoja de geocercas
           <input type="text" id="hojaGeocercas" value="Clusters Colonias" placeholder="Clusters Colonias o su gid">
         </label>
-        <label class="campo">Geocercas · columnas cluster; geocerca
-          <input type="text" id="colGeocercas" value="A; F">
+        <label class="campo">Geocercas · columnas cluster; geocerca; municipio
+          <input type="text" id="colGeocercas" value="A; F; D">
+        </label>
+        <label class="campo">Órdenes del día · columnas fecha; estado
+          <input type="text" id="colOrdDia" value="AC; AF">
         </label>
         <label class="campo">gid de PLANTILLA
           <input type="text" id="gidPlantilla" value="913334386">
@@ -5753,7 +5756,7 @@ function claveDia(d){
 
 /* --- geocercas: el cluster de la orden se cruza contra la hoja Clusters Colonias --- */
 
-let GEO = { estado:"sin cargar", mapa:new Map() };
+let GEO = { estado:"sin cargar", mapa:new Map(), muni:new Map() };
 
 // la misma colonia se escribe "LOS ANGELES_A" en la pestaña de órdenes y
 // "LOS ANGELES A" en la de geocercas: el guion bajo cuenta como espacio
@@ -5762,33 +5765,45 @@ function llaveCluster(v){
 }
 
 async function cargarGeocercas(){
-  GEO = { estado:"cargando", mapa:new Map() };
+  GEO = { estado:"cargando", mapa:new Map(), muni:new Map() };
   try{
     const nombre = (el("hojaGeocercas").value || "").trim() || "Clusters Colonias";
     const letras = el("colGeocercas").value.split(";").map(function(x){ return letraAIndice(x); });
     const iCl = letras[0] >= 0 ? letras[0] : 0;
     const iGe = letras[1] >= 0 ? letras[1] : 5;
+    // la misma hoja trae el municipio del cluster (columna D): de ahí sale el panel de
+    // estado por municipio de la vista Atención de órdenes
+    const iMu = letras[2] >= 0 ? letras[2] : 3;
     const t = await traerHoja(nombre);
     const rows = t.rows || [];
     const mapa = new Map();
+    const muni = new Map();
     rows.forEach(function(r, i){
       const v = celdasTexto(r);
       const k = llaveCluster(v[iCl]);
       const g = String(v[iGe] || "").trim();
+      const m = String(v[iMu] || "").trim();
       // el primer renglón es el encabezado ("Cluster" / "Geocerca")
-      if (!k || !g || i === 0) return;
-      if (!mapa.has(k)) mapa.set(k, g);
+      if (!k || i === 0) return;
+      if (g && !mapa.has(k)) mapa.set(k, g);
+      if (m && !muni.has(k)) muni.set(k, m);
     });
-    GEO = { estado: mapa.size ? "ok" : "la hoja llegó sin cruces", mapa: mapa };
+    GEO = { estado: mapa.size ? "ok" : "la hoja llegó sin cruces", mapa: mapa, muni: muni };
     marcarFuente("geocercas", GEO.estado, "", mapa.size);
   }catch(e){
-    GEO = { estado:"falló: " + e.message, mapa:new Map() };
+    GEO = { estado:"falló: " + e.message, mapa:new Map(), muni:new Map() };
     marcarFuente("geocercas", e.message);
   }
 }
 
 function geocercaDe(o){
   return GEO.mapa.get(llaveCluster(o.cluster)) || "Sin geocerca";
+}
+
+// municipio de la orden: su cluster (columna K de ATENCION ORDENES) contra la columna A
+// de Clusters Colonias, de donde sale el municipio (columna D)
+function municipioDe(o){
+  return GEO.muni.get(llaveCluster(o.cluster)) || "Sin municipio";
 }
 
 /* --- quién canceló: se cruza contra OS POR INSTALAR por cuenta y día --- */
@@ -5947,6 +5962,12 @@ async function cargarOrdenes(){
         motivo:    buscaCol(enc, ["MOTIVO"]),
         canal:     buscaCol(enc, ["CANAL VENTA"])
       };
+      // el panel "Estado de las órdenes de hoy" va por letra de columna, no por nombre
+      // de encabezado: son las columnas AC (fecha del día) y AF (estado) que se
+      // configuran en Ajustes de la fuente
+      const letrasDia = (el("colOrdDia").value || "").split(";").map(function(x){ return letraAIndice(x); });
+      c.dia = letrasDia[0] >= 0 ? letrasDia[0] : letraAIndice("AC");
+      c.estadoAf = letrasDia[1] >= 0 ? letrasDia[1] : letraAIndice("AF");
       if (c.tipo < 0 || c.termino < 0 || c.estatus < 0){
         ORD = { estado:"no encontré las columnas Tipo / Fecha termino / Estatus en el encabezado", filas:[] };
       } else {
@@ -5985,10 +6006,22 @@ async function cargarOrdenes(){
             fTer: fT,
             fCre: c.creacion >= 0 ? fechaOrden(v[c.creacion]) : null,
             fAge: c.agenda >= 0 ? fechaOrden(v[c.agenda]) : null,
-            turno: dame(v, c.turno)
+            turno: dame(v, c.turno),
+            // columnas AC y AF, para el panel de estado por municipio
+            fDia: c.dia >= 0 ? fechaOrden(v[c.dia]) : null,
+            estadoDia: dame(v, c.estadoAf),
+            // respaldo por si la letra configurada no cayó en una columna de fechas:
+            // así el panel del día sigue saliendo y dice de qué columna lo tomó
+            fDiaAlt: c.agenda >= 0 ? fechaOrden(v[c.agenda]) : null
           });
         }
-        ORD = { estado:"ok", filas: filas };
+        ORD = {
+          estado: "ok",
+          filas: filas,
+          encDia: (enc[c.dia] || "").trim(),
+          encEstado: (enc[c.estadoAf] || "").trim(),
+          encDiaAlt: (enc[c.agenda] || "").trim()
+        };
         armarIndiceAgendas();
         marcarFuente("ordenes", "ok", ultimo ? fCorta(ultimo) + " " + hora(ultimo) : "", filas.length);
         // las geocercas se leen antes de armar los selectores: uno de ellos las lista
@@ -6194,6 +6227,118 @@ function resumenOrdenes(){
   });
 
   return { filas:filas, dias:dias, abiertas:abiertas, abiertasTot:abiertasTot, maxDia:maxDia, tipoEv:tipoEv };
+}
+
+/* --- estado de las órdenes del día, por municipio ---
+   La fecha del día es la columna AC de ATENCION ORDENES y el estado la AF (las dos se
+   configuran en Ajustes de la fuente). El municipio no viene en la pestaña: sale de
+   cruzar el cluster (columna K) contra la columna A de Clusters Colonias, de donde se
+   toma el municipio (columna D). */
+function estadoHoyHtml(){
+  const letras = (el("colOrdDia").value || "AC; AF").split(";").map(function(x){ return x.trim().toUpperCase(); });
+  const letraDia = letras[0] || "AC";
+  const letraEst = letras[1] || "AF";
+  const todas = ordenesFiltradas();
+
+  // se usa la columna configurada; si esa no trae ni una fecha (la letra cayó en otra
+  // columna), se cae a la fecha de última agenda y el subtítulo lo dice, para que el
+  // panel salga igual y se vea de dónde viene el día
+  let filas = todas.filter(function(o){ return o.fDia; });
+  let fuenteDia = "la columna " + letraDia + (ORD.encDia ? ' ("' + ORD.encDia + '")' : "");
+  if (!filas.length){
+    filas = todas.filter(function(o){ return o.fDiaAlt; }).map(function(o){
+      return Object.assign({}, o, { fDia: o.fDiaAlt });
+    });
+    fuenteDia = "la fecha de última agenda" + (ORD.encDiaAlt ? ' ("' + ORD.encDiaAlt + '")' : "") +
+      ", porque la columna " + letraDia + " no trajo fechas";
+  }
+  const comoSaleElDia = "el día sale de " + fuenteDia + " y el estado de la columna " + letraEst +
+    (ORD.encEstado ? ' ("' + ORD.encEstado + '")' : "");
+
+  if (!filas.length){
+    return '<section class="panel"><h2>Estado de las órdenes de hoy por municipio</h2>' +
+      '<div class="aviso">Ningún renglón de ATENCION ORDENES trae fecha en la columna ' + letraDia +
+      (ORD.encDia ? ' ("' + ORD.encDia + '")' : "") +
+      '. Corrige las letras en Ajustes de la fuente · Órdenes del día.</div></section>';
+  }
+
+  // "hoy" es la fecha de hoy; si la pestaña todavía no trae nada de hoy (se subió
+  // ayer, o es de madrugada), se muestra el último día que sí trae y se dice cuál es
+  const hoy = soloFecha(new Date());
+  let dia = hoy;
+  const kHoy = claveDia(hoy);
+  if (!filas.some(function(o){ return claveDia(soloFecha(o.fDia)) === kHoy; })){
+    dia = filas.reduce(function(a, o){
+      const d = soloFecha(o.fDia);
+      return (!a || d > a) ? d : a;
+    }, null);
+  }
+  const kDia = claveDia(dia);
+  const delDia = filas.filter(function(o){ return claveDia(soloFecha(o.fDia)) === kDia; });
+  const esHoy = kDia === kHoy;
+
+  if (!delDia.length){
+    return '<section class="panel"><h2>Estado de las órdenes de hoy por municipio</h2>' +
+      '<div class="aviso">No hay órdenes con fecha de hoy en la columna ' + letraDia + '.</div></section>';
+  }
+
+  const SIN_EST = "Sin estado";
+  const SIN_MUN = "Sin municipio";
+  const matriz = new Map();     // municipio -> { estado -> n }
+  const totEstado = new Map();  // estado -> n
+  const totMuni = new Map();    // municipio -> n
+  delDia.forEach(function(o){
+    const m = municipioDe(o);
+    const e = o.estadoDia || SIN_EST;
+    if (!matriz.has(m)) matriz.set(m, new Map());
+    const fila = matriz.get(m);
+    fila.set(e, (fila.get(e) || 0) + 1);
+    totEstado.set(e, (totEstado.get(e) || 0) + 1);
+    totMuni.set(m, (totMuni.get(m) || 0) + 1);
+  });
+
+  // los estados más frecuentes primero; "Sin estado" hasta el final
+  const estados = Array.from(totEstado.keys()).sort(function(a, b){
+    const sinA = a === SIN_EST, sinB = b === SIN_EST;
+    if (sinA !== sinB) return sinA ? 1 : -1;
+    return totEstado.get(b) - totEstado.get(a) || a.localeCompare(b, "es");
+  });
+  // los municipios con más órdenes primero; los que no cruzaron, al final
+  const municipios = Array.from(totMuni.keys()).sort(function(a, b){
+    const sinA = a === SIN_MUN, sinB = b === SIN_MUN;
+    if (sinA !== sinB) return sinA ? 1 : -1;
+    return totMuni.get(b) - totMuni.get(a) || a.localeCompare(b, "es");
+  });
+
+  const cuerpo = municipios.map(function(m){
+    const fila = matriz.get(m);
+    return "<tr><td>" + m + "</td>" +
+      estados.map(function(e){
+        return celdaNum(fila.get(e) || 0, "", m + " · " + e);
+      }).join("") +
+      celdaNum(totMuni.get(m), "tot") + "</tr>";
+  }).join("");
+
+  const total = delDia.length;
+  const pie = '<tr class="total"><td>Total</td>' +
+    estados.map(function(e){
+      return celdaNum(totEstado.get(e), "tot", e + " · " + pct(totEstado.get(e) / total) + " del día");
+    }).join("") +
+    celdaNum(total, "tot") + "</tr>";
+
+  const sinCruce = totMuni.get(SIN_MUN) || 0;
+  const avisoCruce = !GEO.muni.size
+    ? ' · <b>ojo:</b> la hoja Clusters Colonias no trajo municipios (' + GEO.estado + '), revisa la letra en Ajustes de la fuente'
+    : (sinCruce ? " · " + num(sinCruce) + " orden(es) cuyo cluster no aparece en Clusters Colonias" : "");
+
+  return '<section class="panel"><h2>Estado de las órdenes de hoy por municipio' +
+    ' <span class="sub">' + (esHoy ? "hoy " : "último día con datos: ") + fCorta(dia) +
+    " · " + num(total) + " orden(es) · " + comoSaleElDia +
+    " · el municipio sale de cruzar el cluster contra Clusters Colonias" + avisoCruce +
+    " · aplican los mismos filtros de arriba</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Municipio</th>' +
+    estados.map(function(e){ return "<th>" + e + "</th>"; }).join("") +
+    '<th class="tot">Total</th></tr></thead><tbody>' + cuerpo + pie + "</tbody></table></div></section>";
 }
 
 function ordenesHtml(){
@@ -6592,8 +6737,9 @@ function ordenesHtml(){
     detalleCancelacionesHtml();
 
   // primero el total del día y cómo lo repartieron los proveedores, luego lo que se
-  // canceló y hasta el final el detalle cuadrilla por cuadrilla
-  return tabla1 + tabla2 + tabla3 + tabla2b;
+  // canceló, enseguida cómo va el día por municipio y hasta el final el detalle
+  // cuadrilla por cuadrilla
+  return tabla1 + tabla2 + tabla3 + estadoHoyHtml() + tabla2b;
 }
 
 /* --- detalle de una celda de canceladas: quién canceló y por qué --- */
@@ -7521,6 +7667,8 @@ llenarMulti("orddiasem");   // que el panel no se vea vacío mientras carga la p
 el("btnRecargarOrdenes").addEventListener("click", function(){ ORD.estado = "sin cargar"; cargarOrdenes(); });
 el("btnCsvOrdenes").addEventListener("click", descargarCsv);
 el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
+// las columnas AC/AF se leen al armar los renglones, así que hay que releer la pestaña
+el("colOrdDia").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
 el("btnSubirBase").addEventListener("click", subirBaseDatos);
