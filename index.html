@@ -327,6 +327,9 @@
       <label class="campo">Canal
         <div id="fCanal"></div>
       </label>
+      <label class="campo" id="cajaMunicipio">Municipio
+        <div id="fMunicipio"></div>
+      </label>
       <label class="campo" id="cajaPlan">Plan
         <div id="fPlan"></div>
       </label>
@@ -1858,6 +1861,7 @@ function llenarSelectores(){
   llenarMulti("vendedor");
   llenarMulti("canal");
   llenarMulti("plan");
+  llenarMulti("municipio");
   llenarMulti("motivoRechazoOp");
   llenarMulti("mes");
   llenarMulti("diasem");
@@ -1874,6 +1878,10 @@ const MULTI = {
   vendedor: { contId:"fVendedor", sel:new Set(), valores:[], soloPlantilla:true },
   canal:    { contId:"fCanal",    sel:new Set(), valores:[] },
   plan:     { contId:"fPlan",     sel:new Set(), valores:[] },
+  // el municipio no viene en la base: sale del cluster del renglón cruzado contra la
+  // hoja Clusters Colonias, la misma que ya usa Atención de órdenes. Solo se muestra
+  // y solo filtra en Últimos 30 días.
+  municipio:{ contId:"fMunicipio", sel:new Set(), valores:[], geoN:-1 },
   motivoRechazoOp: { contId:"fMotivoRechazoOp", sel:new Set(), valores:[] },
   mes:      { contId:"fMes",      sel:new Set(), valores:[], manual:true },
   diasem:   { contId:"fDiaSem",   sel:new Set(), valores:[], manual:true },
@@ -1962,6 +1970,15 @@ function llenarMulti(campo){
       });
     }
     m.valores = valores.sort(function(a, b){ return a.localeCompare(b, "es"); });
+  } else if (campo === "municipio"){
+    // los municipios que de verdad aparecen en la base, ya cruzados por cluster
+    m.geoN = GEO.muni.size;
+    m.valores = Array.from(new Set(FILAS.map(municipioDe).filter(Boolean)))
+      .sort(function(a, b){
+        // "Sin municipio" hasta el final, para que no estorbe arriba de la lista
+        if ((a === "Sin municipio") !== (b === "Sin municipio")) return a === "Sin municipio" ? 1 : -1;
+        return a.localeCompare(b, "es");
+      });
   } else if (m.manual){
     if (campo === "diasem" || campo === "orddiasem") m.valores = DIAS_LARGOS.slice();
     else if (campo === "diames") m.valores = Array.from({length:31}, function(_, i){ return String(i + 1); });
@@ -2044,7 +2061,18 @@ function cumple(campo, f){
   if (!m || m.sel.size === 0) return true;
   if (m.sel.has("\u0000")) return false;
   if (campo === "vendedor") return m.sel.has(nombreVendedorDeFila(f));
+  if (campo === "municipio") return m.sel.has(municipioDe(f));
   return m.sel.has(f[campo]);
+}
+
+// El box de municipio solo se muestra en Semanal, Mensual y Últimos 30 días. Fuera de
+// ahí no filtra: si lo hiciera, una selección hecha aquí recortaría en silencio los
+// datos de las demás vistas (el mismo cuidado que ya se tiene con el filtro de día).
+const VISTAS_MUNICIPIO = ["semana", "mes", "dias30"];
+
+function cumpleMunicipio(f){
+  if (VISTAS_MUNICIPIO.indexOf(VISTA) < 0) return true;
+  return cumple("municipio", f);
 }
 
 function cerrarMultis(){
@@ -2088,7 +2116,7 @@ function esInstalada(f){
 
 function pasaFiltros(f){
   return enAlcance(f) && cumple("director", f) && cumple("lider", f) && cumple("coach", f) &&
-         cumple("vendedor", f) && cumple("canal", f) && cumple("plan", f);
+         cumple("vendedor", f) && cumple("canal", f) && cumple("plan", f) && cumpleMunicipio(f);
 }
 
 // filtro por día: en la vista semanal por día de la semana, en la mensual por número de día
@@ -5767,7 +5795,9 @@ function llaveCluster(v){
   return normaliza(v).replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-async function cargarGeocercas(){
+// repintar: true cuando se llama sola (Semanal/Mensual la piden solo por el municipio);
+// desde cargarOrdenes no hace falta, esa ya repinta al terminar
+async function cargarGeocercas(repintar){
   GEO = { estado:"cargando", mapa:new Map(), muni:new Map() };
   try{
     const nombre = (el("hojaGeocercas").value || "").trim() || "Clusters Colonias";
@@ -5793,9 +5823,13 @@ async function cargarGeocercas(){
     });
     GEO = { estado: mapa.size ? "ok" : "la hoja llegó sin cruces", mapa: mapa, muni: muni };
     marcarFuente("geocercas", GEO.estado, "", mapa.size);
+    // el box de municipio de "Qué quieres ver" se llena hasta que hay con qué cruzar
+    if (FILAS.length) llenarMulti("municipio");
+    if (repintar) pintar();
   }catch(e){
     GEO = { estado:"falló: " + e.message, mapa:new Map(), muni:new Map() };
     marcarFuente("geocercas", e.message);
+    if (repintar) pintar();
   }
 }
 
@@ -6903,6 +6937,8 @@ function grupoDe(f, fecha){
   // con PLANTILLA, no de la columna R de la base; es el mismo criterio que ya usaba el
   // filtro "Vendedor", así que ahora agrupado y filtro coinciden
   if (campo === "vendedor") return nombreVendedorDeFila(f) || "SIN ASIGNAR";
+  // el municipio no está en la base: sale del cluster cruzado contra Clusters Colonias
+  if (campo === "municipio") return municipioDe(f);
   return f[campo] || "SIN ASIGNAR";
 }
 
@@ -7127,6 +7163,12 @@ function pintar(){
   DET_CANC = {};
   DET_CANC_N = 0;
 
+  // Semanal y Mensual también filtran y agrupan por municipio: esa hoja no la bajan por
+  // ninguna otra razón, así que se pide aquí (en Últimos 30 días ya viene con las órdenes)
+  if ((VISTA === "semana" || VISTA === "mes") && GEO.estado === "sin cargar") cargarGeocercas(true);
+  // y la lista del box se rearma si mientras tanto llegaron (o cambiaron) los cruces
+  if (VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 && MULTI.municipio.geoN !== GEO.muni.size) llenarMulti("municipio");
+
   const sem = el("semana").value;
   const semAnt = claveAnterior(sem);
   const lunes = lunesDe(sem);
@@ -7189,8 +7231,9 @@ function pintar(){
     // de ATENCION ORDENES sale la última agenda de cada pendiente
     if (ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
     if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
-    // atención a clientes solo ve el detalle de pendientes
-    html = (PERFIL && PERFIL.acceso === "os" ? "" : dias30Html()) + pendientesHtml();
+    // atención a clientes solo ve el detalle de pendientes; el Gerente de Operaciones
+    // sí ve el panel de Últimos 30 días
+    html = (soloVistasOs() ? "" : dias30Html()) + pendientesHtml();
   } else if (VISTA === "dupli"){
     if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
     html = cuentasDuplicadasHtml();
@@ -7562,6 +7605,7 @@ const OPCIONES_AGRUPAR = [
   ["canalBase", "Canal (columna H de la base)"],
   ["subcanal", "Subcanal"],
   ["cluster", "Cluster"],
+  ["municipio", "Municipio"],
   ["vendedor", "Vendedor"],
   ["plan", "Plan"]
 ];
@@ -7580,7 +7624,7 @@ function ajustaCajasDia(){
   el("panelConsulta").classList.toggle("oculto", esOrdenes);
   const acc = document.querySelector(".panel > .acciones");
   if (acc) acc.style.display = "";
-  const soloOS0 = PERFIL && PERFIL.acceso === "os";
+  const soloOS0 = soloVistasOs();
   const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
   const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
   el("btnCsv").style.display = (esOS || esAjustes || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
@@ -7599,8 +7643,11 @@ function ajustaCajasDia(){
   el("cajaOS").style.display = esOS ? "" : "none";
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
-  const soloOS = PERFIL && PERFIL.acceso === "os";
+  const soloOS = soloVistasOs();
   el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || esOpRech || soloOS) ? "none" : "";
+  // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
+  // Mensual y Últimos 30 días
+  el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
   el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0") ? "" : "none";
@@ -7648,6 +7695,9 @@ function ajustaAgrupar(){
     if (o[0] === "ranking") return false;
     if (o[0] === "diasem") return VISTA === "semana";
     if (o[0] === "diames") return VISTA === "mes";
+    // el municipio sale de cruzar el cluster contra Clusters Colonias, y esa hoja solo
+    // se lee en las vistas donde el filtro de municipio está a la vista
+    if (o[0] === "municipio") return VISTAS_MUNICIPIO.indexOf(VISTA) >= 0;
     return true;
   });
   sel.innerHTML = "";
@@ -7818,6 +7868,20 @@ function puedeCargarBase(){
 // Script vuelve a checar este mismo número antes de escribir nada
 function puedeCargarDatos(){
   return !!PERFIL && String(PERFIL.numero || "").trim() === "65068028";
+}
+
+// El Gerente de Operaciones entra por la lista de puestos "os" (por eso puede subir
+// OS por instalar y Atención de órdenes), pero además ve el reporte de ventas completo:
+// todas las vistas menos Vend X Eventos, y en "Qué quieres ver" los mismos filtros que
+// un Director. Los demás puestos "os" siguen igual que antes.
+function esGerenteOperaciones(){
+  return !!PERFIL && PERFIL.acceso === "os" && puestoEs("GERENTE DE OPERACIONES");
+}
+
+// ¿este perfil queda restringido a las vistas de operación (solo pendientes, sin los
+// filtros de venta)? Es "acceso os" salvo el Gerente de Operaciones.
+function soloVistasOs(){
+  return !!PERFIL && PERFIL.acceso === "os" && !esGerenteOperaciones();
 }
 
 // subir/reemplazar OS POR INSTALAR: los mismos puestos que ya solo ven Seguimiento OS
@@ -7995,7 +8059,8 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes"];
+  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "dupli", "oprech", "equipos"];
+  else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes"];
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
