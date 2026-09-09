@@ -5113,10 +5113,13 @@ async function cargarOsPorInstalar(){
     });
     INFO_OSPI_REPETIDAS = repetidas;
     IDX_CANCELA = null;   // quién canceló cada orden se rearma con lo recién leído
+    IDX_CANC_CUA = null;  // y cuántas veces canceló cada cuadrilla, también
     marcarFuente("ospi", "ok", ultAsig || "", OSPI.filas.length);
   }catch(e){
     OSPI = { estado:"falló: " + e.message, enc:[], arriba:[], filas:[], iEnc:0 };
     OSPI_INDICE = new Map();
+    IDX_CANCELA = null;
+    IDX_CANC_CUA = null;
     marcarFuente("ospi", e.message);
   }
   CARGANDO_OSPI = false;
@@ -5858,7 +5861,9 @@ function indiceCancelaciones(){
   const enc = OSPI.enc || [];
   let iCta = buscaCol(enc, ["CUENTA"]);
   let iTec = buscaCol(enc, ["TECNICO"], ["NOMBRE"]);
-  let iFec = buscaCol(enc, ["FECHA CANCELADO"]);
+  // el encabezado dice "FECHA CANCELADA"; se busca por el prefijo para que dé igual
+  // si un día lo escriben en masculino
+  let iFec = buscaCol(enc, ["FECHA CANCELA"]);
   if (iCta < 0) iCta = letraAIndice("C");
   if (iTec < 0) iTec = letraAIndice("N");
   if (iFec < 0) iFec = letraAIndice("Z");
@@ -5873,6 +5878,80 @@ function indiceCancelaciones(){
     if (t) m.get(k).add(t);
   });
   IDX_CANCELA = m;
+  return m;
+}
+
+/* --- cuántas veces canceló cada cuadrilla, por día ---
+
+   ATENCION ORDENES no sirve para esto: ahí un renglón es el ESTADO ACTUAL de la OS, así
+   que si el técnico canceló el lunes y otro la instaló el miércoles, hoy ese renglón
+   dice "Terminada" y la cancelación del lunes ya no existe.
+
+   OS POR INSTALAR sí guarda la historia: un renglón por asignación (1er intento, 2do,
+   3ro…), cada uno con su FECHA CANCELADA (columna Z), su técnico (N) y su nombre (O).
+   Aquí se juntan esos renglones, por el día en que se canceló.
+
+   No se guarda solo el conteo sino la cancelación completa (OS, cuenta, tipo, subtipo y
+   motivo): al tocar el número en el panel se abre el detalle con eso.
+
+   Se cuenta a propósito SIN los filtros de la vista (proveedor, canal, cluster,
+   geocerca, hora de corte, universo): son las veces que la cuadrilla canceló, haya
+   pasado donde haya pasado. */
+let IDX_CANC_CUA = null;
+
+function cancelacionesPorCuadrilla(){
+  if (IDX_CANC_CUA) return IDX_CANC_CUA;
+  // llave: el usuario en MAYÚSCULAS, porque es lo que une esta hoja con ATENCION
+  // ORDENES y no hay garantía de que las dos lo escriban igual. Se guarda también
+  // como venía, por si hay que mostrarlo.
+  const m = new Map();                  // USUARIO -> { usr, nom, dias:{ "2026-09-08":[…] } }
+  if (OSPI.estado !== "ok") return m;   // sin cachear: al cargar la hoja se rearma
+  const enc = OSPI.enc || [];
+  let iTec = buscaCol(enc, ["TECNICO"], ["NOMBRE"]);
+  let iNom = buscaCol(enc, ["NOMBRE TECNICO"]);
+  let iFec = buscaCol(enc, ["FECHA CANCELA"]);
+  let iCta = buscaCol(enc, ["CUENTA"]);
+  // "TIPO" a secas es la columna D; se evitan "SUBTIPO ORDEN" y "TIPO ASIGNACION"
+  let iTipo = buscaCol(enc, ["TIPO"], ["SUBTIPO", "ASIGNACION"]);
+  let iSub = buscaCol(enc, ["SUBTIPO"]);
+  let iMot = buscaCol(enc, ["MOTIVO CANCELA"]);
+  if (iTec < 0) iTec = letraAIndice("N");
+  if (iNom < 0) iNom = letraAIndice("O");
+  if (iFec < 0) iFec = letraAIndice("Z");
+  if (iCta < 0) iCta = letraAIndice("C");
+  if (iTipo < 0) iTipo = letraAIndice("D");
+  if (iSub < 0) iSub = letraAIndice("E");
+  if (iMot < 0) iMot = letraAIndice("AC");
+  // la OS va en la columna B; el encabezado "OS" es tan corto que buscarlo por texto
+  // pega con cualquier otro que la contenga (C.POSTAL, entre otros)
+  const iOs = letraAIndice("B");
+
+  // se recorre el índice, no OSPI.filas: ahí los renglones ya vienen sin los repetidos
+  // que trae la hoja, que si no inflarían el conteo
+  OSPI_INDICE.forEach(function(rengs){
+    rengs.forEach(function(v){
+      const f = fechaOrden(v[iFec]);
+      if (!f) return;                   // sin fecha de cancelación no hubo cancelación
+      const u = String(v[iTec] || "").trim();
+      // "Sin Tecnico Asignado" es un marcador de la hoja, no una cuadrilla
+      if (!u || /^SIN\b/.test(normaliza(u))) return;
+      const kU = u.toUpperCase();
+      if (!m.has(kU)) m.set(kU, { usr:u, nom:"", dias:{} });
+      const x = m.get(kU);
+      if (!x.nom && v[iNom]) x.nom = String(v[iNom]).trim();
+      const k = claveDia(soloFecha(f));
+      if (!x.dias[k]) x.dias[k] = [];
+      x.dias[k].push({
+        f: f,
+        os: String(v[iOs] || "").trim(),
+        cuenta: String(v[iCta] || "").trim(),
+        tipo: String(v[iTipo] || "").trim(),
+        subtipo: String(v[iSub] || "").trim(),
+        motivo: String(v[iMot] || "").trim()
+      });
+    });
+  });
+  IDX_CANC_CUA = m;
   return m;
 }
 
@@ -6237,7 +6316,7 @@ function resumenOrdenes(){
     // cada cuadrilla por día: el día en que aparece cuenta como día trabajado, aunque
     // todo lo que traiga sea cancelado (es el mismo criterio de "cuadrillas que trabajaron")
     if (o.tecnico){
-      if (!b.cua[o.tecnico]) b.cua[o.tecnico] = { ev:0, canc:0, nom:"" };
+      if (!b.cua[o.tecnico]) b.cua[o.tecnico] = { ev:0, nom:"" };
       if (!b.cua[o.tecnico].nom && o.tecnicoNom) b.cua[o.tecnico].nom = o.tecnicoNom;
     }
     if (esTerminada(o)){
@@ -6255,7 +6334,9 @@ function resumenOrdenes(){
     } else if (esCancelada(o)){
       b.canc++;
       b.cancTipos[tipo] = (b.cancTipos[tipo] || 0) + 1;
-      if (o.tecnico) b.cua[o.tecnico].canc++;
+      // aquí NO se cuenta la cancelación por cuadrilla: esta pestaña trae el estado
+      // actual de la OS, así que una orden cancelada y luego instalada ya no aparece
+      // como cancelada. Eso lo resuelve cancelacionesPorCuadrilla(), con OS POR INSTALAR.
       // se guardan las órdenes, no solo el conteo: el detalle de cada celda las necesita
       b.cancLista.push(o);
       if (!b.cancListaTipo[tipo]) b.cancListaTipo[tipo] = [];
@@ -6675,25 +6756,65 @@ function ordenesHtml(){
     if (!x.nom && nom) x.nom = nom;
     return x;
   };
-  const acumulaCua = function(b, campoEv, campoDias, campoCanc){
+  const acumulaCua = function(b, campoEv, campoDias){
     Object.keys(b.cua).forEach(function(k){
       const d = b.cua[k];
       const x = cuaDe(k, d.nom);
       x[campoEv] += d.ev;
       x[campoDias]++;
-      if (campoCanc) x[campoCanc] += d.canc;
     });
   };
-  cols.forEach(function(c){ acumulaCua(dat(c), "ev", "dias", "canc"); });
-  colsAnt.forEach(function(c){ acumulaCua(dat(c), "evA", "diasA", null); });
-  diasMes.forEach(function(b){ acumulaCua(b, "evM", "diasM", "cancM"); });
+  cols.forEach(function(c){ acumulaCua(dat(c), "ev", "dias"); });
+  colsAnt.forEach(function(c){ acumulaCua(dat(c), "evA", "diasA"); });
+  diasMes.forEach(function(b){ acumulaCua(b, "evM", "diasM"); });
+
+  // Canceladas: NO salen de ATENCION ORDENES (ahí el renglón es el estado actual de la
+  // OS: si después se instaló, la cancelación ya no aparece). Salen de OS POR INSTALAR,
+  // que conserva la fecha de cancelación de cada intento. Se cuentan por el día en que
+  // se canceló y sin los filtros de la vista.
+  const cancCua = cancelacionesPorCuadrilla();
+  const clavesSem = cols.map(function(c){ return c.k; });
+  // la llave entre las dos hojas es el usuario instalador; se compara en mayúsculas
+  const llaveCua = function(u){ return String(u || "").trim().toUpperCase(); };
+  const yaEnTabla = new Map();
+  cuas.forEach(function(x, k){ yaEnTabla.set(llaveCua(k), k); });
+  // devuelve las cancelaciones mismas, no solo cuántas: el detalle que se abre al tocar
+  // la celda las necesita, y el número es su largo
+  const cancDe = function(k){
+    const x = cancCua.get(llaveCua(k));
+    if (!x) return { sem:[], mes:[] };
+    const sem = [], mes = [];
+    Object.keys(x.dias).forEach(function(d){
+      const lista = x.dias[d];
+      if (clavesSem.indexOf(d) >= 0) Array.prototype.push.apply(sem, lista);
+      // el mes va hasta el último día mostrado, igual que la columna Mes
+      if (d.slice(0, 7) === mesK && d <= ult.k) Array.prototype.push.apply(mes, lista);
+    });
+    return { sem:sem, mes:mes };
+  };
+  // una cuadrilla que en el periodo solo canceló también tiene que salir en la tabla:
+  // si no, sus cancelaciones se perderían justo donde más se buscan
+  cancCua.forEach(function(x, kU){
+    const c = cancDe(kU);
+    // si ya tiene renglón se reusa esa llave; si no, entra con el usuario tal como
+    // viene en OS POR INSTALAR
+    if (c.sem.length || c.mes.length) cuaDe(yaEnTabla.get(kU) || x.usr, x.nom);
+  });
+  cuas.forEach(function(x, k){
+    const c = cancDe(k);
+    x.cancLista = c.sem;
+    x.cancListaM = c.mes;
+    x.canc = c.sem.length;
+    x.cancM = c.mes.length;
+  });
 
   const prodCua = function(ev, dias){ return dias ? ev / dias : null; };
-  // se listan las que trabajaron en la semana mostrada o en lo que va del mes; las que
-  // solo tienen semana anterior ya no dicen nada del periodo que se está viendo
+  // se listan las que trabajaron en la semana mostrada o en lo que va del mes, y las que
+  // cancelaron en esos mismos periodos; las que solo tienen semana anterior ya no dicen
+  // nada del periodo que se está viendo
   const listaCuas = Array.from(cuas.keys()).filter(function(k){
     const x = cuas.get(k);
-    return x.dias > 0 || x.diasM > 0;
+    return x.dias > 0 || x.diasM > 0 || x.canc > 0 || x.cancM > 0;
   }).sort(function(a, b){
     const xa = cuas.get(a), xb = cuas.get(b);
     const pa = prodCua(xa.ev, xa.dias), pb = prodCua(xb.ev, xb.dias);
@@ -6710,9 +6831,44 @@ function ordenesHtml(){
       '<span class="mini">' + num(ev) + " en " + num(dias) + "d</span></td>";
   };
 
+  // celda de canceladas que se abre. El id se arma con la cuadrilla y el periodo (no con
+  // un contador) para que siga siendo el mismo al repintar y no se cierre solo, igual
+  // que el acordeón de "Estado de las órdenes de hoy".
+  const celdaCancCua = function(n, id, extra){
+    if (!n) return celdaNum(n, extra);
+    const abierto = DET_SEL === id;
+    return '<td class="' + ((extra || "") + " clicable").trim() +
+      '" data-det="' + id.replace(/"/g, "&quot;") + '" title="ver a qué órdenes corresponden">' +
+      (abierto ? "▾ " : "") + num(n) + "</td>";
+  };
+
+  // el detalle va como renglones hijo debajo de la cuadrilla, ocupando todo el ancho
+  const anchoCua = 7 + cols.length;
+  const detalleCancCua = function(lista, rotulo){
+    const orden = lista.slice().sort(function(a, b){
+      return a.f - b.f || String(a.os).localeCompare(String(b.os), "es");
+    });
+    return '<tr class="hijo"><td colspan="' + anchoCua + '">' +
+      "<b>" + rotulo + "</b> · " + num(orden.length) + " cancelación(es)" +
+      '<div class="scroll"><table class="compacta"><thead><tr>' +
+      "<th>Cuándo canceló</th><th>OS</th><th>Cuenta</th><th>Tipo de orden</th><th>Subtipo</th><th>Motivo</th>" +
+      "</tr></thead><tbody>" +
+      orden.map(function(c){
+        return "<tr><td>" + fCorta(c.f) + " " + hora(c.f) + "</td>" +
+          "<td>" + (c.os || "—") + "</td>" +
+          "<td>" + (c.cuenta || "—") + "</td>" +
+          "<td>" + (c.tipo || "—") + "</td>" +
+          '<td class="envuelve">' + (c.subtipo || "—") + "</td>" +
+          '<td class="envuelve">' + (c.motivo || "—") + "</td></tr>";
+      }).join("") +
+      "</tbody></table></div></td></tr>";
+  };
+
   let f2b = "";
   listaCuas.forEach(function(k){
     const x = cuas.get(k);
+    const idSem = "canccua:" + k + "|sem";
+    const idMes = "canccua:" + k + "|mes";
     f2b += "<tr><td>" + (x.nom || k) + '<span class="mini">' + k + "</span></td>" +
       celdaProdCua(x.evA, x.diasA, "tot") +
       cols.map(function(c){
@@ -6720,10 +6876,13 @@ function ordenesHtml(){
         return d ? celdaNum(d.ev) : '<td class="cero">—</td>';
       }).join("") +
       celdaProdCua(x.ev, x.dias, "tot") +
-      celdaNum(x.canc, "tot") +
+      celdaCancCua(x.canc, idSem, "tot") +
       celdaDif(prodCua(x.ev, x.dias), prodCua(x.evA, x.diasA)) +
       celdaProdCua(x.evM, x.diasM, "tot") +
-      celdaNum(x.cancM) + "</tr>";
+      celdaCancCua(x.cancM, idMes) + "</tr>";
+
+    if (DET_SEL === idSem) f2b += detalleCancCua(x.cancLista, (x.nom || k) + " · canceladas de la semana");
+    if (DET_SEL === idMes) f2b += detalleCancCua(x.cancListaM, (x.nom || k) + " · canceladas del mes");
   });
 
   const totCua = listaCuas.reduce(function(a, k){
@@ -6748,17 +6907,27 @@ function ordenesHtml(){
     celdaProdCua(totCua.evM, totCua.diasM, "tot") +
     celdaNum(totCua.cancM) + "</tr>";
 
+  // las canceladas dependen de OS POR INSTALAR; si esa hoja no cargó saldrían en cero
+  // sin explicación, así que se dice
+  const avisoCanc = OSPI.estado === "ok" ? "" :
+    ' · <b>canceladas en 0: no se pudo leer OS POR INSTALAR (' + OSPI.estado + ")</b>";
+  const tituloCanc = "veces que la cuadrilla canceló, por la fecha en que canceló · sale de OS POR INSTALAR, " +
+    "así cuenta aunque la orden se haya instalado después · no le aplican los filtros de la vista";
+
   const tabla2b = !listaCuas.length ? "" :
     '<section class="panel"><h2>Productividad de las cuadrillas' +
     ' <span class="sub">' + rotUni + rotGeo + rotHora +
     ' · una cuadrilla es un usuario instalador · en SEM ANT, Semana y Mes cada celda es eventos terminados ÷ días que trabajó, y abajo en chico el par que la formó' +
-    " · las columnas de cada día son los eventos terminados de ese día · " + listaCuas.length + " cuadrilla(s), primero la de mayor productividad de la semana</span></h2>" +
+    " · las columnas de cada día son los eventos terminados de ese día" +
+    " · las canceladas son las veces que la cuadrilla canceló, contadas el día que canceló, aunque después se haya instalado" +
+    " · <b>toca un número de canceladas</b> para ver ahí mismo a qué OS y tipo de orden corresponden" + avisoCanc +
+    " · " + listaCuas.length + " cuadrilla(s), primero la de mayor productividad de la semana</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr><th>Cuadrilla</th>' + encSemAnt + encDias +
     '<th class="tot" title="' + rotAcum + '">Semana</th>' +
-    '<th class="tot" title="eventos cancelados de la cuadrilla en los días mostrados">Canceladas</th>' +
+    '<th class="tot" title="' + tituloCanc + ', en los días mostrados">Canceladas</th>' +
     '<th title="productividad de la semana contra los mismos días de la anterior">vs sem. ant.</th>' +
     '<th class="tot" title="' + rotMes + '">Mes</th>' +
-    '<th title="eventos cancelados de la cuadrilla en el mes">Canceladas mes</th>' +
+    '<th title="' + tituloCanc + ', en el mes">Canceladas mes</th>' +
     "</tr></thead><tbody>" + f2b + "</tbody></table></div></section>";
 
   /* ---- tabla 3: canceladas por tipo ---- */
