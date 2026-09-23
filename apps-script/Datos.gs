@@ -39,7 +39,9 @@ var DATOS = {
   COL_NUMVEND:  'V',    // antes U
 
   // Columnas que la app necesita (las mismas que tu SELECT original)
-  COLUMNAS_SELECT: 'A,C,D,E,F,G,H,I,K,L,M,N,O,P,Q,R,S,T,U,W,AA,AB,AC,AD,AE,AF,AG,AH,AI,AJ',
+  // La J va aquí porque es donde la base marca "Perdida": el reporte la necesita para
+  // no contar como validada una venta que ya se cayó.
+  COLUMNAS_SELECT: 'A,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,W,AA,AB,AC,AD,AE,AF,AG,AH,AI,AJ',
 
   // Tiempo de caché en segundos (5 min = 300)
   CACHE_SEG: 300,
