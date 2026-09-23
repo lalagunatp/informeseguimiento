@@ -241,7 +241,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 92</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 93</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -506,7 +506,7 @@
         <label class="campo">Plazas de punto de venta local (separadas por ;)
           <input type="text" id="plazasLocales" value="TORREON; LAGUNA; LERDO DURANGO">
         </label>
-        <label class="campo">Qué cuenta como validada
+        <label class="campo">Qué cuenta como validada (lo marcado Perdida en la columna J nunca cuenta)
           <select id="reglaVal">
             <option value="fecha" selected>Tiene fecha de validación</option>
             <option value="estatus">Estatus dice "Validada"</option>
@@ -856,15 +856,15 @@ function normaliza(s){
 
 // letras vigentes en BASE DE DATOS (tras insertar "N Interior" en AC y "Motivo Rechazo
 // Op" en L, cada inserción recorrió una columna a la derecha todo lo que venía después)
-const COLUMNAS = "A,C,D,E,F,G,H,I,K,L,N,O,P,Q,R,S,T,U,V,AB,AC,AD,AE,AF,AG,AH,AI,AJ";
-const IDX_SELECT = { os:0, cluster:1, creacion:2, validacion:3, activacion:4, cliente:5, canal:6, subcanal:7, estatus:8, motivoRechazoOp:9, estatus2:10, cuenta:11, plan:12, oportunidad:13, vendedor:14, pl:15, pp:16, addon:17, numvendedor:18, colonia:19, director:20, lider:21, coach:22, comentario:-1 };
+const COLUMNAS = "A,C,D,E,F,G,H,I,J,K,L,N,O,P,Q,R,S,T,U,V,AB,AC,AD,AE,AF,AG,AH,AI,AJ";
+const IDX_SELECT = { os:0, cluster:1, creacion:2, validacion:3, activacion:4, cliente:5, canal:6, subcanal:7, perdida:8, estatus:9, motivoRechazoOp:10, estatus2:11, cuenta:12, plan:13, oportunidad:14, vendedor:15, pl:16, pp:17, addon:18, numvendedor:19, colonia:20, director:21, lider:22, coach:23, comentario:-1 };
 // posiciones reales A..AJ, por si hay que leer la hoja completa
-const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, estatus:10, motivoRechazoOp:11, estatus2:13, cuenta:14, plan:15, oportunidad:16, vendedor:17, pl:18, pp:19, addon:20, numvendedor:21, comentario:23, direccion:27, numExt:28, numInt:29, colonia:30, ciudad:31, cp:32, director:33, lider:34, coach:35 };
+const IDX_TODO   = { os:0, cluster:2, creacion:3, validacion:4, activacion:5, cliente:6, canal:7, subcanal:8, perdida:9, estatus:10, motivoRechazoOp:11, estatus2:13, cuenta:14, plan:15, oportunidad:16, vendedor:17, pl:18, pp:19, addon:20, numvendedor:21, comentario:23, direccion:27, numExt:28, numInt:29, colonia:30, ciudad:31, cp:32, director:33, lider:34, coach:35 };
 let IDX = IDX_SELECT;
 
 const LETRA_CAMPO = {
   A:"os", C:"cluster", D:"creacion", E:"validacion", F:"activacion", G:"cliente",
-  H:"canal", I:"subcanal", K:"estatus", L:"motivoRechazoOp", N:"estatus2", O:"cuenta", P:"plan",
+  H:"canal", I:"subcanal", J:"perdida", K:"estatus", L:"motivoRechazoOp", N:"estatus2", O:"cuenta", P:"plan",
   Q:"oportunidad", R:"vendedor", S:"pl", T:"pp", U:"addon", V:"numvendedor",
   X:"comentario", AB:"direccion", AC:"numExt", AD:"numInt", AE:"colonia", AF:"ciudad", AG:"cp",
   AH:"director", AI:"lider", AJ:"coach"
@@ -1674,6 +1674,7 @@ function parsearBaseRows(filas){
       numvendedor: (celda(c, IDX.numvendedor) || {}).v != null ? celda(c, IDX.numvendedor).v : "",
       cuenta:      (celda(c, IDX.cuenta) || {}).v != null ? celda(c, IDX.cuenta).v : "",
       estatus:  texto(celda(c, IDX.estatus)),
+      perdida:  texto(celda(c, IDX.perdida)),
       motivoRechazoOp: texto(celda(c, IDX.motivoRechazoOp)),
       estatus2: texto(celda(c, IDX.estatus2)),
       plan:     texto(celda(c, IDX.plan)),
@@ -2100,7 +2101,16 @@ function importeDe(f){
   return f.pp + f.addon;   // pronto pago + adicionales
 }
 
+// columna J de BASE DE DATOS: cuando dice "Perdida" la venta se cayó, así que el
+// renglón no cuenta como validado por más que traiga fecha o estatus de validación.
+// Si la columna no llegara (base vieja o SELECT sin la J), el campo viene vacío y no
+// se descarta nada: el reporte se comporta como antes.
+function esPerdida(f){
+  return normaliza(f.perdida).indexOf("PERDID") >= 0;
+}
+
 function esValidada(f){
+  if (esPerdida(f)) return false;
   const regla = el("reglaVal").value;
   const conFecha = !!f.fVal;
   const conEstatus = /valid/i.test(f.estatus);
@@ -5243,7 +5253,7 @@ function seguimientoOsHtml(){
     ["Núm. de OS", fila.os],
     ["Cuenta", fila.cuenta || "—"],
     ["Duplicidad", duplicidadTxt],
-    ["Fecha de validación", fila.fVal ? fCorta(fila.fVal) : "—"],
+    ["Fecha de validación", esPerdida(fila) ? (fila.fVal ? fCorta(fila.fVal) + " · PERDIDA" : "PERDIDA") : (fila.fVal ? fCorta(fila.fVal) : "—")],
     ["Última agenda", ultimaAgendaDeOs(fila.os, fila.cuenta)],
     ["Nombre del cliente", fila.cliente],
     ["Plan", fila.plan],
