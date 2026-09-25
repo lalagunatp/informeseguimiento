@@ -353,7 +353,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 94</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 95</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -2959,6 +2959,32 @@ async function leerRanking(id, nombreHoja, fuente){
   // para el promedio solo sirven los meses con año real
   const instConAnio = colsInst.filter(function(c){ return c.mes.anio >= 2000; });
   colsInst = instConAnio.sort(function(a, b){ return a.mes.clave < b.mes.clave ? -1 : 1; });
+
+  // "VENTAS EN EL DISTRITO <MES>" trae las instalaciones de los últimos 12 meses, cada una
+  // con su mes en su propio encabezado, y cuando está manda sobre los bloques de arriba: en
+  // esos bloques (Instalaciones · Ingreso · NPPF) el mes va escrito sobre Ingreso, así que al
+  // arrastrarlo a la derecha cada columna de instalaciones quedaba con el mes ANTERIOR (junio
+  // salía como mayo) y el último mes cerrado se quedaba fuera; Platino se decidía con dos
+  // meses corridos. El encabezado no trae año y la hoja lleva más de 12 columnas (el mismo
+  // mes aparece de dos años), así que el año se pone por posición: la última columna es el
+  // mes cerrado más reciente (uno igual o posterior al actual es del año pasado) y, hacia la
+  // izquierda, cada vez que el mes "da la vuelta" es un año antes.
+  const hoyR = new Date();
+  const colsVD = [];
+  enc.forEach(function(h, i){
+    if (normaliza(h).indexOf("VENTAS EN EL DISTRITO") !== 0) return;
+    const m = mesDeTexto(h);
+    if (m) colsVD.push({ i:i, mesNum:m.mes });
+  });
+  let anioVD = null, mesSig = null;
+  for (let k = colsVD.length - 1; k >= 0; k--){
+    const c = colsVD[k];
+    if (anioVD === null) anioVD = c.mesNum < hoyR.getMonth() ? hoyR.getFullYear() : hoyR.getFullYear() - 1;
+    else if (c.mesNum >= mesSig) anioVD--;
+    mesSig = c.mesNum;
+    c.mes = { mes:c.mesNum, anio:anioVD, clave: anioVD + "-" + String(c.mesNum + 1).padStart(2, "0") };
+  }
+  if (colsVD.length) colsInst = colsVD.sort(function(a, b){ return a.mes.clave < b.mes.clave ? -1 : 1; });
 
   let n = 0;
   for (let r = iEnc + 1; r < rows.length; r++){
