@@ -236,12 +236,124 @@
     th,td{padding:5px 6px}
     th:first-child,td:first-child{max-width:130px}
   }
+  /* ---------- Reporte comercial ---------- */
+  #menuReporte{border-top:1px solid var(--line2); padding:10px 14px 12px}
+  #menuReporte h4{margin:0 0 8px; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--azul)}
+  #menuReporte button{width:100%}
+  .rep{padding:12px 14px 14px; display:flex; flex-direction:column; gap:12px}
+  .rep h3{margin:4px 0 0; font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--azul)}
+  .rep-controles{padding:0; border:0}
+  .rep-per{margin:0; font-size:13px; color:var(--muted)}
+  .rep-big{display:flex; flex-wrap:wrap; gap:26px}
+  .rep-big div{display:flex; flex-direction:column}
+  .rep-big b{font-size:28px; line-height:1.1; font-variant-numeric:tabular-nums; color:var(--azul)}
+  .rep-big span{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted)}
+  table.rep-t td.rep-nm, table.rep-t th.rep-nm{text-align:left}
+  table.rep-t td.rep-nm a{color:var(--ink); text-decoration:none; border-bottom:1px dotted var(--muted)}
+  table.rep-t td.rep-b{font-weight:700}
+  table.rep-t tr.total td{border-top:2px solid var(--line); font-weight:700}
+  td.rep-rojo{color:var(--r-tx); font-weight:700}
+  .rep-cov{color:var(--muted); font-size:11px}
+  .rep-d{display:block; font-size:11px; color:var(--muted); font-weight:600}
+  .rep-d.v{color:var(--v-tx)} .rep-d.r{color:var(--r-tx)}
+  table.rep-t td .rep-d{display:inline}
+  .rep-nota{margin:0; font-size:11.5px; color:var(--muted)}
+  .rep-cab{display:flex; justify-content:flex-end; margin-bottom:-6px}
+  .rep-tag{font-size:12px; font-weight:700; padding:3px 10px; border-radius:20px}
+  .rep-tag.v{background:var(--v-bg); color:var(--v-tx)} .rep-tag.a{background:var(--a-bg); color:var(--a-tx)} .rep-tag.r{background:var(--r-bg); color:var(--r-tx)}
+  .rep-kpis{display:grid; grid-template-columns:repeat(6, 1fr); border:1px solid var(--line); border-radius:8px}
+  .rep-kpis > div{display:flex; flex-direction:column; gap:1px; padding:8px 10px; border-left:1px solid var(--line)}
+  .rep-kpis > div:first-child{border-left:0}
+  .rep-kpis b{font-size:21px; font-variant-numeric:tabular-nums}
+  .rep-lb{font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted)}
+  .rep-meta{display:flex; flex-direction:column; gap:7px}
+  .rep-mrow{display:grid; grid-template-columns:110px 1fr minmax(0, auto); gap:10px; align-items:center}
+  .rep-ml{font-size:12.5px; color:var(--muted)}
+  .rep-mb{position:relative; height:12px; background:var(--gris); border-radius:3px}
+  .rep-br, .rep-bp{position:absolute; left:0; top:0; bottom:0; border-radius:3px}
+  .rep-br.v{background:var(--v-tx)} .rep-br.a{background:#c79200} .rep-br.r{background:var(--r-tx)}
+  .rep-bp{background:repeating-linear-gradient(135deg, #8795a3 0 3px, transparent 3px 6px); opacity:.55}
+  .rep-mk{position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--ink)}
+  .rep-mv{font-size:12px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums}
+  .rep-mv b{font-size:14px}
+  .rep-mv b.v{color:var(--v-tx)} .rep-mv b.a{color:var(--a-tx)} .rep-mv b.r{color:var(--r-tx)}
+  .rep-dos{display:grid; grid-template-columns:1fr 1fr; gap:22px}
+  .rep-bul{margin:6px 0 0; padding-left:18px; display:flex; flex-direction:column; gap:5px; font-size:13px}
+  .rep-opp li::marker{color:var(--rojo)}
+  .rep-cuatro{display:grid; grid-template-columns:repeat(4, 1fr); gap:18px}
+  .rep-lst{list-style:none; margin:6px 0 0; padding:0}
+  .rep-lst li{display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px solid var(--line2); font-size:12.5px}
+  .rep-lst b{font-variant-numeric:tabular-nums}
+  .rep-wa{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+  .rep-wa textarea{width:100%; min-height:200px; font:inherit; font-size:12.5px; padding:8px; border:1px solid var(--line); border-radius:6px}
+  .rep-ok{font-size:12.5px; color:var(--v-tx); font-weight:600}
+  .rep-como{font-size:12.5px; color:var(--muted)}
+  @media (max-width:900px){
+    .rep-kpis{grid-template-columns:repeat(3, 1fr)}
+    .rep-kpis > div:nth-child(4){border-left:0}
+    .rep-kpis > div:nth-child(n+4){border-top:1px solid var(--line)}
+    .rep-dos{grid-template-columns:1fr}
+    .rep-cuatro{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:520px){
+    .rep-cuatro{grid-template-columns:1fr}
+    .rep-mrow{grid-template-columns:1fr}
+    .rep-mv{white-space:normal}
+  }
+
+  /* impresión del reporte comercial: solo el reporte, carta horizontal, sin cortes */
+  @page{size:letter landscape; margin:9mm 10mm}
+  @media print{
+    body.vista-reporte{background:#fff; font-size:10px}
+    body.vista-reporte > *:not(#app){display:none !important}
+    body.vista-reporte #app > *:not(#salida){display:none !important}
+    body.vista-reporte .wrap{max-width:none; padding:0}
+    body.vista-reporte *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+    body.vista-reporte .rep-controles, body.vista-reporte .rep-wa{display:none !important}
+    body.vista-reporte .panel{break-inside:auto; margin-bottom:8px}
+    body.vista-reporte #salida > .panel + .panel{break-before:page}
+    body.vista-reporte #salida > .panel:last-child{break-before:page}
+    body.vista-reporte .panel > h2{font-size:14px}
+    body.vista-reporte .rep{padding:8px 10px; gap:8px}
+    body.vista-reporte .scroll{overflow:visible}
+    body.vista-reporte table{min-width:0 !important; font-size:8.5px}
+    body.vista-reporte table.compacta th, body.vista-reporte table.compacta td{padding:3px 4px; font-size:8.5px; white-space:normal}
+    body.vista-reporte thead{display:table-header-group}
+    body.vista-reporte tr, body.vista-reporte li, body.vista-reporte .rep-kpis, body.vista-reporte .rep-meta, body.vista-reporte .rep-cuatro > div, body.vista-reporte .rep-big{break-inside:avoid}
+    body.vista-reporte .rep h3{break-after:avoid}
+    body.vista-reporte .rep-kpis{grid-template-columns:repeat(6, 1fr)}
+    body.vista-reporte .rep-kpis > div{border-top:0; border-left:1px solid var(--line)}
+    body.vista-reporte .rep-kpis > div:first-child{border-left:0}
+    body.vista-reporte .rep-kpis b{font-size:15px}
+    body.vista-reporte .rep-dos{grid-template-columns:1fr 1fr; gap:14px}
+    body.vista-reporte .rep-cuatro{grid-template-columns:repeat(4, 1fr); gap:12px}
+    body.vista-reporte .rep-bul{font-size:9.5px; gap:3px}
+    body.vista-reporte .rep-lst li{font-size:9px; padding:2px 0}
+    body.vista-reporte .rep-mrow{grid-template-columns:90px 1fr minmax(0, auto)}
+    body.vista-reporte .rep-mv, body.vista-reporte .rep-nota, body.vista-reporte .rep-per, body.vista-reporte .rep-como{font-size:8.5px}
+    body.vista-reporte .rep-big b{font-size:20px}
+    body.vista-reporte .rep-d{font-size:8px}
+    /* compacto para que cada líder quepa en una sola hoja */
+    body.vista-reporte .panel > h2{padding-top:6px; padding-bottom:6px}
+    body.vista-reporte .rep h3{font-size:8.5px; margin-top:2px}
+    body.vista-reporte .rep-cab{margin-bottom:-8px}
+    body.vista-reporte .rep-tag{font-size:8.5px; padding:1px 8px}
+    body.vista-reporte .rep-kpis > div{padding:3px 8px}
+    body.vista-reporte .rep-lb{font-size:7px}
+    body.vista-reporte .rep-kpis b{font-size:13px}
+    body.vista-reporte .rep-ml{font-size:8.5px}
+    body.vista-reporte .rep-mb{height:8px}
+    body.vista-reporte .rep-meta{gap:4px}
+    body.vista-reporte .rep-bul{margin-top:3px}
+    body.vista-reporte .rep-lst{margin-top:3px}
+    body.vista-reporte a{border:0 !important}
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 93</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 94</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -286,6 +398,10 @@
 <aside id="cajon" class="cajon oculto">
   <div class="cajon-tit">Ir a la secci&oacute;n<button id="btnCerrarMenu" aria-label="Cerrar">&times;</button></div>
   <div id="menu"></div>
+  <div id="menuReporte" class="oculto">
+    <h4>Reportes</h4>
+    <button type="button" id="btnReporteComercial">Reporte comercial</button>
+  </div>
   <div id="ultimasCargasMenu"></div>
 </aside>
 
@@ -7333,6 +7449,538 @@ function scrollPegadoPorTitulo(tituloInicio){
   });
 }
 
+/* ---------- Reporte comercial (Director y líderes) ----------
+
+   Un reporte por líder, para la semana en curso, la última semana cerrada o el último
+   mes cerrado. Compara contra el periodo anterior, contra la meta por ranking (la misma
+   cuenta que Equipos: metalDe/metaDe) y contra el compromiso que cada coach capturó en
+   su Plan semanal de la app Día a día (acción "planes" del Apps Script). Suma conversión
+   (las mismas dos de Semanal y Últimos 30 días), rechazos, instalaciones canceladas
+   (ATENCION ORDENES, como en Atención de órdenes) y, en la semana en curso, la
+   proyección de cierre. La lectura y las áreas de oportunidad salen de reglas fijas
+   sobre esos mismos números, no se escriben a mano.
+
+   Se imprime (o se guarda como PDF) desde el botón de la propia vista: la hoja de
+   estilos de impresión deja solo el reporte, en carta horizontal. */
+
+const REP = { periodo:"actual", lider:"" };
+let PLANES_APP = { estado:"sin cargar", filas:[], error:"" };
+let CARGANDO_PLANES = false;
+
+// Director y líderes de ventas; el Apps Script vuelve a checarlo antes de dar los planes
+function puedeVerReporte(){
+  if (!PERFIL || PERFIL.acceso === "os") return false;
+  const p = normaliza(PERFIL.puesto);
+  return p.indexOf("DIRECTOR") >= 0 || p.indexOf("LIDER") >= 0;
+}
+function esDirectorRep(){ return !!PERFIL && normaliza(PERFIL.puesto).indexOf("DIRECTOR") >= 0; }
+
+function irAReporte(){
+  if (!puedeVerReporte()) return;
+  VISTA = "reporte";
+  Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(x){ x.classList.remove("on"); });
+  cerrarCajon();
+  ajustaCajasDia();
+  if (window.scrollTo) try { window.scrollTo({ top:0, behavior:"smooth" }); } catch(e){}
+  pintar();
+}
+
+function repYmd(d){ return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function repDia(base, n){ return new Date(base.getFullYear(), base.getMonth(), base.getDate() + n); }
+function repEntre(d, ini, fin){ return !!d && d >= ini && d <= fin; }
+function repNum(v){
+  const n = Number(String(v == null ? "" : v).replace(",", ".").replace(/[^0-9.\-]/g, ""));
+  return isFinite(n) ? n : 0;
+}
+function repNombre(s){
+  return String(s || "").toLowerCase().replace(/(^|\s)(\S)/g, function(t, a, b){ return a + b.toUpperCase(); });
+}
+function repFecha(d){ return d.getDate() + " " + NOMBRE_MES[d.getMonth()].slice(0, 3); }
+function repPct(x){ return (x === null || x === undefined || !isFinite(x)) ? "—" : Math.round(x * 100) + "%"; }
+function repEsc(s){ return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function repClsMeta(x){ return x === null || !isFinite(x) ? "" : x >= 1 ? "v" : x >= 0.9 ? "a" : "r"; }
+function repClsConv(x){ const m = (Number(el("metaConversion").value) || 88) / 100; return x === null || !isFinite(x) ? "" : x >= m ? "v" : x >= m - 0.05 ? "a" : "r"; }
+function repClsCanc(x){ return x === null || !isFinite(x) ? "" : x < 0.15 ? "v" : x < 0.22 ? "a" : "r"; }
+function repDelta(a, b, inv){
+  if (!b) return '<span class="rep-d">—</span>';
+  const d = (a - b) / b;
+  if (Math.abs(d) < 0.005) return '<span class="rep-d">= </span>';
+  const bueno = (d > 0) !== !!inv;
+  return '<span class="rep-d ' + (bueno ? "v" : "r") + '">' + (d > 0 ? "+" : "−") + Math.abs(Math.round(d * 100)) + "%</span>";
+}
+function repDeltaN(a, b){
+  const d = a - b;
+  return '<span class="rep-d ' + (d > 0 ? "v" : d < 0 ? "r" : "") + '">' + (d > 0 ? "+" : d < 0 ? "−" : "") + Math.abs(d) + "</span>";
+}
+
+async function cargarPlanes(){
+  if (CARGANDO_PLANES) return;
+  CARGANDO_PLANES = true;
+  PLANES_APP = { estado:"cargando", filas:[], error:"" };
+  const lunesHoy = lunesDe(isoSemana(new Date()));
+  try{
+    const r = await llamarProxy({ accion:"planes", token:TOKEN, desde:repYmd(repDia(lunesHoy, -42)), hasta:repYmd(lunesHoy) });
+    if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no devolvió los planes");
+    const enc = r.encabezados || [];
+    const i = function(n){ return enc.indexOf(n); };
+    // si un coach corrigió su plan hay varias filas de la misma semana: manda la más reciente
+    const ult = new Map();
+    (r.datos || []).forEach(function(v){
+      const quien = normaliza(v[i("Registrado por")]);
+      const semana = String(v[i("Semana inicio")] || "").slice(0, 10);
+      const k = semana + "|" + quien;
+      const ts = String(v[i("Timestamp")] || "");
+      if (ult.has(k) && ult.get(k).ts >= ts) return;
+      ult.set(k, { semana:semana, quien:quien, ts:ts, op:repNum(v[i("Obj. Oportunidades")]),
+        val:repNum(v[i("Obj. Ventas")]), ins:repNum(v[i("Obj. Instalaciones")]) });
+    });
+    PLANES_APP = { estado:"ok", filas:Array.from(ult.values()), error:"" };
+  }catch(e){
+    PLANES_APP = { estado:"error", filas:[], error:e.message };
+  }
+  CARGANDO_PLANES = false;
+  if (VISTA === "reporte") pintar();
+}
+
+// compromiso de instalaciones de un coach para la semana que empieza en `lunes`; null = sin plan
+function repCompromiso(coach, lunes){
+  const k = repYmd(lunes), q = normaliza(coach);
+  const p = PLANES_APP.filas.filter(function(x){ return x.semana === k && x.quien === q; })[0];
+  return p && p.ins > 0 ? p : null;
+}
+
+// fechas del periodo elegido, del periodo contra el que se compara y, en la semana en
+// curso, de las dos semanas completas que sirven para proyectar el cierre
+function repPeriodo(){
+  const hoy = soloFecha(new Date());
+  const lunesAct = lunesDe(isoSemana(hoy));
+  if (REP.periodo === "mes"){
+    const ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1), fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+    const iniA = new Date(hoy.getFullYear(), hoy.getMonth() - 2, 1), finA = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 0);
+    const nom = NOMBRE_MES[ini.getMonth()];
+    return { tipo:"mes", ini:ini, fin:fin, iniA:iniA, finA:finA, lunes:null,
+      titulo:"Mes cerrado: " + nom + " " + ini.getFullYear(),
+      detalle:"Del 1 al " + fin.getDate() + " de " + nom + ", contra " + NOMBRE_MES[iniA.getMonth()] + ".",
+      etqA:NOMBRE_MES[iniA.getMonth()].slice(0, 3) };
+  }
+  if (REP.periodo === "cerrada"){
+    const ini = repDia(lunesAct, -7), fin = repDia(lunesAct, -1);
+    const s = Number(isoSemana(ini).split("-")[1]);
+    return { tipo:"cerrada", ini:ini, fin:fin, iniA:repDia(ini, -7), finA:repDia(fin, -7), lunes:ini,
+      titulo:"Semana cerrada: semana " + s,
+      detalle:"Del " + repFecha(ini) + " al " + repFecha(fin) + ", contra la semana " + (s - 1) + ".",
+      etqA:"S" + (s - 1) };
+  }
+  // semana en curso: de lunes al último día ya cerrado (ayer), o al último día con
+  // instalaciones cargadas si la base todavía no trae el de ayer. El día de hoy no entra:
+  // va a medias y haría ver una caída contra los mismos días de la semana pasada. En lunes
+  // todavía no hay día cerrado, así que se muestra lo que lleve el propio lunes.
+  const ayer = repDia(hoy, -1);
+  let fin = lunesAct;
+  if (ayer >= lunesAct){
+    FILAS.forEach(function(f){ if (f.fIns && f.fIns > fin && f.fIns <= ayer) fin = f.fIns; });
+  }
+  const n = diaIndice(fin);
+  const s = Number(isoSemana(lunesAct).split("-")[1]);
+  return { tipo:"actual", ini:lunesAct, fin:fin, iniA:repDia(lunesAct, -7), finA:repDia(fin, -7), lunes:lunesAct,
+    iniB:repDia(lunesAct, -14), finB:repDia(fin, -14), dias:n + 1, abierta:n < 6,
+    titulo:"Semana en curso: semana " + s + " al " + DIAS_LARGOS[n].toLowerCase(),
+    detalle:"Del " + repFecha(lunesAct) + " al " + repFecha(fin) + ", contra los mismos días de la semana " + (s - 1) + ".",
+    etqA:"S" + (s - 1) + " " + (n === 6 ? "" : "L–" + DIAS[n].charAt(0).toUpperCase()) };
+}
+
+// lo que pasó en un periodo para las filas que cumplen `filtro`
+function repMedir(filtro, ini, fin){
+  const o = { op:0, val:0, ins:0, rech:0, imp:0, mot:new Map(), canal:new Map(), vend:new Map(), dia:[0,0,0,0,0,0,0] };
+  FILAS.forEach(function(f){
+    if (!filtro(f)) return;
+    if (repEntre(f.fOp, ini, fin)){
+      o.op++;
+      if (/RECHAZ/.test(normaliza(f.estatus))){
+        o.rech++;
+        const m = f.motivoRechazoOp && f.motivoRechazoOp !== "-" ? f.motivoRechazoOp : "Sin motivo capturado";
+        o.mot.set(m, (o.mot.get(m) || 0) + 1);
+      }
+    }
+    if (esValidada(f) && repEntre(f.fVal, ini, fin)) o.val++;
+    if (esInstalada(f) && repEntre(f.fIns, ini, fin)){
+      o.ins++;
+      o.imp += f.pl / 1.16;
+      o.canal.set(f.canal, (o.canal.get(f.canal) || 0) + 1);
+      const v = normaliza(f.vendedor);
+      o.vend.set(v, (o.vend.get(v) || 0) + 1);
+      o.dia[diaIndice(f.fIns)]++;
+    }
+  });
+  o.arpu = o.ins ? o.imp / o.ins : 0;
+  o.pRech = o.op ? o.rech / o.op : null;
+  o.conv = o.val ? o.ins / o.val : null;
+  return o;
+}
+
+// camada de 30 días (igual que Últimos 30 días): de lo validado en los 30 días que
+// terminan en `fin`, cuánto ya se instaló; y lo validado que sigue sin instalar
+function repCamada(filtro, fin){
+  const ini = repDia(fin, -29), meta = Number(el("metaConversion").value) || 88;
+  let v = 0, i = 0, pend = 0;
+  FILAS.forEach(function(f){
+    if (!filtro(f) || !esValidada(f) || !repEntre(f.fVal, ini, fin)) return;
+    v++;
+    if (esInstalada(f)) i++;
+    else if (!/RECHAZ/.test(normaliza(f.estatus))) pend++;
+  });
+  return { v:v, i:i, pct: v ? i / v : null, falta: Math.max(0, Math.ceil(v * meta / 100) - i), pend:pend, ini:ini };
+}
+
+// cuenta -> {lider, coach} de la venta que la originó, en los canales donde el coach dice
+// algo (mismo criterio que coachOrden de Atención de órdenes)
+let IDX_REP_CTA = null;
+function repIndiceCuentas(){
+  if (IDX_REP_CTA && IDX_REP_CTA.n === FILAS.length) return IDX_REP_CTA.m;
+  const m = new Map();
+  FILAS.forEach(function(f){
+    const k = clave(f.cuenta);
+    if (!k || CANALES_CON_COACH.indexOf(normaliza(f.canal)) < 0) return;
+    m.set(k, { lider:normaliza(f.lider), coach:normaliza(f.coach) });
+  });
+  IDX_REP_CTA = { n:FILAS.length, m:m };
+  return m;
+}
+// instalaciones canceladas del periodo (tipo Instalación, estatus Cancelada, por fecha de término)
+function repCanceladas(ini, fin){
+  if (ORD.estado !== "ok") return null;
+  const idx = repIndiceCuentas();
+  const lista = [];
+  ORD.filas.forEach(function(o){
+    if (!esCancelada(o) || normaliza(o.tipo).indexOf("INSTALACION") !== 0 || !o.fTer) return;
+    if (!repEntre(soloFecha(o.fTer), ini, fin)) return;
+    const x = idx.get(clave(o.cuenta));
+    if (x) lista.push({ lider:x.lider, coach:x.coach, motivo:o.motivo || "Sin motivo" });
+  });
+  return lista;
+}
+
+function repMetaInst(personas){ return personas.reduce(function(s, p){ return s + metaDe(metalDe(p)); }, 0); }
+function repMetaDe(instSemana, per){
+  const f = 1 + (Number(el("factorMeta").value) || 15) / 100;
+  const ins = per.tipo === "mes" ? Math.round(instSemana * (Number(el("semanasMes").value) || 4.33)) : instSemana;
+  const val = Math.round(ins * f);
+  return { ins:ins, val:val, op:Math.round(val * f) };
+}
+
+// líderes de venta que le tocan a quien entró (el Director todos; un líder solo él)
+function repLideres(){
+  const m = new Map();
+  PLANTILLA.forEach(function(p){
+    const k = normaliza(p.lider);
+    if (!k || k === normaliza("SIN LÍDER") || m.has(k)) return;
+    const pu = normaliza(PUESTO_POR_NOMBRE.get(k) || "");
+    if (pu.indexOf("LIDER") >= 0 && pu.indexOf("VENTA") >= 0) m.set(k, p.lider);
+  });
+  let lista = Array.from(m.entries()).map(function(e){ return { k:e[0], nombre:e[1] }; });
+  if (!esDirectorRep()){
+    const yo = normaliza(PERFIL.nombre);
+    lista = lista.filter(function(x){ return x.k === yo; });
+  }
+  return lista.sort(function(a, b){ return a.nombre.localeCompare(b.nombre, "es"); });
+}
+
+// todo lo de un líder: totales, coaches, canceladas, proyección y reglas de lectura
+function repLider(L, per, canc){
+  const deL = function(f){ return normaliza(f.lider) === L.k; };
+  const gente = PLANTILLA.filter(function(p){ return normaliza(p.lider) === L.k; });
+  const r = { L:L, act:repMedir(deL, per.ini, per.fin), ant:repMedir(deL, per.iniA, per.finA),
+    cam:repCamada(deL, per.fin), metaSem:repMetaInst(gente), personas:gente.length };
+  r.meta = repMetaDe(r.metaSem, per);
+  r.canc = canc ? canc.filter(function(c){ return c.lider === L.k; }) : null;
+  r.cancA = per.cancA ? per.cancA.filter(function(c){ return c.lider === L.k; }) : null;
+
+  // proyección de la semana en curso: el ritmo con el que el líder cerró las dos semanas anteriores
+  r.fac = 1;
+  if (per.tipo === "actual" && per.abierta){
+    const fullA = repMedir(deL, per.iniA, repDia(per.iniA, 6)).ins, partA = r.ant.ins;
+    const fullB = repMedir(deL, per.iniB, repDia(per.iniB, 6)).ins, partB = repMedir(deL, per.iniB, per.finB).ins;
+    r.fac = (partA + partB) ? (fullA + fullB) / (partA + partB) : 1;
+    r.jdHist = Math.round(((fullA - partA) + (fullB - partB)) / 2);
+  }
+  r.proy = Math.round(r.act.ins * r.fac);
+
+  // coaches: los de la plantilla (con su gente) en orden de instalaciones
+  const nombresCoach = Array.from(new Set(gente.map(function(p){ return p.coach; }).filter(Boolean)));
+  r.coaches = nombresCoach.map(function(c){
+    const k = normaliza(c);
+    const deC = function(f){ return deL(f) && normaliza(f.coach) === k; };
+    const suyos = gente.filter(function(p){ return normaliza(p.coach) === k; });
+    const act = repMedir(deC, per.ini, per.fin);
+    const x = { nombre:c, k:k, act:act, ant:repMedir(deC, per.iniA, per.finA), cam:repCamada(deC, per.fin),
+      meta:repMetaDe(repMetaInst(suyos), per).ins, personas:suyos.filter(function(p){ return !p.vacante; }).length,
+      proy:Math.round(act.ins * r.fac),
+      comp: per.lunes ? repCompromiso(c, per.lunes) : null,
+      canc: r.canc ? r.canc.filter(function(z){ return z.coach === k; }).length : null };
+    x.sinInst = suyos.filter(function(p){ return !p.vacante && !act.vend.get(normaliza(p.nombre)); }).length;
+    return x;
+  }).sort(function(a, b){ return b.act.ins - a.act.ins; });
+
+  // compromiso del líder = suma de sus coaches que sí capturaron plan
+  const conPlan = r.coaches.filter(function(c){ return c.comp; });
+  r.comp = per.lunes ? { ins:conPlan.reduce(function(s, c){ return s + c.comp.ins; }, 0), con:conPlan.length, total:r.coaches.length,
+    real:conPlan.reduce(function(s, c){ return s + (per.tipo === "actual" ? c.proy : c.act.ins); }, 0),
+    sin:r.coaches.filter(function(c){ return !c.comp; }).map(function(c){ return c.nombre; }) } : null;
+  return r;
+}
+
+// sugerencias por motivo (rechazo y cancelación): lo accionable desde la venta
+function repSugerencia(motivo, tipo){
+  const m = normaliza(motivo);
+  if (m.indexOf("ILOCALIZABLE") >= 0) return tipo === "canc" ? "Confirmar teléfono, domicilio y horario con el cliente un día antes de la instalación." : "Confirmar teléfono y domicilio al cerrar la venta.";
+  if (m.indexOf("DOCUMENT") >= 0) return "Checklist de INE y comprobante de domicilio antes de subir la venta.";
+  if (m.indexOf("ADEUDO") >= 0 || m.indexOf("MOROSO") >= 0) return "Validar adeudos del cliente en la prospección, antes de levantar la venta.";
+  if (m.indexOf("DUPLICAD") >= 0) return "Revisar la captura: hay ventas que se suben dos veces.";
+  if (m.indexOf("BLUE HOLE") >= 0 || m.indexOf("COBERTURA") >= 0 || m.indexOf("FACTIB") >= 0) return "Validar cobertura y factibilidad antes de visitar la colonia.";
+  if (m.indexOf("ACOMETER") >= 0) return "Revisar con el técnico la factibilidad de acometida desde la venta.";
+  if (m.indexOf("NO RECIBE") >= 0) return "Confirmar la cita con el cliente el mismo día de la instalación.";
+  if (m.indexOf("NO DESEA") >= 0) return "Reforzar el cierre: el cliente se arrepiente antes de instalar.";
+  return "";
+}
+function repTop(mapa){ return Array.from(mapa.entries()).sort(function(a, b){ return b[1] - a[1] || a[0].localeCompare(b[0], "es"); }); }
+function repConteo(lista, campo){
+  const m = new Map();
+  (lista || []).forEach(function(x){ m.set(x[campo], (m.get(x[campo]) || 0) + 1); });
+  return repTop(m);
+}
+
+// lectura y áreas de oportunidad a partir de los números
+function repTextos(r, per){
+  const a = r.act, b = r.ant, lec = [], opp = [];
+  const lbl = per.etqA.trim();
+  const cierra = per.tipo === "actual" && per.abierta;
+  lec.push("Instaló " + a.ins + " contra " + b.ins + " de " + lbl + " (" + (b.ins ? (a.ins >= b.ins ? "+" : "−") + Math.abs(Math.round((a.ins - b.ins) / b.ins * 100)) + "%" : "sin comparativo") +
+    "). Levantó " + a.op + " oportunidades (" + lbl + ": " + b.op + ") y validó " + a.val + " (" + lbl + ": " + b.val + ").");
+  const base = cierra ? r.proy : a.ins;
+  if (r.meta.ins){
+    const al = base / r.meta.ins;
+    lec.push(cierra
+      ? "Meta de la semana: " + r.meta.ins + " instalaciones. Lleva " + repPct(a.ins / r.meta.ins) + " y con la proyección de " + r.proy + " llegaría al " + repPct(al) + ". Para cumplirla le faltan " + Math.max(0, r.meta.ins - a.ins) + " en lo que resta de la semana; en esos días suele hacer " + r.jdHist + "."
+      : "Meta del periodo: " + r.meta.ins + " instalaciones. Llegó al " + repPct(al) + (al >= 1 ? "." : ", le faltaron " + (r.meta.ins - a.ins) + "."));
+  }
+  if (r.comp){
+    if (!r.comp.con) lec.push("Ningún coach capturó compromiso en su Plan semanal.");
+    else lec.push("Compromiso del plan: " + r.comp.ins + " instalaciones de " + r.comp.con + " de " + r.comp.total + " coaches. " +
+      (cierra ? "Esos coaches proyectan " : "Esos coaches instalaron ") + r.comp.real + ", el " + repPct(r.comp.ins ? r.comp.real / r.comp.ins : null) + " de lo comprometido.");
+  }
+  const meta = Number(el("metaConversion").value) || 88;
+  lec.push("Conversión: " + repPct(a.conv) + " de lo validado en el periodo (" + a.ins + " de " + a.val + "). Camada de 30 días: " + repPct(r.cam.pct) +
+    " contra la meta de " + meta + "%" + (r.cam.falta ? "; faltan " + r.cam.falta + " instalaciones." : "."));
+  const tr = repTop(a.mot)[0];
+  lec.push("Rechazo: " + repPct(a.pRech) + " de las oportunidades (" + a.rech + " de " + a.op + ")" + (tr ? "; el motivo principal es " + tr[0].toLowerCase() + " (" + tr[1] + ")." : "."));
+  if (r.canc){
+    const pc = (r.canc.length + a.ins) ? r.canc.length / (r.canc.length + a.ins) : null;
+    const tc = repConteo(r.canc, "motivo")[0];
+    lec.push("Instalaciones canceladas: " + r.canc.length + ", el " + repPct(pc) + " de las órdenes cerradas" + (r.cancA ? " (" + lbl + ": " + r.cancA.length + ")" : "") +
+      (tc ? "; el motivo principal es " + tc[0].toLowerCase() + " (" + tc[1] + ")." : "."));
+  }
+
+  // áreas de oportunidad, de lo más grave a lo menos
+  const bajos = r.coaches.filter(function(c){ return c.meta && (cierra ? c.proy : c.act.ins) / c.meta < 0.9; })
+    .sort(function(x, y){ return (cierra ? x.proy : x.act.ins) / x.meta - (cierra ? y.proy : y.act.ins) / y.meta; });
+  if (bajos.length) opp.push("<b>Coaches debajo del 90% de su meta" + (cierra ? " (proyectado)" : "") + ":</b> " +
+    bajos.slice(0, 4).map(function(c){ return repNombre(c.nombre) + " (" + repPct((cierra ? c.proy : c.act.ins) / c.meta) + ")"; }).join(", ") + ". Acompañamiento en campo y revisión de zonas.");
+  if (r.comp && r.comp.sin.length) opp.push("<b>Sin compromiso capturado:</b> " + r.comp.sin.map(repNombre).join(", ") + ". Sin plan no hay contra qué medir a esos equipos.");
+  const caida = r.coaches.filter(function(c){ return c.ant.ins - c.act.ins >= 5; }).sort(function(x, y){ return (y.ant.ins - y.act.ins) - (x.ant.ins - x.act.ins); })[0];
+  if (caida) opp.push("<b>" + repNombre(caida.nombre) + ":</b> bajó de " + caida.ant.ins + " a " + caida.act.ins + " instalaciones contra " + lbl + ". Revisar asistencia, permisos y zonas.");
+  const rechAlto = r.coaches.filter(function(c){ return c.act.op >= 10 && c.act.pRech >= 0.27; }).sort(function(x, y){ return y.act.pRech - x.act.pRech; })[0];
+  if (rechAlto) opp.push("<b>" + repNombre(rechAlto.nombre) + "</b> rechaza " + repPct(rechAlto.act.pRech) + " de lo que levanta. Revisar la calidad de la venta antes de subirla.");
+  if (tr && repSugerencia(tr[0], "rech")) opp.push("<b>Rechazos por " + tr[0].toLowerCase() + ":</b> " + repSugerencia(tr[0], "rech"));
+  const tcan = r.canc ? repConteo(r.canc, "motivo")[0] : null;
+  if (tcan && tcan[1] >= 3 && repSugerencia(tcan[0], "canc")) opp.push("<b>Cancelaciones por " + tcan[0].toLowerCase() + " (" + tcan[1] + "):</b> " + repSugerencia(tcan[0], "canc"));
+  if (r.cam.falta) opp.push("<b>Conversión:</b> a la camada de 30 días le faltan " + r.cam.falta + " instalaciones para el " + meta + "%. Hay " + r.cam.pend + " ventas validadas sin instalar: seguimiento con Despacho.");
+  const sinInst = r.coaches.reduce(function(s, c){ return s + c.sinInst; }, 0);
+  if (sinInst >= 3) opp.push("<b>" + sinInst + " vendedores sin ninguna instalación</b> en el periodo. Revisarlos en el arranque del día.");
+  if (!opp.length) opp.push("Sin focos rojos en el periodo: mantener el ritmo y cuidar la conversión.");
+  return { lec:lec, opp:opp };
+}
+
+function repBarra(lbl, real, meta, proy){
+  if (!meta) return "";
+  const esc = function(v){ return Math.min(v / meta / 1.2 * 100, 100).toFixed(1); };
+  const al = (proy != null ? proy : real) / meta;
+  return '<div class="rep-mrow"><span class="rep-ml">' + lbl + '</span><div class="rep-mb">' +
+    (proy != null ? '<span class="rep-bp" style="width:' + esc(proy) + '%"></span>' : "") +
+    '<span class="rep-br ' + repClsMeta(al) + '" style="width:' + esc(real) + '%"></span><span class="rep-mk" style="left:' + (100 / 1.2).toFixed(1) + '%"></span></div>' +
+    '<span class="rep-mv"><b class="' + repClsMeta(al) + '">' + repPct(real / meta) + "</b> " + real + " de " + meta +
+    (proy != null ? " · proyección " + proy + " (" + repPct(proy / meta) + ")" : "") + "</span></div>";
+}
+
+function repLista(pares, pie){
+  const li = pares.slice(0, 5).map(function(p){ return "<li><span>" + repEsc(p[0]) + "</span><b>" + p[1] + "</b></li>"; }).join("") || "<li><span>Sin registros</span><b>0</b></li>";
+  return '<ul class="rep-lst">' + li + "</ul>" + (pie ? '<p class="rep-nota">' + pie + "</p>" : "");
+}
+
+function repWhatsApp(r, per, tx){
+  const a = r.act, cierra = per.tipo === "actual" && per.abierta;
+  const lineas = ["*Reporte comercial · " + per.titulo + "*", "*Líder:* " + repNombre(r.L.nombre), per.detalle, "",
+    "• Oportunidades: " + a.op + " (" + per.etqA.trim() + ": " + r.ant.op + ")",
+    "• Validadas: " + a.val + " (" + per.etqA.trim() + ": " + r.ant.val + ")",
+    "• Instalaciones: " + a.ins + " (" + per.etqA.trim() + ": " + r.ant.ins + ")",
+    "• Meta: " + r.meta.ins + " · alcance " + repPct(a.ins / (r.meta.ins || 1)) + (cierra ? " · cierre proyectado " + r.proy + " (" + repPct(r.proy / (r.meta.ins || 1)) + ")" : "")];
+  if (r.comp) lineas.push("• Compromiso del plan: " + r.comp.ins + " (" + r.comp.con + " de " + r.comp.total + " coaches) · " + repPct(r.comp.ins ? r.comp.real / r.comp.ins : null));
+  lineas.push("• Conversión: " + repPct(a.conv) + " · camada 30 días " + repPct(r.cam.pct));
+  lineas.push("• Rechazo: " + repPct(a.pRech) + (r.canc ? " · instalaciones canceladas: " + r.canc.length : ""));
+  lineas.push("", "*Por coach (instalaciones · meta" + (r.comp ? " · compromiso" : "") + ")*");
+  r.coaches.forEach(function(c){
+    lineas.push("• " + repNombre(c.nombre) + ": " + c.act.ins + (cierra ? " (proy. " + c.proy + ")" : "") + " · " + c.meta + (r.comp ? " · " + (c.comp ? c.comp.ins : "sin plan") : ""));
+  });
+  lineas.push("", "*Lectura*");
+  tx.lec.forEach(function(t){ lineas.push("• " + t); });
+  lineas.push("", "*Áreas de oportunidad*");
+  tx.opp.forEach(function(t){ lineas.push("• " + t.replace(/<\/?b>/g, "*")); });
+  return lineas.join("\n");
+}
+
+function reporteComercialHtml(){
+  const per = repPeriodo();
+  const listos = INFO_EQ.estado === "ok";
+  const lideres = listos ? repLideres() : [];
+  if (esDirectorRep() && REP.lider && !lideres.some(function(l){ return l.k === REP.lider; })) REP.lider = "";
+  const opcL = esDirectorRep() && lideres.length > 1
+    ? '<label class="campo">Líder<select id="repLider"><option value="">Todos</option>' +
+      lideres.map(function(l){ return '<option value="' + repEsc(l.k) + '"' + (REP.lider === l.k ? " selected" : "") + ">" + repEsc(repNombre(l.nombre)) + "</option>"; }).join("") +
+      "</select></label>" : "";
+  const avisos = [];
+  if (!listos) avisos.push(INFO_EQ.estado === "cargando" || CARGANDO_EQ ? "Leyendo plantilla y ranking para la meta…" : "Plantilla: " + INFO_EQ.estado);
+  if (ORD.estado !== "ok") avisos.push(CARGANDO_ORD ? "Leyendo ATENCION ORDENES para las cancelaciones…" : "Atención de órdenes: " + ORD.estado);
+  if (per.lunes && PLANES_APP.estado === "cargando") avisos.push("Leyendo los planes semanales…");
+  if (per.lunes && PLANES_APP.estado === "error") avisos.push("Sin compromisos: " + repEsc(PLANES_APP.error) +
+    (/no reconocida/i.test(PLANES_APP.error) ? " (falta publicar la versión nueva del Apps Script con Planes.gs)" : ""));
+
+  let html = '<section class="panel"><h2>Reporte comercial <span class="sub">' + per.titulo + "</span></h2>" +
+    '<div class="rep"><div class="controles rep-controles">' +
+    '<label class="campo">Periodo<select id="repPeriodo">' +
+    [["actual", "Semana en curso"], ["cerrada", "Semana cerrada"], ["mes", "Mes cerrado"]].map(function(o){
+      return '<option value="' + o[0] + '"' + (REP.periodo === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+    }).join("") + "</select></label>" + opcL +
+    '<div class="acciones"><button type="button" id="repImprimir">Imprimir o guardar PDF</button></div></div>' +
+    '<p class="rep-per">' + per.detalle + (per.tipo === "actual" && per.abierta ? " La proyección de cierre usa el ritmo con el que cada líder terminó las dos semanas anteriores." : "") + "</p>" +
+    (avisos.length ? '<div class="aviso">' + avisos.join("<br>") + "</div>" : "");
+  if (!listos){ return html + "</div></section>"; }
+
+  per.cancA = repCanceladas(per.iniA, per.finA);
+  const canc = repCanceladas(per.ini, per.fin);
+  const elegidos = lideres.filter(function(l){ return !REP.lider || l.k === REP.lider; });
+  const rs = elegidos.map(function(L){ return repLider(L, per, canc); });
+  const cierra = per.tipo === "actual" && per.abierta;
+
+  // resumen del distrito (o del líder)
+  const T = { op:0, val:0, ins:0, antIns:0, rech:0, meta:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0 };
+  rs.forEach(function(r){
+    T.op += r.act.op; T.val += r.act.val; T.ins += r.act.ins; T.antIns += r.ant.ins; T.rech += r.act.rech; T.meta += r.meta.ins; T.proy += r.proy;
+    if (r.comp){ T.comp += r.comp.ins; T.compReal += r.comp.real; }
+    T.cam += r.cam.v; T.camI += r.cam.i; T.canc += r.canc ? r.canc.length : 0;
+  });
+  const filaRes = function(nombre, x, ancla){
+    return "<tr><td class=\"rep-nm\">" + (ancla ? '<a href="#' + ancla + '">' + nombre + "</a>" : nombre) + "</td><td>" + x.op + "</td><td>" + x.val + '</td><td class="rep-b">' + x.ins + "</td><td>" + x.dIns + "</td><td>" + x.meta + '</td><td class="dif ' + repClsMeta(x.alc) + '">' + repPct(x.alc) + "</td>" +
+      (cierra ? '<td class="rep-b">' + x.proy + '</td><td class="dif ' + repClsMeta(x.alcP) + '">' + repPct(x.alcP) + "</td>" : "") +
+      (per.lunes ? "<td>" + x.comp + '</td><td class="dif ' + repClsMeta(x.alcC) + '">' + repPct(x.alcC) + "</td>" : "") +
+      '<td class="dif ' + repClsConv(x.conv) + '">' + repPct(x.conv) + '</td><td class="dif ' + repClsConv(x.cam) + '">' + repPct(x.cam) + "</td><td>" + repPct(x.rech) + "</td>" +
+      (canc ? "<td>" + x.canc + '</td><td class="dif ' + repClsCanc(x.pc) + '">' + repPct(x.pc) + "</td>" : "") + "</tr>";
+  };
+  let filas = rs.map(function(r){
+    const nc = r.canc ? r.canc.length : 0;
+    return filaRes(repNombre(r.L.nombre), { op:r.act.op, val:r.act.val, ins:r.act.ins, dIns:repDelta(r.act.ins, r.ant.ins), meta:r.meta.ins,
+      alc: r.meta.ins ? r.act.ins / r.meta.ins : null, proy:r.proy, alcP: r.meta.ins ? r.proy / r.meta.ins : null,
+      comp: r.comp ? r.comp.ins + ' <span class="rep-cov">(' + r.comp.con + "/" + r.comp.total + ")</span>" : "—",
+      alcC: r.comp && r.comp.ins ? r.comp.real / r.comp.ins : null, conv:r.act.conv, cam:r.cam.pct, rech:r.act.pRech,
+      canc:nc, pc:(nc + r.act.ins) ? nc / (nc + r.act.ins) : null }, "rep-" + r.L.k.replace(/[^A-Z]/g, ""));
+  }).join("");
+  if (rs.length > 1) filas += filaRes("<b>Total</b>", { op:T.op, val:T.val, ins:T.ins, dIns:repDelta(T.ins, T.antIns), meta:T.meta,
+    alc: T.meta ? T.ins / T.meta : null, proy:T.proy, alcP: T.meta ? T.proy / T.meta : null, comp:T.comp, alcC: T.comp ? T.compReal / T.comp : null,
+    conv: T.val ? T.ins / T.val : null, cam: T.cam ? T.camI / T.cam : null, rech: T.op ? T.rech / T.op : null,
+    canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }).replace("<tr>", '<tr class="total">');
+  const encRes = "<tr><th class=\"rep-nm\">Líder</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th><th>Meta</th><th>Alcance</th>" +
+    (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
+    "<th>Conversión</th><th>Camada 30 d</th><th>% rechazo</th>" + (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
+  html += '<div class="rep-big"><div><b>' + T.ins + "</b><span>instalaciones</span></div>" + (cierra ? "<div><b>" + T.proy + "</b><span>cierre proyectado</span></div>" : "") +
+    "<div><b>" + repPct(T.meta ? (cierra ? T.proy : T.ins) / T.meta : null) + "</b><span>" + (cierra ? "de la meta, proyectado" : "de la meta") + "</span></div>" +
+    "<div><b>" + repPct(T.val ? T.ins / T.val : null) + "</b><span>conversión</span></div></div>" +
+    '<div class="scroll"><table class="compacta rep-t"><thead>' + encRes + "</thead><tbody>" + filas + "</tbody></table></div>" +
+    (per.lunes ? '<p class="rep-nota">* El compromiso de cada líder es la suma de los coaches que capturaron su Plan semanal, y se compara solo contra lo ' + (cierra ? "que proyectan" : "que instalaron") + " esos coaches.</p>" : "") +
+    "</div></section>";
+
+  // una sección por líder
+  rs.forEach(function(r){
+    const a = r.act, tx = repTextos(r, per);
+    const al = r.meta.ins ? (cierra ? r.proy : a.ins) / r.meta.ins : null;
+    const tag = al === null ? "" : al >= 1 ? '<span class="rep-tag v">Cumple la meta</span>' : al >= 0.9 ? '<span class="rep-tag a">Cerca de la meta</span>' : '<span class="rep-tag r">Debajo de la meta</span>';
+    const kpis = [["Oportunidades", a.op, repDelta(a.op, r.ant.op)], ["Validadas", a.val, repDelta(a.val, r.ant.val)], ["Instalaciones", a.ins, repDelta(a.ins, r.ant.ins)],
+      ["% rechazo", repPct(a.pRech), repDelta(a.pRech || 0, r.ant.pRech || 0, true)], ["ARPU sin IVA", "$" + Math.round(a.arpu), repDelta(a.arpu, r.ant.arpu)],
+      cierra ? ["Cierre proyectado", r.proy, '<span class="rep-d">' + repPct(r.meta.ins ? r.proy / r.meta.ins : null) + " de la meta</span>"] : ["Conversión", repPct(a.conv), '<span class="rep-d">camada 30 d: ' + repPct(r.cam.pct) + "</span>"]];
+    const barras = repBarra("Oportunidades", a.op, r.meta.op, cierra ? Math.round(a.op * r.fac) : null) +
+      repBarra("Validadas", a.val, r.meta.val, cierra ? Math.round(a.val * r.fac) : null) + repBarra("Instalaciones", a.ins, r.meta.ins, cierra ? r.proy : null);
+    const filasC = r.coaches.map(function(c){
+      const alc = c.meta ? (cierra ? c.proy : c.act.ins) / c.meta : null;
+      const vsC = c.comp ? (cierra ? c.proy : c.act.ins) / c.comp.ins : null;
+      return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" +
+        (cierra ? '<td class="rep-b">' + c.proy + "</td>" : "") + "<td>" + c.meta + '</td><td class="dif ' + repClsMeta(alc) + '">' + repPct(alc) + "</td>" +
+        (per.lunes ? (c.comp ? '<td class="' + (c.comp.ins < c.meta ? "rep-rojo" : "") + '">' + c.comp.ins + '</td><td class="dif ' + repClsMeta(vsC) + '">' + repPct(vsC) + "</td>" : '<td class="rep-rojo">sin plan</td><td>—</td>') : "") +
+        '<td class="dif ' + repClsConv(c.act.conv) + '">' + repPct(c.act.conv) + '</td><td class="dif ' + repClsConv(c.cam.pct) + '">' + repPct(c.cam.pct) + "</td><td" + (c.act.pRech >= 0.27 && c.act.op >= 10 ? ' class="rep-rojo"' : "") + ">" + repPct(c.act.pRech) + "</td>" +
+        (r.canc ? "<td>" + c.canc + "</td>" : "") + "<td>" + c.cam.pend + "</td><td" + (c.sinInst >= 3 ? ' class="rep-rojo"' : "") + ">" + c.sinInst + "</td></tr>";
+    }).join("");
+    const encC = '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (cierra ? "<th>Proy.</th>" : "") +
+      "<th>Meta</th><th>Alcance</th>" + (per.lunes ? "<th>Compromiso</th><th>vs comp.</th>" : "") + "<th>Conv.</th><th>Camada 30 d</th><th>% rech.</th>" +
+      (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Vend. sin inst.</th></tr>";
+    const pc = r.canc && (r.canc.length + a.ins) ? r.canc.length / (r.canc.length + a.ins) : null;
+    const wa = repWhatsApp(r, per, tx);
+    const id = "rep-" + r.L.k.replace(/[^A-Z]/g, "");
+    html += '<section class="panel"><h2>' + repEsc(repNombre(r.L.nombre)) + ' <span class="sub">' + r.coaches.length + " coaches · " + r.personas + " personas</span></h2>" +
+      '<div class="rep" id="' + id + '"><div class="rep-cab">' + tag + "</div>" +
+      '<div class="rep-kpis">' + kpis.map(function(k){ return '<div><span class="rep-lb">' + k[0] + "</span><b>" + k[1] + "</b>" + k[2] + "</div>"; }).join("") + "</div>" +
+      '<h3>Alcance de la meta ' + (per.tipo === "mes" ? "mensual" : "semanal") + '</h3><div class="rep-meta">' + barras + '</div><p class="rep-nota">Meta por ranking de su gente (la misma de Equipos). ' +
+      (cierra ? "Barra sólida: lo real; rayado: la proyección al domingo. " : "") + "La línea negra marca el 100%.</p>" +
+      '<div class="rep-dos"><div><h3>Lectura</h3><ul class="rep-bul">' + tx.lec.map(function(t){ return "<li>" + t + "</li>"; }).join("") + "</ul></div>" +
+      '<div><h3>Áreas de oportunidad</h3><ul class="rep-bul rep-opp">' + tx.opp.map(function(t){ return "<li>" + t + "</li>"; }).join("") + "</ul></div></div>" +
+      '<h3>Resultado por coach</h3><div class="scroll"><table class="compacta rep-t"><thead>' + encC + "</thead><tbody>" + filasC + "</tbody></table></div>" +
+      '<div class="rep-cuatro"><div><h3>Motivos de rechazo</h3>' + repLista(repTop(a.mot), a.rech + " rechazos de " + a.op + " oportunidades") + "</div>" +
+      "<div><h3>Motivos de cancelación de instalación</h3>" + (r.canc ? repLista(repConteo(r.canc, "motivo"), r.canc.length + " canceladas, el " + repPct(pc) + " de las órdenes cerradas") : '<p class="rep-nota">Leyendo ATENCION ORDENES…</p>') + "</div>" +
+      "<div><h3>Instalaciones por canal</h3>" + repLista(repTop(a.canal)) + "</div>" +
+      "<div><h3>Vendedores con más instalaciones</h3>" + repLista(repTop(a.vend).slice(0, 5).map(function(p){ return [repNombre(p[0]), p[1]]; })) + "</div></div>" +
+      '<div class="rep-wa"><button type="button" class="sec" data-repwa="' + id + '">Copiar para WhatsApp</button><button type="button" class="sec" data-repwaabre="' + id + '">Enviar por WhatsApp</button><span class="rep-ok"></span>' +
+      '<textarea class="oculto" id="wa-' + id + '" readonly>' + repEsc(wa) + "</textarea></div></div></section>";
+  });
+
+  html += '<section class="panel"><h2>Cómo se calcula <span class="sub">reporte comercial</span></h2><div class="rep"><ul class="rep-bul rep-como">' +
+    "<li>Oportunidades por fecha de creación, validadas por fecha de validación (sin las que están en Perdida) e instalaciones por fecha de activación, con las mismas reglas de Semanal. Cada venta cuenta para el líder y el coach que trae la base.</li>" +
+    "<li>Meta: la de Equipos. Cada persona suma su meta semanal según su ranking (Platino, Oro, Plata, Bronce, Condicionado, Entrenamiento, vacantes y sin ranking, con los valores de Ajustes). Validadas y oportunidades llevan el factor escalonado de Ajustes. En el mes, la meta semanal por " + (el("semanasMes").value || "4.33") + " semanas.</li>" +
+    "<li>Compromiso: el Plan semanal más reciente de cada coach en la app Día a día (Obj. Instalaciones). Un plan en cero cuenta como sin plan. En rojo, los compromisos abajo de la meta del coach. En el mes no aplica porque el plan es semanal.</li>" +
+    "<li>Conversión: instaladas entre validadas del periodo (puede pasar de 100%). Camada de 30 días: de lo validado en los 30 días que terminan el último día del periodo, cuánto ya se instaló; meta " + (el("metaConversion").value || 88) + "%.</li>" +
+    "<li>Instalaciones canceladas: ATENCION ORDENES, tipo Instalación con estatus Cancelada, por fecha de término; se asignan al líder y coach de la venta que originó la cuenta. % de cancelación = canceladas entre (instaladas + canceladas).</li>" +
+    "<li>Semana en curso: se compara contra los mismos días de la semana anterior. La proyección multiplica lo instalado por el ritmo con el que cada líder cerró las dos semanas anteriores (semana completa entre los mismos días).</li>" +
+    "<li>Lectura y áreas de oportunidad: se generan con reglas fijas sobre estos números.</li></ul></div></section>";
+  return html;
+}
+
+function activarReporte(){
+  const sp = el("repPeriodo");
+  if (sp) sp.addEventListener("change", function(){ REP.periodo = sp.value; pintar(); });
+  const sl = el("repLider");
+  if (sl) sl.addEventListener("change", function(){ REP.lider = sl.value; pintar(); });
+  const bi = el("repImprimir");
+  if (bi) bi.addEventListener("click", function(){ window.print(); });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-repwa]"), function(b){
+    b.addEventListener("click", function(){
+      const ta = el("wa-" + b.getAttribute("data-repwa")), ok = b.parentNode.querySelector(".rep-ok");
+      const listo = function(){ ok.textContent = "Copiado. Pégalo en WhatsApp."; };
+      const aMano = function(){ ta.classList.remove("oculto"); ta.focus(); ta.select(); ok.textContent = "Selecciona el texto y cópialo."; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(listo, aMano); else aMano();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-repwaabre]"), function(b){
+    b.addEventListener("click", function(){
+      const ta = el("wa-" + b.getAttribute("data-repwaabre"));
+      window.open("https://wa.me/?text=" + encodeURIComponent(ta.value), "_blank", "noopener");
+    });
+  });
+}
+
 function pintar(){
   if (!FILAS.length){ el("salida").innerHTML = ""; return; }
   DET_RECH = {};
@@ -7426,6 +8074,11 @@ function pintar(){
   } else if (VISTA === "equipos"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     html = equiposHtml();
+  } else if (VISTA === "reporte"){
+    if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
+    if (ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
+    if (PLANES_APP.estado === "sin cargar" && !CARGANDO_PLANES) cargarPlanes();
+    html = reporteComercialHtml();
   } else if (VISTA === "ajustes"){
     // el contenido real vive en el panel fijo #panelAjustes (arriba de #salida);
     // aquí no hay nada dinámico que pintar
@@ -7466,6 +8119,7 @@ function pintar(){
   });
 
   el("salida").innerHTML = html;
+  if (VISTA === "reporte") activarReporte();
   scrollPegadoPorTitulo("Cuentas duplicadas");
   scrollPegadoPorTitulo("Validaciones pendientes por instalar");
   scrollPegadoPorTitulo("Op Rechazadas");
@@ -7773,6 +8427,7 @@ el("btnMenu").addEventListener("click", function(ev){
   if (el("cajon").classList.contains("oculto")) abrirCajon(); else cerrarCajon();
 });
 el("btnCerrarMenu").addEventListener("click", cerrarCajon);
+el("btnReporteComercial").addEventListener("click", irAReporte);
 el("fondoMenu").addEventListener("click", cerrarCajon);
 
 const OPCIONES_AGRUPAR = [
@@ -7800,7 +8455,11 @@ function ajustaCajasDia(){
   });
   // Atención de órdenes no usa nada de los filtros de venta: lleva su propio panel
   el("cajaOrdenesFiltros").classList.toggle("oculto", !esOrdenes);
-  el("panelConsulta").classList.toggle("oculto", esOrdenes);
+  el("panelConsulta").classList.toggle("oculto", esOrdenes || VISTA === "reporte");
+  // Reporte comercial: trae sus propios controles, se imprime solo, y su botón del menú
+  // lateral es para Director y líderes
+  document.body.classList.toggle("vista-reporte", VISTA === "reporte");
+  el("menuReporte").classList.toggle("oculto", !puedeVerReporte());
   const acc = document.querySelector(".panel > .acciones");
   if (acc) acc.style.display = "";
   const soloOS0 = soloVistasOs();
@@ -7912,6 +8571,7 @@ el("btnRecargar").addEventListener("click", function(){
   SEG_TODOS = { estado:"sin cargar", porOS:{} };   // seguimiento de ventas
   SEG_HIST = { os:"", estado:"sin cargar", registros:[] };
   ORD.estado = "sin cargar";          // atención de órdenes
+  PLANES_APP.estado = "sin cargar";   // compromisos del Plan semanal (Reporte comercial)
   cargar();
 });
 ["hojaTecnico","idTecnico","colLlave","colClave"].forEach(function(id){
@@ -8256,6 +8916,11 @@ function abrirApp(){
         b.classList.toggle("on", b.getAttribute("data-vista") === VISTA);
       });
     }
+  }
+  // la app Día a día abre esta misma liga con #reporte: se entra directo al Reporte comercial
+  if (/^#reporte$/i.test(location.hash) && puedeVerReporte()){
+    VISTA = "reporte";
+    Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(b){ b.classList.remove("on"); });
   }
   ajustaAgrupar();
   ajustaCajasDia();

@@ -64,6 +64,11 @@ function _manejar(e) {
         res = _hoja(p.token || '', p.nombre || '');
         break;
 
+      // ---- COMPROMISOS DEL PLAN SEMANAL (archivo Planes.gs) ----
+      case 'planes':
+        res = _planes(p.token || '', p.desde || '', p.hasta || '');
+        break;
+
       // ---- SUBIR / REEMPLAZAR VENTA TECNICO ----
       case 'subirVentaTecnico':
         res = _subirVentaTecnico(p.token || '', p.libro || '', p.pestana || '', p.colLlave || '', p.colClave || '', p.filas || '');
@@ -113,7 +118,7 @@ function _manejar(e) {
         break;
 
       default:
-        res = { ok: false, error: 'Acción no reconocida. Acciones válidas: login, validar, datos, hoja, subirVentaTecnico, subirVentaTecnicoNuevo, subirOsPorInstalar, subirAtencionOrdenes, subirBaseDatos, ultimasCargas, cambiarpin, nuevospins, micambiopin, resetpin' };
+        res = { ok: false, error: 'Acción no reconocida. Acciones válidas: login, validar, datos, hoja, planes, subirVentaTecnico, subirVentaTecnicoNuevo, subirOsPorInstalar, subirAtencionOrdenes, subirBaseDatos, ultimasCargas, cambiarpin, nuevospins, micambiopin, resetpin' };
     }
   } catch (err) {
     res = { ok: false, error: 'Error interno: ' + err.message };
