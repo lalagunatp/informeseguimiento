@@ -353,7 +353,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 96</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 97</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -579,6 +579,12 @@
         </label>
         <label class="campo">Semanas promedio por mes
           <input type="text" id="semanasMes" value="4.33">
+        </label>
+        <label class="campo">Meta semanal de venta técnico por canal (instalaciones = validadas = oportunidades)
+          <input type="text" id="metasTecnico" value="SLK:38; CRC:22">
+        </label>
+        <label class="campo">Mínimo semanal de instalaciones por vendedor de venta técnico
+          <input type="text" id="minimoTecnico" value="1">
         </label>
         <label class="campo">Promedio de instalaciones desde
           <select id="origenPromedio">
@@ -2817,6 +2823,7 @@ let PLANTILLA = [];      // {numero, nombre, puesto, coach, lider, vacante, fech
 let PUESTO_POR_NOMBRE = new Map();   // nombre normalizado -> puesto (incluye coaches y líderes, no solo de venta)
 let PLANT_CRUDO = { enc:[], filas:[] };   // renglones tal cual, para buscar el código del técnico
 let MAPA_TEC_PERSONA = new Map();         // código de técnico -> {nombre, lider, coach}
+let CODIGO_TEC_NOMBRE = new Map();        // nombre normalizado -> código de técnico (aunque no haya vendido)
 let COACHES_TEC = new Set();              // coaches de venta técnico, para el alcance del canal
 let INFO_TEC_PLANT = { col:"", cruces:0, asignadas:0 };
 let RANKINGS = new Map();// numero -> {ranking, inst:{clave:n}, fuente}
@@ -3153,6 +3160,8 @@ async function cargarEquipos(){
 // se busca en la plantilla para saber a qué líder y coach pertenece
 function ligarTecnicos(rows, iEnc, enc, cNom, cCoa){
   MAPA_TEC_PERSONA = new Map();
+  CODIGO_TEC_NOMBRE = new Map();
+  IDX_REP_CTA = null; IDX_REP_TEC = null;   // el reporte comercial los rearma con los códigos nuevos
   INFO_TEC_PLANT = { col:"", cruces:0, asignadas:0 };
   if (!TEC_FILAS.length || !rows.length) return;
 
@@ -3201,6 +3210,8 @@ function ligarTecnicos(rows, iEnc, enc, cNom, cCoa){
   for (let r = iEnc + 1; r < rows.length; r++){
     const v = celdasTexto(rows[r]);
     const cod = v[mejor];
+    // el código de todo técnico de la plantilla, venda o no (para "sin instalaciones")
+    if (cod && cNom >= 0 && v[cNom] && /^[A-Z]{3}[A-Z0-9]*\d/.test(normaliza(cod))) CODIGO_TEC_NOMBRE.set(normaliza(v[cNom]), normaliza(cod));
     if (!cod || !codigos[normaliza(cod)]) continue;
     const nombre = cNom >= 0 ? v[cNom] : "";
     const coach = cCoa >= 0 ? v[cCoa] : "";
@@ -7617,7 +7628,7 @@ function repPeriodo(){
 
 // lo que pasó en un periodo para las filas que cumplen `filtro`
 function repMedir(filtro, ini, fin){
-  const o = { op:0, val:0, ins:0, rech:0, imp:0, mot:new Map(), canal:new Map(), vend:new Map(), dia:[0,0,0,0,0,0,0] };
+  const o = { op:0, val:0, ins:0, rech:0, imp:0, mot:new Map(), canal:new Map(), vend:new Map(), tec:new Map(), dia:[0,0,0,0,0,0,0] };
   FILAS.forEach(function(f){
     if (!filtro(f)) return;
     if (repEntre(f.fOp, ini, fin)){
@@ -7635,6 +7646,7 @@ function repMedir(filtro, ini, fin){
       o.canal.set(f.canal, (o.canal.get(f.canal) || 0) + 1);
       const v = normaliza(f.vendedor);
       o.vend.set(v, (o.vend.get(v) || 0) + 1);
+      if (f.codTec) o.tec.set(f.codTec, (o.tec.get(f.codTec) || 0) + 1);
       o.dia[diaIndice(f.fIns)]++;
     }
   });
@@ -7668,7 +7680,8 @@ function repIndiceCuentas(){
   FILAS.forEach(function(f){
     const k = clave(f.cuenta), can = normaliza(f.canal);
     if (!k || (CANALES_CON_COACH.indexOf(can) < 0 && can.indexOf("VENTA TECNICO") !== 0)) return;
-    m.set(k, { lider:normaliza(f.lider), coach:normaliza(f.coach), canal:can });
+    m.set(k, { lider:normaliza(f.lider), coach:normaliza(f.coach), canal:can,
+      coachTec: can.indexOf("VENTA TECNICO") === 0 ? normaliza(repCoachTec(f)) : "" });
   });
   IDX_REP_CTA = { n:FILAS.length, m:m };
   return m;
@@ -7682,7 +7695,7 @@ function repCanceladas(ini, fin){
     if (!esCancelada(o) || normaliza(o.tipo).indexOf("INSTALACION") !== 0 || !o.fTer) return;
     if (!repEntre(soloFecha(o.fTer), ini, fin)) return;
     const x = idx.get(clave(o.cuenta));
-    if (x) lista.push({ lider:x.lider, coach:x.coach, canal:x.canal, motivo:o.motivo || "Sin motivo" });
+    if (x) lista.push({ lider:x.lider, coach:x.coach, coachTec:x.coachTec, canal:x.canal, motivo:o.motivo || "Sin motivo" });
   });
   return lista;
 }
@@ -7718,28 +7731,124 @@ function repLideres(){
   return lista.sort(function(a, b){ return a.nombre.localeCompare(b.nombre, "es"); });
 }
 
+/* venta técnico: el vendedor es el técnico, identificado por su código (empieza con la
+   clave del canal: SLK…, CRC…; es la columna F de VENTA TECNICO y el número de empleado
+   en PLANTILLA), no por el vendedor que trae BASE DE DATOS. No lleva ranking: el canal
+   tiene una meta fija por semana (Ajustes) y a cada vendedor se le pide un mínimo. */
+function repCodigoDe(p){
+  const c = CODIGO_TEC_NOMBRE.get(normaliza(p.nombre));
+  if (c) return c;
+  const n = normaliza(p.numero);
+  return /^[A-Z]{3}[A-Z0-9]*\d/.test(n) ? n : "";
+}
+function repNombreTec(cod){
+  const x = MAPA_TEC_PERSONA.get(cod);
+  if (x && x.nombre) return x.nombre;
+  for (const e of CODIGO_TEC_NOMBRE) if (e[1] === cod) return e[0];
+  return "";
+}
+// coach del técnico que vendió (por su código); si no cruzó, el que trae la base
+function repCoachTec(f){
+  const x = f.codTec ? MAPA_TEC_PERSONA.get(f.codTec) : null;
+  if (x && x.coach && normaliza(x.coach) !== "SIN COACH") return x.coach;
+  return f.coach && f.coach !== "-" ? f.coach : "";
+}
+function repMetaTec(cve){
+  let m = 0;
+  el("metasTecnico").value.split(";").forEach(function(par){
+    const p = par.split(":");
+    if (p.length === 2 && normaliza(p[0]) === cve) m = Number(p[1].trim()) || 0;
+  });
+  return m;
+}
+function repMinTec(){ const n = Number(el("minimoTecnico").value); return isFinite(n) && n > 0 ? n : 1; }
+function repSemMes(){ return Number(el("semanasMes").value) || 4.33; }
+function repMinTexto(per){
+  const n = per.tipo === "mes" ? Math.round(repMinTec() * repSemMes()) : repMinTec();
+  return n + (n === 1 ? " instalación" : " instalaciones") + (per.tipo === "mes" ? " en el mes" : " en la semana");
+}
+function repAlta(p){
+  const s = String(p.fechaAlta || "").trim();
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if (m) return new Date(+m[1], m[2] - 1, +m[3]);
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  return m ? new Date(+m[3], m[2] - 1, +m[1]) : null;
+}
+// instalaciones de un código de técnico entre dos fechas (índice por código)
+let IDX_REP_TEC = null;
+function repInsTec(cod, ini, fin){
+  if (!IDX_REP_TEC || IDX_REP_TEC.n !== FILAS.length){
+    const m = new Map();
+    FILAS.forEach(function(f){
+      if (!f.codTec || !esInstalada(f) || !f.fIns) return;
+      if (!m.has(f.codTec)) m.set(f.codTec, []);
+      m.get(f.codTec).push(f.fIns);
+    });
+    IDX_REP_TEC = { n:FILAS.length, m:m };
+  }
+  return (IDX_REP_TEC.m.get(cod) || []).filter(function(d){ return repEntre(d, ini, fin); }).length;
+}
+
 // canal de venta técnico, uno por clave de Ajustes (SLK, CRC…) más "otros"; solo el
-// Director. La venta cuenta por el canal ya clasificado (canalDe) y la gente por
-// canalDePersona, igual que en Equipos
+// Director. La venta cuenta por el canal ya clasificado (canalDe); la gente son los
+// técnicos de la plantilla cuyo código empieza con la clave del canal
 function repCanalesTec(){
   if (!esDirectorRep()) return [];
-  return listaAjuste("clavesTecnico").concat(["OTROS"]).map(function(cve){
+  const claves = listaAjuste("clavesTecnico");
+  return claves.concat(["OTROS"]).map(function(cve){
     const nombre = "Venta técnico " + (cve === "OTROS" ? "otros" : cve), kc = normaliza(nombre);
-    return { k:"TEC-" + cve, nombre:nombre, tit:nombre, tipo:"canal",
-      filtro:function(f){ return normaliza(f.canal) === kc; },
-      gente:PLANTILLA.filter(function(p){ return normaliza(canalDePersona(p)) === kc; }),
+    const gente = PLANTILLA.filter(function(p){
+      if (p.vacante) return false;
+      const c = repCodigoDe(p);
+      if (cve !== "OTROS") return c.indexOf(cve) === 0;
+      if (c) return !claves.some(function(k){ return c.indexOf(k) === 0; });
+      return normaliza(canalDePersona(p)) === kc;
+    });
+    return { k:"TEC-" + cve, cve:cve, nombre:nombre, tit:nombre, tipo:"canal", metaSem:cve === "OTROS" ? 0 : repMetaTec(cve),
+      filtro:function(f){ return normaliza(f.canal) === kc; }, coachDe:repCoachTec, gente:gente,
       cancDe:function(c){ return c.canal === kc; } };
   });
+}
+
+// vendedores de un canal técnico debajo del mínimo en el periodo, con cuántas semanas
+// (o meses) seguidas llevan así; no se cuentan periodos anteriores a su alta
+function repSinInstTec(gente, per){
+  const minS = repMinTec(), esMes = per.tipo === "mes";
+  const minP = esMes ? Math.round(minS * repSemMes()) : minS;
+  const lista = [];
+  gente.forEach(function(p){
+    const cod = repCodigoDe(p);
+    if (!cod) return;
+    const alta = repAlta(p);
+    if (alta && alta > per.fin) return;   // todavía no entraba
+    const n = repInsTec(cod, per.ini, per.fin);
+    if (n >= minP) return;
+    let racha = 1;
+    for (let i = 1; i < (esMes ? 3 : 4); i++){
+      const ini = esMes ? new Date(per.ini.getFullYear(), per.ini.getMonth() - i, 1) : repDia(per.lunes, -7 * i);
+      const fin = esMes ? new Date(per.ini.getFullYear(), per.ini.getMonth() - i + 1, 0) : repDia(ini, 6);
+      if (alta && fin < alta) break;
+      if (repInsTec(cod, ini, fin) >= minP) break;
+      racha++;
+    }
+    lista.push({ nombre:p.nombre, cod:cod, coach:p.coach, n:n, racha:racha, nuevo: !!(alta && alta > per.ini) });
+  });
+  return lista.sort(function(a, b){ return b.racha - a.racha || a.n - b.n || a.nombre.localeCompare(b.nombre, "es"); });
 }
 
 // todo lo de un líder o de un canal de venta técnico: totales, coaches, canceladas,
 // proyección y reglas de lectura
 function repLider(L, per, canc){
-  const deL = L.filtro;
+  const deL = L.filtro, tec = L.tipo === "canal";
+  const coachDe = L.coachDe || function(f){ return f.coach; };
   const gente = L.gente;
-  const r = { L:L, act:repMedir(deL, per.ini, per.fin), ant:repMedir(deL, per.iniA, per.finA),
-    cam:repCamada(deL, per.fin), metaSem:repMetaInst(gente), personas:gente.length };
-  r.meta = repMetaDe(r.metaSem, per);
+  const r = { L:L, tec:tec, act:repMedir(deL, per.ini, per.fin), ant:repMedir(deL, per.iniA, per.finA),
+    cam:repCamada(deL, per.fin), metaSem:tec ? L.metaSem : repMetaInst(gente), personas:gente.length };
+  if (tec){
+    const m = per.tipo === "mes" ? Math.round(L.metaSem * repSemMes()) : L.metaSem;
+    r.meta = { ins:m, val:m, op:m };
+    r.sinInst = repSinInstTec(gente, per);
+  } else r.meta = repMetaDe(r.metaSem, per);
   r.canc = canc ? canc.filter(L.cancDe) : null;
   r.cancA = per.cancA ? per.cancA.filter(L.cancDe) : null;
 
@@ -7756,31 +7865,33 @@ function repLider(L, per, canc){
   // coaches: los de la plantilla (con su gente) en orden de instalaciones; en un canal
   // técnico también los que traen sus ventas, porque no todo técnico cruza con la plantilla
   const nombresCoach = Array.from(new Set(gente.map(function(p){ return p.coach; }).filter(Boolean)));
-  if (L.tipo === "canal"){
+  if (tec){
     const ya = new Set(nombresCoach.map(normaliza));
     FILAS.forEach(function(f){
       if (!deL(f) || !(repEntre(f.fOp, per.iniA, per.fin) || repEntre(f.fVal, per.iniA, per.fin) || repEntre(f.fIns, per.iniA, per.fin))) return;
-      const c = f.coach && f.coach !== "-" ? f.coach : "Sin coach", kc = c === "Sin coach" ? "" : normaliza(c);
+      const c = coachDe(f) || "Sin coach", kc = c === "Sin coach" ? "" : normaliza(c);
       if (!ya.has(kc)){ ya.add(kc); nombresCoach.push(c); }
     });
   }
   r.coaches = nombresCoach.map(function(c){
     const k = c === "Sin coach" ? "" : normaliza(c);
-    const deC = function(f){ const fc = normaliza(f.coach); return deL(f) && (fc === "-" ? "" : fc) === k; };
+    const deC = function(f){ const fc = normaliza(coachDe(f)); return deL(f) && (fc === "-" ? "" : fc) === k; };
     const suyos = gente.filter(function(p){ return normaliza(p.coach) === k; });
     const act = repMedir(deC, per.ini, per.fin);
     const x = { nombre:c, k:k, act:act, ant:repMedir(deC, per.iniA, per.finA), cam:repCamada(deC, per.fin),
-      meta:repMetaDe(repMetaInst(suyos), per).ins, personas:suyos.filter(function(p){ return !p.vacante; }).length,
+      meta:tec ? 0 : repMetaDe(repMetaInst(suyos), per).ins, personas:suyos.filter(function(p){ return !p.vacante; }).length,
       proy:Math.round(act.ins * r.fac),
-      comp: per.lunes ? repCompromiso(c, per.lunes) : null,
-      canc: r.canc ? r.canc.filter(function(z){ return z.coach === k; }).length : null };
-    x.sinInst = suyos.filter(function(p){ return !p.vacante && !act.vend.get(normaliza(p.nombre)); }).length;
+      comp: per.lunes && !tec ? repCompromiso(c, per.lunes) : null,
+      canc: r.canc ? r.canc.filter(function(z){ return (tec ? z.coachTec : z.coach) === k; }).length : null };
+    x.sinInst = tec ? r.sinInst.filter(function(v){ return normaliza(v.coach) === k; }).length
+      : suyos.filter(function(p){ return !p.vacante && !act.vend.get(normaliza(p.nombre)); }).length;
+    if (tec) x.recur = r.sinInst.filter(function(v){ return normaliza(v.coach) === k && v.racha >= 2; }).length;
     return x;
   }).sort(function(a, b){ return b.act.ins - a.act.ins; });
 
-  // compromiso del líder = suma de sus coaches que sí capturaron plan
+  // compromiso del líder = suma de sus coaches que sí capturaron plan (venta técnico no lleva)
   const conPlan = r.coaches.filter(function(c){ return c.comp; });
-  r.comp = per.lunes ? { ins:conPlan.reduce(function(s, c){ return s + c.comp.ins; }, 0), con:conPlan.length, total:r.coaches.length,
+  r.comp = per.lunes && !tec ? { ins:conPlan.reduce(function(s, c){ return s + c.comp.ins; }, 0), con:conPlan.length, total:r.coaches.length,
     real:conPlan.reduce(function(s, c){ return s + (per.tipo === "actual" ? c.proy : c.act.ins); }, 0),
     sin:r.coaches.filter(function(c){ return !c.comp; }).map(function(c){ return c.nombre; }) } : null;
   return r;
@@ -7828,8 +7939,12 @@ function repTextos(r, per){
   const meta = Number(el("metaConversion").value) || 88;
   lec.push("Conversión: " + repPct(a.conv) + " de lo validado en el periodo (" + a.ins + " de " + a.val + "). Camada de 30 días: " + repPct(r.cam.pct) +
     " contra la meta de " + meta + "%" + (r.cam.falta ? "; faltan " + r.cam.falta + " instalaciones." : "."));
-  const tr = repTop(a.mot)[0];
-  lec.push("Rechazo: " + repPct(a.pRech) + " de las oportunidades (" + a.rech + " de " + a.op + ")" + (tr ? "; el motivo principal es " + tr[0].toLowerCase() + " (" + tr[1] + ")." : "."));
+  // venta técnico no mide el rechazo de oportunidades; mide a los vendedores debajo del mínimo
+  const tr = r.tec ? null : repTop(a.mot)[0];
+  if (!r.tec) lec.push("Rechazo: " + repPct(a.pRech) + " de las oportunidades (" + a.rech + " de " + a.op + ")" + (tr ? "; el motivo principal es " + tr[0].toLowerCase() + " (" + tr[1] + ")." : "."));
+  const recur = r.tec ? r.sinInst.filter(function(v){ return v.racha >= 2; }) : [];
+  if (r.tec) lec.push("Vendedores debajo del mínimo (" + repMinTexto(per) + "): " + r.sinInst.length + " de " + r.personas +
+    (r.sinInst.length ? ", " + recur.length + " recurrentes (" + (per.tipo === "mes" ? "también el mes anterior" : "2 semanas o más seguidas") + ")." : "."));
   if (r.canc){
     const pc = (r.canc.length + a.ins) ? r.canc.length / (r.canc.length + a.ins) : null;
     const tc = repConteo(r.canc, "motivo")[0];
@@ -7845,14 +7960,18 @@ function repTextos(r, per){
   if (r.comp && r.comp.sin.length) opp.push("<b>Sin compromiso capturado:</b> " + r.comp.sin.map(repNombre).join(", ") + ". Sin plan no hay contra qué medir a esos equipos.");
   const caida = r.coaches.filter(function(c){ return c.ant.ins - c.act.ins >= 5; }).sort(function(x, y){ return (y.ant.ins - y.act.ins) - (x.ant.ins - x.act.ins); })[0];
   if (caida) opp.push("<b>" + repNombre(caida.nombre) + ":</b> bajó de " + caida.ant.ins + " a " + caida.act.ins + " instalaciones contra " + lbl + ". Revisar asistencia, permisos y zonas.");
-  const rechAlto = r.coaches.filter(function(c){ return c.act.op >= 10 && c.act.pRech >= 0.27; }).sort(function(x, y){ return y.act.pRech - x.act.pRech; })[0];
+  if (recur.length) opp.push("<b>Sin llegar al mínimo de forma recurrente:</b> " + recur.slice(0, 6).map(function(v){ return repNombre(v.nombre) + " (" + v.racha + (per.tipo === "mes" ? " meses" : " semanas") + ")"; }).join(", ") +
+    (recur.length > 6 ? " y " + (recur.length - 6) + " más" : "") + ". Revisar con su coach si sigue activo en venta y darle acompañamiento.");
+  const rechAlto = r.tec ? null : r.coaches.filter(function(c){ return c.act.op >= 10 && c.act.pRech >= 0.27; }).sort(function(x, y){ return y.act.pRech - x.act.pRech; })[0];
   if (rechAlto) opp.push("<b>" + repNombre(rechAlto.nombre) + "</b> rechaza " + repPct(rechAlto.act.pRech) + " de lo que levanta. Revisar la calidad de la venta antes de subirla.");
   if (tr && repSugerencia(tr[0], "rech")) opp.push("<b>Rechazos por " + tr[0].toLowerCase() + ":</b> " + repSugerencia(tr[0], "rech"));
   const tcan = r.canc ? repConteo(r.canc, "motivo")[0] : null;
   if (tcan && tcan[1] >= 3 && repSugerencia(tcan[0], "canc")) opp.push("<b>Cancelaciones por " + tcan[0].toLowerCase() + " (" + tcan[1] + "):</b> " + repSugerencia(tcan[0], "canc"));
   if (r.cam.falta) opp.push("<b>Conversión:</b> a la camada de 30 días le faltan " + r.cam.falta + " instalaciones para el " + meta + "%. Hay " + r.cam.pend + " ventas validadas sin instalar: seguimiento con Despacho.");
   const sinInst = r.coaches.reduce(function(s, c){ return s + c.sinInst; }, 0);
-  if (sinInst >= 3) opp.push("<b>" + sinInst + " vendedores sin ninguna instalación</b> en el periodo. Revisarlos en el arranque del día.");
+  if (r.tec){
+    if (r.sinInst.length - recur.length >= 3) opp.push("<b>" + (r.sinInst.length - recur.length) + " vendedores más debajo del mínimo</b> por primera vez en el periodo. Revisarlos en el arranque del día.");
+  } else if (sinInst >= 3) opp.push("<b>" + sinInst + " vendedores sin ninguna instalación</b> en el periodo. Revisarlos en el arranque del día.");
   if (!opp.length) opp.push("Sin focos rojos en el periodo: mantener el ritmo y cuidar la conversión.");
   return { lec:lec, opp:opp };
 }
@@ -7879,14 +7998,24 @@ function repWhatsApp(r, per, tx){
     "• Oportunidades: " + a.op + " (" + per.etqA.trim() + ": " + r.ant.op + ")",
     "• Validadas: " + a.val + " (" + per.etqA.trim() + ": " + r.ant.val + ")",
     "• Instalaciones: " + a.ins + " (" + per.etqA.trim() + ": " + r.ant.ins + ")",
-    "• Meta: " + r.meta.ins + " · alcance " + repPct(a.ins / (r.meta.ins || 1)) + (cierra ? " · cierre proyectado " + r.proy + " (" + repPct(r.proy / (r.meta.ins || 1)) + ")" : "")];
+    r.meta.ins ? "• Meta: " + r.meta.ins + " · alcance " + repPct(a.ins / r.meta.ins) + (cierra ? " · cierre proyectado " + r.proy + " (" + repPct(r.proy / r.meta.ins) + ")" : "")
+      : "• Sin meta" + (cierra ? " · cierre proyectado " + r.proy : "")];
   if (r.comp) lineas.push("• Compromiso del plan: " + r.comp.ins + " (" + r.comp.con + " de " + r.comp.total + " coaches) · " + repPct(r.comp.ins ? r.comp.real / r.comp.ins : null));
   lineas.push("• Conversión: " + repPct(a.conv) + " · camada 30 días " + repPct(r.cam.pct));
-  lineas.push("• Rechazo: " + repPct(a.pRech) + (r.canc ? " · instalaciones canceladas: " + r.canc.length : ""));
-  lineas.push("", "*Por coach (instalaciones · meta" + (r.comp ? " · compromiso" : "") + ")*");
-  r.coaches.forEach(function(c){
-    lineas.push("• " + repNombre(c.nombre) + ": " + c.act.ins + (cierra ? " (proy. " + c.proy + ")" : "") + " · " + c.meta + (r.comp ? " · " + (c.comp ? c.comp.ins : "sin plan") : ""));
-  });
+  if (r.tec){
+    lineas.push("• Vendedores debajo del mínimo: " + r.sinInst.length + " de " + r.personas + " · recurrentes: " + r.sinInst.filter(function(v){ return v.racha >= 2; }).length +
+      (r.canc ? " · instalaciones canceladas: " + r.canc.length : ""));
+    lineas.push("", "*Por coach (instalaciones · vendedores debajo del mínimo)*");
+    r.coaches.forEach(function(c){
+      lineas.push("• " + repNombre(c.nombre) + ": " + c.act.ins + (cierra ? " (proy. " + c.proy + ")" : "") + " · " + c.sinInst + " de " + c.personas);
+    });
+  } else {
+    lineas.push("• Rechazo: " + repPct(a.pRech) + (r.canc ? " · instalaciones canceladas: " + r.canc.length : ""));
+    lineas.push("", "*Por coach (instalaciones · meta" + (r.comp ? " · compromiso" : "") + ")*");
+    r.coaches.forEach(function(c){
+      lineas.push("• " + repNombre(c.nombre) + ": " + c.act.ins + (cierra ? " (proy. " + c.proy + ")" : "") + " · " + c.meta + (r.comp ? " · " + (c.comp ? c.comp.ins : "sin plan") : ""));
+    });
+  }
   lineas.push("", "*Lectura*");
   tx.lec.forEach(function(t){ lineas.push("• " + t); });
   lineas.push("", "*Áreas de oportunidad*");
@@ -7935,8 +8064,9 @@ function reporteComercialHtml(){
   // resumen del distrito (o del líder): líderes y venta técnico por separado, para no
   // sumar dos veces una venta que trae líder y además es de un canal técnico
   const totales = function(lista){
-    const T = { op:0, val:0, ins:0, antIns:0, rech:0, meta:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0 };
+    const T = { op:0, val:0, ins:0, antIns:0, rech:0, meta:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0, sin:0, pers:0, recur:0 };
     lista.forEach(function(r){
+      if (r.sinInst){ T.sin += r.sinInst.length; T.pers += r.personas; T.recur += r.sinInst.filter(function(v){ return v.racha >= 2; }).length; }
       T.op += r.act.op; T.val += r.act.val; T.ins += r.act.ins; T.antIns += r.ant.ins; T.rech += r.act.rech; T.meta += r.meta.ins; T.proy += r.proy;
       if (r.comp){ T.comp += r.comp.ins; T.compReal += r.comp.real; }
       T.cam += r.cam.v; T.camI += r.cam.i; T.canc += r.canc ? r.canc.length : 0;
@@ -7944,14 +8074,16 @@ function reporteComercialHtml(){
     return T;
   };
   const T = totales(rsL.length ? rsL : rsC);
-  const filaRes = function(nombre, x, ancla){
-    return "<tr><td class=\"rep-nm\">" + (ancla ? '<a href="#' + ancla + '">' + nombre + "</a>" : nombre) + "</td><td>" + x.op + "</td><td>" + x.val + '</td><td class="rep-b">' + x.ins + "</td><td>" + x.dIns + "</td><td>" + x.meta + '</td><td class="dif ' + repClsMeta(x.alc) + '">' + repPct(x.alc) + "</td>" +
+  // venta técnico (tec): sin compromiso ni rechazo; en su lugar, vendedores debajo del mínimo
+  const filaRes = function(nombre, x, ancla, tec){
+    return "<tr><td class=\"rep-nm\">" + (ancla ? '<a href="#' + ancla + '">' + nombre + "</a>" : nombre) + "</td><td>" + x.op + "</td><td>" + x.val + '</td><td class="rep-b">' + x.ins + "</td><td>" + x.dIns + "</td><td>" + (x.meta || "—") + '</td><td class="dif ' + repClsMeta(x.alc) + '">' + repPct(x.alc) + "</td>" +
       (cierra ? '<td class="rep-b">' + x.proy + '</td><td class="dif ' + repClsMeta(x.alcP) + '">' + repPct(x.alcP) + "</td>" : "") +
-      (per.lunes ? "<td>" + x.comp + '</td><td class="dif ' + repClsMeta(x.alcC) + '">' + repPct(x.alcC) + "</td>" : "") +
-      '<td class="dif ' + repClsConv(x.conv) + '">' + repPct(x.conv) + '</td><td class="dif ' + repClsConv(x.cam) + '">' + repPct(x.cam) + "</td><td>" + repPct(x.rech) + "</td>" +
+      (per.lunes && !tec ? "<td>" + x.comp + '</td><td class="dif ' + repClsMeta(x.alcC) + '">' + repPct(x.alcC) + "</td>" : "") +
+      '<td class="dif ' + repClsConv(x.conv) + '">' + repPct(x.conv) + '</td><td class="dif ' + repClsConv(x.cam) + '">' + repPct(x.cam) + "</td>" +
+      (tec ? "<td>" + x.sin + ' <span class="rep-cov">de ' + x.pers + "</span></td><td" + (x.recur ? ' class="rep-rojo"' : "") + ">" + x.recur + "</td>" : "<td>" + repPct(x.rech) + "</td>") +
       (canc ? "<td>" + x.canc + '</td><td class="dif ' + repClsCanc(x.pc) + '">' + repPct(x.pc) + "</td>" : "") + "</tr>";
   };
-  const tablaRes = function(lista, rotulo){
+  const tablaRes = function(lista, rotulo, tec){
     if (!lista.length) return "";
     let filas = lista.map(function(r){
       const nc = r.canc ? r.canc.length : 0;
@@ -7959,23 +8091,26 @@ function reporteComercialHtml(){
         alc: r.meta.ins ? r.act.ins / r.meta.ins : null, proy:r.proy, alcP: r.meta.ins ? r.proy / r.meta.ins : null,
         comp: r.comp ? r.comp.ins + ' <span class="rep-cov">(' + r.comp.con + "/" + r.comp.total + ")</span>" : "—",
         alcC: r.comp && r.comp.ins ? r.comp.real / r.comp.ins : null, conv:r.act.conv, cam:r.cam.pct, rech:r.act.pRech,
-        canc:nc, pc:(nc + r.act.ins) ? nc / (nc + r.act.ins) : null }, "rep-" + r.L.k.replace(/[^A-Z]/g, ""));
+        sin: r.sinInst ? r.sinInst.length : 0, pers:r.personas, recur: r.sinInst ? r.sinInst.filter(function(v){ return v.racha >= 2; }).length : 0,
+        canc:nc, pc:(nc + r.act.ins) ? nc / (nc + r.act.ins) : null }, "rep-" + r.L.k.replace(/[^A-Z]/g, ""), tec);
     }).join("");
     const T = totales(lista);
     if (lista.length > 1) filas += filaRes("<b>Total</b>", { op:T.op, val:T.val, ins:T.ins, dIns:repDelta(T.ins, T.antIns), meta:T.meta,
       alc: T.meta ? T.ins / T.meta : null, proy:T.proy, alcP: T.meta ? T.proy / T.meta : null, comp:T.comp, alcC: T.comp ? T.compReal / T.comp : null,
       conv: T.val ? T.ins / T.val : null, cam: T.cam ? T.camI / T.cam : null, rech: T.op ? T.rech / T.op : null,
-      canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }).replace("<tr>", '<tr class="total">');
+      sin:T.sin, pers:T.pers, recur:T.recur,
+      canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }, "", tec).replace("<tr>", '<tr class="total">');
     const encRes = "<tr><th class=\"rep-nm\">" + rotulo + "</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th><th>Meta</th><th>Alcance</th>" +
-      (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
-      "<th>Conversión</th><th>Camada 30 d</th><th>% rechazo</th>" + (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
+      (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes && !tec ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
+      "<th>Conversión</th><th>Camada 30 d</th>" + (tec ? "<th>Vend. debajo del mínimo</th><th>Recurrentes</th>" : "<th>% rechazo</th>") +
+      (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
     return '<div class="scroll"><table class="compacta rep-t"><thead>' + encRes + "</thead><tbody>" + filas + "</tbody></table></div>";
   };
   html += '<div class="rep-big"><div><b>' + T.ins + "</b><span>instalaciones" + (rsL.length && rsC.length ? " (líderes de venta)" : "") + "</span></div>" + (cierra ? "<div><b>" + T.proy + "</b><span>cierre proyectado</span></div>" : "") +
     "<div><b>" + repPct(T.meta ? (cierra ? T.proy : T.ins) / T.meta : null) + "</b><span>" + (cierra ? "de la meta, proyectado" : "de la meta") + "</span></div>" +
     "<div><b>" + repPct(T.val ? T.ins / T.val : null) + "</b><span>conversión</span></div></div>" +
-    tablaRes(rsL, "Líder") + (rsL.length && rsC.length ? "<h3>Venta técnico</h3>" : "") + tablaRes(rsC, "Canal") +
-    (per.lunes ? '<p class="rep-nota">* El compromiso de cada líder es la suma de los coaches que capturaron su Plan semanal, y se compara solo contra lo ' + (cierra ? "que proyectan" : "que instalaron") + " esos coaches.</p>" : "") +
+    tablaRes(rsL, "Líder") + (rsL.length && rsC.length ? "<h3>Venta técnico</h3>" : "") + tablaRes(rsC, "Canal", true) +
+    (per.lunes && rsL.length ? '<p class="rep-nota">* El compromiso de cada líder es la suma de los coaches que capturaron su Plan semanal, y se compara solo contra lo ' + (cierra ? "que proyectan" : "que instalaron") + " esos coaches.</p>" : "") +
     "</div></section>";
 
   // una sección por líder
@@ -7983,12 +8118,19 @@ function reporteComercialHtml(){
     const a = r.act, tx = repTextos(r, per);
     const al = r.meta.ins ? (cierra ? r.proy : a.ins) / r.meta.ins : null;
     const tag = al === null ? "" : al >= 1 ? '<span class="rep-tag v">Cumple la meta</span>' : al >= 0.9 ? '<span class="rep-tag a">Cerca de la meta</span>' : '<span class="rep-tag r">Debajo de la meta</span>';
+    const nRec = r.tec ? r.sinInst.filter(function(v){ return v.racha >= 2; }).length : 0;
     const kpis = [["Oportunidades", a.op, repDelta(a.op, r.ant.op)], ["Validadas", a.val, repDelta(a.val, r.ant.val)], ["Instalaciones", a.ins, repDelta(a.ins, r.ant.ins)],
-      ["% rechazo", repPct(a.pRech), repDelta(a.pRech || 0, r.ant.pRech || 0, true)], ["ARPU sin IVA", "$" + Math.round(a.arpu), repDelta(a.arpu, r.ant.arpu)],
+      r.tec ? ["Debajo del mínimo", r.sinInst.length + ' <span class="rep-cov">de ' + r.personas + "</span>", '<span class="rep-d' + (nRec ? " r" : "") + '">' + nRec + " recurrentes</span>"]
+        : ["% rechazo", repPct(a.pRech), repDelta(a.pRech || 0, r.ant.pRech || 0, true)], ["ARPU sin IVA", "$" + Math.round(a.arpu), repDelta(a.arpu, r.ant.arpu)],
       cierra ? ["Cierre proyectado", r.proy, '<span class="rep-d">' + repPct(r.meta.ins ? r.proy / r.meta.ins : null) + " de la meta</span>"] : ["Conversión", repPct(a.conv), '<span class="rep-d">camada 30 d: ' + repPct(r.cam.pct) + "</span>"]];
     const barras = repBarra("Oportunidades", a.op, r.meta.op, cierra ? Math.round(a.op * r.fac) : null) +
       repBarra("Validadas", a.val, r.meta.val, cierra ? Math.round(a.val * r.fac) : null) + repBarra("Instalaciones", a.ins, r.meta.ins, cierra ? r.proy : null);
-    const filasC = r.coaches.map(function(c){
+    const filasC = r.tec ? r.coaches.map(function(c){
+      return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" +
+        (cierra ? '<td class="rep-b">' + c.proy + "</td>" : "") +
+        '<td class="dif ' + repClsConv(c.act.conv) + '">' + repPct(c.act.conv) + '</td><td class="dif ' + repClsConv(c.cam.pct) + '">' + repPct(c.cam.pct) + "</td>" +
+        (r.canc ? "<td>" + c.canc + "</td>" : "") + "<td>" + c.cam.pend + "</td><td>" + c.sinInst + "</td><td" + (c.recur ? ' class="rep-rojo"' : "") + ">" + c.recur + "</td></tr>";
+    }).join("") : r.coaches.map(function(c){
       const alc = c.meta ? (cierra ? c.proy : c.act.ins) / c.meta : null;
       const vsC = c.comp ? (cierra ? c.proy : c.act.ins) / c.comp.ins : null;
       return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" +
@@ -7997,31 +8139,57 @@ function reporteComercialHtml(){
         '<td class="dif ' + repClsConv(c.act.conv) + '">' + repPct(c.act.conv) + '</td><td class="dif ' + repClsConv(c.cam.pct) + '">' + repPct(c.cam.pct) + "</td><td" + (c.act.pRech >= 0.27 && c.act.op >= 10 ? ' class="rep-rojo"' : "") + ">" + repPct(c.act.pRech) + "</td>" +
         (r.canc ? "<td>" + c.canc + "</td>" : "") + "<td>" + c.cam.pend + "</td><td" + (c.sinInst >= 3 ? ' class="rep-rojo"' : "") + ">" + c.sinInst + "</td></tr>";
     }).join("");
-    const encC = '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (cierra ? "<th>Proy.</th>" : "") +
-      "<th>Meta</th><th>Alcance</th>" + (per.lunes ? "<th>Compromiso</th><th>vs comp.</th>" : "") + "<th>Conv.</th><th>Camada 30 d</th><th>% rech.</th>" +
-      (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Vend. sin inst.</th></tr>";
+    const encC = r.tec
+      ? '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (cierra ? "<th>Proy.</th>" : "") +
+        "<th>Conv.</th><th>Camada 30 d</th>" + (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Debajo del mínimo</th><th>Recurrentes</th></tr>"
+      : '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (cierra ? "<th>Proy.</th>" : "") +
+        "<th>Meta</th><th>Alcance</th>" + (per.lunes ? "<th>Compromiso</th><th>vs comp.</th>" : "") + "<th>Conv.</th><th>Camada 30 d</th><th>% rech.</th>" +
+        (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Vend. sin inst.</th></tr>";
+    // venta técnico: vendedores debajo del mínimo, con las semanas (o meses) seguidas
+    const uni = per.tipo === "mes" ? "meses" : "semanas";
+    const tablaSin = !r.tec ? "" : "<h3>Vendedores debajo del mínimo (" + repMinTexto(per) + ")</h3>" + (r.sinInst.length
+      ? '<div class="scroll"><table class="compacta rep-t"><thead><tr><th class="rep-nm">Vendedor</th><th class="rep-nm">Código</th><th class="rep-nm">Coach</th><th>Inst.</th><th>' + (per.tipo === "mes" ? "Meses" : "Semanas") + " seguidas</th><th>Recurrente</th></tr></thead><tbody>" +
+        r.sinInst.map(function(v){
+          return '<tr><td class="rep-nm">' + repEsc(repNombre(v.nombre)) + (v.nuevo ? ' <span class="rep-cov">(alta en el periodo)</span>' : "") + '</td><td class="rep-nm">' + repEsc(v.cod) + '</td><td class="rep-nm">' + repEsc(repNombre(v.coach)) + "</td><td>" + v.n + "</td><td>" + v.racha + (v.racha >= (per.tipo === "mes" ? 3 : 4) ? "+" : "") + "</td>" +
+            (v.racha >= 2 ? '<td class="rep-rojo">Sí</td>' : "<td>No</td>") + "</tr>";
+        }).join("") + "</tbody></table></div>" +
+        '<p class="rep-nota">Semanas (o meses) seguidas debajo del mínimo, contando el periodo del reporte y hasta ' + (per.tipo === "mes" ? "2 meses" : "3 semanas") + " atrás, sin contar lo anterior a su alta. Recurrente: 2 o más " + uni + " seguidas.</p>"
+      : '<p class="rep-nota">Todos los vendedores del canal llegaron al mínimo.</p>');
+    // venta técnico: el vendedor es el código SLK/CRC del técnico, no el vendedor de BASE DE DATOS
+    const topVend = r.tec
+      ? repTop(a.tec).slice(0, 5).map(function(p){ const nm = repNombreTec(p[0]); return [(nm ? repNombre(nm) + " · " : "") + p[0], p[1]]; })
+      : repTop(a.vend).slice(0, 5).map(function(p){ return [repNombre(p[0]), p[1]]; });
+    const recurCoach = r.tec ? r.coaches.filter(function(c){ return c.recur; }).map(function(c){ return [repNombre(c.nombre), c.recur]; }).sort(function(x, y){ return y[1] - x[1]; }) : [];
     const pc = r.canc && (r.canc.length + a.ins) ? r.canc.length / (r.canc.length + a.ins) : null;
     const wa = repWhatsApp(r, per, tx);
     const id = "rep-" + r.L.k.replace(/[^A-Z]/g, "");
     html += '<section class="panel"><h2>' + repEsc(r.L.tit) + ' <span class="sub">' + (r.L.tipo === "canal" ? "canal · " : "") + r.coaches.length + " coaches · " + r.personas + " personas</span></h2>" +
       '<div class="rep" id="' + id + '"><div class="rep-cab">' + tag + "</div>" +
       '<div class="rep-kpis">' + kpis.map(function(k){ return '<div><span class="rep-lb">' + k[0] + "</span><b>" + k[1] + "</b>" + k[2] + "</div>"; }).join("") + "</div>" +
-      '<h3>Alcance de la meta ' + (per.tipo === "mes" ? "mensual" : "semanal") + '</h3><div class="rep-meta">' + barras + '</div><p class="rep-nota">Meta por ranking de su gente (la misma de Equipos). ' +
-      (cierra ? "Barra sólida: lo real; rayado: la proyección al domingo. " : "") + "La línea negra marca el 100%.</p>" +
+      (r.meta.ins
+        ? '<h3>Alcance de la meta ' + (per.tipo === "mes" ? "mensual" : "semanal") + '</h3><div class="rep-meta">' + barras + '</div><p class="rep-nota">' +
+          (r.tec ? "Meta fija del canal: " + r.L.metaSem + " por semana en instalaciones, validadas y oportunidades" + (per.tipo === "mes" ? ", por " + repSemMes() + " semanas en el mes" : "") + " (Ajustes). "
+            : "Meta por ranking de su gente (la misma de Equipos). ") +
+          (cierra ? "Barra sólida: lo real; rayado: la proyección al domingo. " : "") + "La línea negra marca el 100%.</p>"
+        : (r.tec ? '<p class="rep-nota">Este canal no tiene meta.</p>' : "")) +
       '<div class="rep-dos"><div><h3>Lectura</h3><ul class="rep-bul">' + tx.lec.map(function(t){ return "<li>" + t + "</li>"; }).join("") + "</ul></div>" +
       '<div><h3>Áreas de oportunidad</h3><ul class="rep-bul rep-opp">' + tx.opp.map(function(t){ return "<li>" + t + "</li>"; }).join("") + "</ul></div></div>" +
-      '<h3>Resultado por coach</h3><div class="scroll"><table class="compacta rep-t"><thead>' + encC + "</thead><tbody>" + filasC + "</tbody></table></div>" +
-      '<div class="rep-cuatro"><div><h3>Motivos de rechazo</h3>' + repLista(repTop(a.mot), a.rech + " rechazos de " + a.op + " oportunidades") + "</div>" +
+      '<h3>Resultado por coach</h3><div class="scroll"><table class="compacta rep-t"><thead>' + encC + "</thead><tbody>" + filasC + "</tbody></table></div>" + tablaSin +
+      '<div class="rep-cuatro">' + (r.tec
+        ? "<div><h3>Coaches con vendedores recurrentes</h3>" + repLista(recurCoach, nRec + " vendedores recurrentes debajo del mínimo") + "</div>"
+        : "<div><h3>Motivos de rechazo</h3>" + repLista(repTop(a.mot), a.rech + " rechazos de " + a.op + " oportunidades") + "</div>") +
       "<div><h3>Motivos de cancelación de instalación</h3>" + (r.canc ? repLista(repConteo(r.canc, "motivo"), r.canc.length + " canceladas, el " + repPct(pc) + " de las órdenes cerradas") : '<p class="rep-nota">Leyendo ATENCION ORDENES…</p>') + "</div>" +
-      "<div><h3>Instalaciones por canal</h3>" + repLista(repTop(a.canal)) + "</div>" +
-      "<div><h3>Vendedores con más instalaciones</h3>" + repLista(repTop(a.vend).slice(0, 5).map(function(p){ return [repNombre(p[0]), p[1]]; })) + "</div></div>" +
+      (r.tec ? "<div><h3>Debajo del mínimo por coach</h3>" + repLista(r.coaches.filter(function(c){ return c.sinInst; }).map(function(c){ return [repNombre(c.nombre), c.sinInst]; }).sort(function(x, y){ return y[1] - x[1]; }),
+          r.sinInst.length + " de " + r.personas + " vendedores") + "</div>"
+        : "<div><h3>Instalaciones por canal</h3>" + repLista(repTop(a.canal)) + "</div>") +
+      "<div><h3>Vendedores con más instalaciones</h3>" + repLista(topVend, r.tec ? "Por código del técnico (SLK, CRC…)." : "") + "</div></div>" +
       '<div class="rep-wa"><button type="button" class="sec" data-repwa="' + id + '">Copiar para WhatsApp</button><button type="button" class="sec" data-repwaabre="' + id + '">Enviar por WhatsApp</button><span class="rep-ok"></span>' +
       '<textarea class="oculto" id="wa-' + id + '" readonly>' + repEsc(wa) + "</textarea></div></div></section>";
   });
 
   html += '<section class="panel"><h2>Cómo se calcula <span class="sub">reporte comercial</span></h2><div class="rep"><ul class="rep-bul rep-como">' +
     "<li>Oportunidades por fecha de creación, validadas por fecha de validación (sin las que están en Perdida) e instalaciones por fecha de activación, con las mismas reglas de Semanal. Cada venta cuenta para el líder y el coach que trae la base.</li>" +
-    (canalesTec.length ? "<li>Venta técnico (" + canalesTec.map(function(c){ return c.tit.replace("Venta técnico ", ""); }).join(", ") + "): cada venta cuenta para el canal en que la clasifica la base (la clave del técnico en VENTA TECNICO; lo que no es " + listaAjuste("clavesTecnico").join(" ni ") + " va a otros). La gente y su meta son las personas de la plantilla de ese canal, igual que en Equipos. Se resume aparte de los líderes para no contar dos veces la misma venta.</li>" : "") +
+    (canalesTec.length ? "<li>Venta técnico (" + canalesTec.map(function(c){ return c.tit.replace("Venta técnico ", ""); }).join(", ") + "): cada venta cuenta para el canal en que la clasifica la base (la clave del técnico en VENTA TECNICO; lo que no es " + listaAjuste("clavesTecnico").join(" ni ") + " va a otros). El vendedor es el técnico, identificado por su código (empieza con la clave del canal) y no por el vendedor de BASE DE DATOS; el coach es el del técnico en la plantilla. Sin ranking: meta fija por semana del canal (" + repEsc(el("metasTecnico").value) + "; otros sin meta), igual en instalaciones, validadas y oportunidades, y en el mes por " + repSemMes() + " semanas. No lleva compromiso ni rechazo de oportunidades; se mide a los vendedores debajo del mínimo (" + repMinTec() + " por semana, " + Math.round(repMinTec() * repSemMes()) + " en el mes) y cuántas semanas o meses seguidos llevan así. Se resume aparte de los líderes para no contar dos veces la misma venta.</li>" : "") +
     "<li>Meta: la de Equipos. Cada persona suma su meta semanal según su ranking (Platino, Oro, Plata, Bronce, Condicionado, Entrenamiento, vacantes y sin ranking, con los valores de Ajustes). Validadas y oportunidades llevan el factor escalonado de Ajustes. En el mes, la meta semanal por " + (el("semanasMes").value || "4.33") + " semanas.</li>" +
     "<li>Compromiso: el Plan semanal más reciente de cada coach en la app Día a día (Obj. Instalaciones). Un plan en cero cuenta como sin plan. En rojo, los compromisos abajo de la meta del coach. En el mes no aplica porque el plan es semanal.</li>" +
     "<li>Conversión: instaladas entre validadas del periodo (puede pasar de 100%). Camada de 30 días: de lo validado en los 30 días que terminan el último día del periodo, cuánto ya se instaló; meta " + (el("metaConversion").value || 88) + "%.</li>" +
@@ -8684,7 +8852,10 @@ el("btnSubirOrdenes").addEventListener("click", subirAtencionOrdenes);
   el(id).addEventListener("change", function(){ INFO_EQ.estado = "sin cargar"; if (VISTA === "equipos") cargarEquipos(); });
 });
 ["metasRanking","semanasMes","umbralPlatino","origenPromedio","metaConversion"].forEach(function(id){
-  el(id).addEventListener("change", function(){ if (VISTA === "equipos") pintar(); });
+  el(id).addEventListener("change", function(){ if (VISTA === "equipos" || VISTA === "reporte") pintar(); });
+});
+["metasTecnico","minimoTecnico"].forEach(function(id){
+  el(id).addEventListener("change", function(){ if (VISTA === "reporte") pintar(); });
 });
 ["dupliSemana","dupliMes"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "dupli") pintar(); });
