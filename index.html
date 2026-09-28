@@ -353,7 +353,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 95</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 96</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -7658,16 +7658,17 @@ function repCamada(filtro, fin){
   return { v:v, i:i, pct: v ? i / v : null, falta: Math.max(0, Math.ceil(v * meta / 100) - i), pend:pend, ini:ini };
 }
 
-// cuenta -> {lider, coach} de la venta que la originó, en los canales donde el coach dice
-// algo (mismo criterio que coachOrden de Atención de órdenes)
+// cuenta -> {lider, coach, canal} de la venta que la originó, en los canales donde el coach
+// dice algo (mismo criterio que coachOrden de Atención de órdenes) más toda la venta
+// técnico, que también se reporta por canal (SLK, CRC y otros)
 let IDX_REP_CTA = null;
 function repIndiceCuentas(){
   if (IDX_REP_CTA && IDX_REP_CTA.n === FILAS.length) return IDX_REP_CTA.m;
   const m = new Map();
   FILAS.forEach(function(f){
-    const k = clave(f.cuenta);
-    if (!k || CANALES_CON_COACH.indexOf(normaliza(f.canal)) < 0) return;
-    m.set(k, { lider:normaliza(f.lider), coach:normaliza(f.coach) });
+    const k = clave(f.cuenta), can = normaliza(f.canal);
+    if (!k || (CANALES_CON_COACH.indexOf(can) < 0 && can.indexOf("VENTA TECNICO") !== 0)) return;
+    m.set(k, { lider:normaliza(f.lider), coach:normaliza(f.coach), canal:can });
   });
   IDX_REP_CTA = { n:FILAS.length, m:m };
   return m;
@@ -7681,7 +7682,7 @@ function repCanceladas(ini, fin){
     if (!esCancelada(o) || normaliza(o.tipo).indexOf("INSTALACION") !== 0 || !o.fTer) return;
     if (!repEntre(soloFecha(o.fTer), ini, fin)) return;
     const x = idx.get(clave(o.cuenta));
-    if (x) lista.push({ lider:x.lider, coach:x.coach, motivo:o.motivo || "Sin motivo" });
+    if (x) lista.push({ lider:x.lider, coach:x.coach, canal:x.canal, motivo:o.motivo || "Sin motivo" });
   });
   return lista;
 }
@@ -7703,7 +7704,13 @@ function repLideres(){
     const pu = normaliza(PUESTO_POR_NOMBRE.get(k) || "");
     if (pu.indexOf("LIDER") >= 0 && pu.indexOf("VENTA") >= 0) m.set(k, p.lider);
   });
-  let lista = Array.from(m.entries()).map(function(e){ return { k:e[0], nombre:e[1] }; });
+  let lista = Array.from(m.entries()).map(function(e){
+    const k = e[0];
+    return { k:k, nombre:e[1], tit:repNombre(e[1]), tipo:"lider",
+      filtro:function(f){ return normaliza(f.lider) === k; },
+      gente:PLANTILLA.filter(function(p){ return normaliza(p.lider) === k; }),
+      cancDe:function(c){ return c.lider === k; } };
+  });
   if (!esDirectorRep()){
     const yo = normaliza(PERFIL.nombre);
     lista = lista.filter(function(x){ return x.k === yo; });
@@ -7711,15 +7718,30 @@ function repLideres(){
   return lista.sort(function(a, b){ return a.nombre.localeCompare(b.nombre, "es"); });
 }
 
-// todo lo de un líder: totales, coaches, canceladas, proyección y reglas de lectura
+// canal de venta técnico, uno por clave de Ajustes (SLK, CRC…) más "otros"; solo el
+// Director. La venta cuenta por el canal ya clasificado (canalDe) y la gente por
+// canalDePersona, igual que en Equipos
+function repCanalesTec(){
+  if (!esDirectorRep()) return [];
+  return listaAjuste("clavesTecnico").concat(["OTROS"]).map(function(cve){
+    const nombre = "Venta técnico " + (cve === "OTROS" ? "otros" : cve), kc = normaliza(nombre);
+    return { k:"TEC-" + cve, nombre:nombre, tit:nombre, tipo:"canal",
+      filtro:function(f){ return normaliza(f.canal) === kc; },
+      gente:PLANTILLA.filter(function(p){ return normaliza(canalDePersona(p)) === kc; }),
+      cancDe:function(c){ return c.canal === kc; } };
+  });
+}
+
+// todo lo de un líder o de un canal de venta técnico: totales, coaches, canceladas,
+// proyección y reglas de lectura
 function repLider(L, per, canc){
-  const deL = function(f){ return normaliza(f.lider) === L.k; };
-  const gente = PLANTILLA.filter(function(p){ return normaliza(p.lider) === L.k; });
+  const deL = L.filtro;
+  const gente = L.gente;
   const r = { L:L, act:repMedir(deL, per.ini, per.fin), ant:repMedir(deL, per.iniA, per.finA),
     cam:repCamada(deL, per.fin), metaSem:repMetaInst(gente), personas:gente.length };
   r.meta = repMetaDe(r.metaSem, per);
-  r.canc = canc ? canc.filter(function(c){ return c.lider === L.k; }) : null;
-  r.cancA = per.cancA ? per.cancA.filter(function(c){ return c.lider === L.k; }) : null;
+  r.canc = canc ? canc.filter(L.cancDe) : null;
+  r.cancA = per.cancA ? per.cancA.filter(L.cancDe) : null;
 
   // proyección de la semana en curso: el ritmo con el que el líder cerró las dos semanas anteriores
   r.fac = 1;
@@ -7731,11 +7753,20 @@ function repLider(L, per, canc){
   }
   r.proy = Math.round(r.act.ins * r.fac);
 
-  // coaches: los de la plantilla (con su gente) en orden de instalaciones
+  // coaches: los de la plantilla (con su gente) en orden de instalaciones; en un canal
+  // técnico también los que traen sus ventas, porque no todo técnico cruza con la plantilla
   const nombresCoach = Array.from(new Set(gente.map(function(p){ return p.coach; }).filter(Boolean)));
+  if (L.tipo === "canal"){
+    const ya = new Set(nombresCoach.map(normaliza));
+    FILAS.forEach(function(f){
+      if (!deL(f) || !(repEntre(f.fOp, per.iniA, per.fin) || repEntre(f.fVal, per.iniA, per.fin) || repEntre(f.fIns, per.iniA, per.fin))) return;
+      const c = f.coach && f.coach !== "-" ? f.coach : "Sin coach", kc = c === "Sin coach" ? "" : normaliza(c);
+      if (!ya.has(kc)){ ya.add(kc); nombresCoach.push(c); }
+    });
+  }
   r.coaches = nombresCoach.map(function(c){
-    const k = normaliza(c);
-    const deC = function(f){ return deL(f) && normaliza(f.coach) === k; };
+    const k = c === "Sin coach" ? "" : normaliza(c);
+    const deC = function(f){ const fc = normaliza(f.coach); return deL(f) && (fc === "-" ? "" : fc) === k; };
     const suyos = gente.filter(function(p){ return normaliza(p.coach) === k; });
     const act = repMedir(deC, per.ini, per.fin);
     const x = { nombre:c, k:k, act:act, ant:repMedir(deC, per.iniA, per.finA), cam:repCamada(deC, per.fin),
@@ -7844,7 +7875,7 @@ function repLista(pares, pie){
 
 function repWhatsApp(r, per, tx){
   const a = r.act, cierra = per.tipo === "actual" && per.abierta;
-  const lineas = ["*Reporte comercial · " + per.titulo + "*", "*Líder:* " + repNombre(r.L.nombre), per.detalle, "",
+  const lineas = ["*Reporte comercial · " + per.titulo + "*", (r.L.tipo === "canal" ? "*Canal:* " : "*Líder:* ") + r.L.tit, per.detalle, "",
     "• Oportunidades: " + a.op + " (" + per.etqA.trim() + ": " + r.ant.op + ")",
     "• Validadas: " + a.val + " (" + per.etqA.trim() + ": " + r.ant.val + ")",
     "• Instalaciones: " + a.ins + " (" + per.etqA.trim() + ": " + r.ant.ins + ")",
@@ -7867,10 +7898,14 @@ function reporteComercialHtml(){
   const per = repPeriodo();
   const listos = INFO_EQ.estado === "ok";
   const lideres = listos ? repLideres() : [];
-  if (esDirectorRep() && REP.lider && !lideres.some(function(l){ return l.k === REP.lider; })) REP.lider = "";
-  const opcL = esDirectorRep() && lideres.length > 1
-    ? '<label class="campo">Líder<select id="repLider"><option value="">Todos</option>' +
-      lideres.map(function(l){ return '<option value="' + repEsc(l.k) + '"' + (REP.lider === l.k ? " selected" : "") + ">" + repEsc(repNombre(l.nombre)) + "</option>"; }).join("") +
+  const canalesTec = listos ? repCanalesTec() : [];
+  const grupos = lideres.concat(canalesTec);
+  if (esDirectorRep() && REP.lider && !grupos.some(function(l){ return l.k === REP.lider; })) REP.lider = "";
+  const opcG = function(l){ return '<option value="' + repEsc(l.k) + '"' + (REP.lider === l.k ? " selected" : "") + ">" + repEsc(l.tit) + "</option>"; };
+  const opcL = esDirectorRep() && grupos.length > 1
+    ? '<label class="campo">Líder o canal<select id="repLider"><option value="">Todos</option>' +
+      (canalesTec.length ? '<optgroup label="Líderes de venta">' + lideres.map(opcG).join("") + '</optgroup><optgroup label="Venta técnico">' + canalesTec.map(opcG).join("") + "</optgroup>"
+        : lideres.map(opcG).join("")) +
       "</select></label>" : "";
   const avisos = [];
   if (!listos) avisos.push(INFO_EQ.estado === "cargando" || CARGANDO_EQ ? "Leyendo plantilla y ranking para la meta…" : "Plantilla: " + INFO_EQ.estado);
@@ -7892,17 +7927,23 @@ function reporteComercialHtml(){
 
   per.cancA = repCanceladas(per.iniA, per.finA);
   const canc = repCanceladas(per.ini, per.fin);
-  const elegidos = lideres.filter(function(l){ return !REP.lider || l.k === REP.lider; });
+  const elegidos = grupos.filter(function(l){ return !REP.lider || l.k === REP.lider; });
   const rs = elegidos.map(function(L){ return repLider(L, per, canc); });
+  const rsL = rs.filter(function(r){ return r.L.tipo === "lider"; }), rsC = rs.filter(function(r){ return r.L.tipo === "canal"; });
   const cierra = per.tipo === "actual" && per.abierta;
 
-  // resumen del distrito (o del líder)
-  const T = { op:0, val:0, ins:0, antIns:0, rech:0, meta:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0 };
-  rs.forEach(function(r){
-    T.op += r.act.op; T.val += r.act.val; T.ins += r.act.ins; T.antIns += r.ant.ins; T.rech += r.act.rech; T.meta += r.meta.ins; T.proy += r.proy;
-    if (r.comp){ T.comp += r.comp.ins; T.compReal += r.comp.real; }
-    T.cam += r.cam.v; T.camI += r.cam.i; T.canc += r.canc ? r.canc.length : 0;
-  });
+  // resumen del distrito (o del líder): líderes y venta técnico por separado, para no
+  // sumar dos veces una venta que trae líder y además es de un canal técnico
+  const totales = function(lista){
+    const T = { op:0, val:0, ins:0, antIns:0, rech:0, meta:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0 };
+    lista.forEach(function(r){
+      T.op += r.act.op; T.val += r.act.val; T.ins += r.act.ins; T.antIns += r.ant.ins; T.rech += r.act.rech; T.meta += r.meta.ins; T.proy += r.proy;
+      if (r.comp){ T.comp += r.comp.ins; T.compReal += r.comp.real; }
+      T.cam += r.cam.v; T.camI += r.cam.i; T.canc += r.canc ? r.canc.length : 0;
+    });
+    return T;
+  };
+  const T = totales(rsL.length ? rsL : rsC);
   const filaRes = function(nombre, x, ancla){
     return "<tr><td class=\"rep-nm\">" + (ancla ? '<a href="#' + ancla + '">' + nombre + "</a>" : nombre) + "</td><td>" + x.op + "</td><td>" + x.val + '</td><td class="rep-b">' + x.ins + "</td><td>" + x.dIns + "</td><td>" + x.meta + '</td><td class="dif ' + repClsMeta(x.alc) + '">' + repPct(x.alc) + "</td>" +
       (cierra ? '<td class="rep-b">' + x.proy + '</td><td class="dif ' + repClsMeta(x.alcP) + '">' + repPct(x.alcP) + "</td>" : "") +
@@ -7910,25 +7951,30 @@ function reporteComercialHtml(){
       '<td class="dif ' + repClsConv(x.conv) + '">' + repPct(x.conv) + '</td><td class="dif ' + repClsConv(x.cam) + '">' + repPct(x.cam) + "</td><td>" + repPct(x.rech) + "</td>" +
       (canc ? "<td>" + x.canc + '</td><td class="dif ' + repClsCanc(x.pc) + '">' + repPct(x.pc) + "</td>" : "") + "</tr>";
   };
-  let filas = rs.map(function(r){
-    const nc = r.canc ? r.canc.length : 0;
-    return filaRes(repNombre(r.L.nombre), { op:r.act.op, val:r.act.val, ins:r.act.ins, dIns:repDelta(r.act.ins, r.ant.ins), meta:r.meta.ins,
-      alc: r.meta.ins ? r.act.ins / r.meta.ins : null, proy:r.proy, alcP: r.meta.ins ? r.proy / r.meta.ins : null,
-      comp: r.comp ? r.comp.ins + ' <span class="rep-cov">(' + r.comp.con + "/" + r.comp.total + ")</span>" : "—",
-      alcC: r.comp && r.comp.ins ? r.comp.real / r.comp.ins : null, conv:r.act.conv, cam:r.cam.pct, rech:r.act.pRech,
-      canc:nc, pc:(nc + r.act.ins) ? nc / (nc + r.act.ins) : null }, "rep-" + r.L.k.replace(/[^A-Z]/g, ""));
-  }).join("");
-  if (rs.length > 1) filas += filaRes("<b>Total</b>", { op:T.op, val:T.val, ins:T.ins, dIns:repDelta(T.ins, T.antIns), meta:T.meta,
-    alc: T.meta ? T.ins / T.meta : null, proy:T.proy, alcP: T.meta ? T.proy / T.meta : null, comp:T.comp, alcC: T.comp ? T.compReal / T.comp : null,
-    conv: T.val ? T.ins / T.val : null, cam: T.cam ? T.camI / T.cam : null, rech: T.op ? T.rech / T.op : null,
-    canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }).replace("<tr>", '<tr class="total">');
-  const encRes = "<tr><th class=\"rep-nm\">Líder</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th><th>Meta</th><th>Alcance</th>" +
-    (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
-    "<th>Conversión</th><th>Camada 30 d</th><th>% rechazo</th>" + (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
-  html += '<div class="rep-big"><div><b>' + T.ins + "</b><span>instalaciones</span></div>" + (cierra ? "<div><b>" + T.proy + "</b><span>cierre proyectado</span></div>" : "") +
+  const tablaRes = function(lista, rotulo){
+    if (!lista.length) return "";
+    let filas = lista.map(function(r){
+      const nc = r.canc ? r.canc.length : 0;
+      return filaRes(repEsc(r.L.tit), { op:r.act.op, val:r.act.val, ins:r.act.ins, dIns:repDelta(r.act.ins, r.ant.ins), meta:r.meta.ins,
+        alc: r.meta.ins ? r.act.ins / r.meta.ins : null, proy:r.proy, alcP: r.meta.ins ? r.proy / r.meta.ins : null,
+        comp: r.comp ? r.comp.ins + ' <span class="rep-cov">(' + r.comp.con + "/" + r.comp.total + ")</span>" : "—",
+        alcC: r.comp && r.comp.ins ? r.comp.real / r.comp.ins : null, conv:r.act.conv, cam:r.cam.pct, rech:r.act.pRech,
+        canc:nc, pc:(nc + r.act.ins) ? nc / (nc + r.act.ins) : null }, "rep-" + r.L.k.replace(/[^A-Z]/g, ""));
+    }).join("");
+    const T = totales(lista);
+    if (lista.length > 1) filas += filaRes("<b>Total</b>", { op:T.op, val:T.val, ins:T.ins, dIns:repDelta(T.ins, T.antIns), meta:T.meta,
+      alc: T.meta ? T.ins / T.meta : null, proy:T.proy, alcP: T.meta ? T.proy / T.meta : null, comp:T.comp, alcC: T.comp ? T.compReal / T.comp : null,
+      conv: T.val ? T.ins / T.val : null, cam: T.cam ? T.camI / T.cam : null, rech: T.op ? T.rech / T.op : null,
+      canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }).replace("<tr>", '<tr class="total">');
+    const encRes = "<tr><th class=\"rep-nm\">" + rotulo + "</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th><th>Meta</th><th>Alcance</th>" +
+      (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
+      "<th>Conversión</th><th>Camada 30 d</th><th>% rechazo</th>" + (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
+    return '<div class="scroll"><table class="compacta rep-t"><thead>' + encRes + "</thead><tbody>" + filas + "</tbody></table></div>";
+  };
+  html += '<div class="rep-big"><div><b>' + T.ins + "</b><span>instalaciones" + (rsL.length && rsC.length ? " (líderes de venta)" : "") + "</span></div>" + (cierra ? "<div><b>" + T.proy + "</b><span>cierre proyectado</span></div>" : "") +
     "<div><b>" + repPct(T.meta ? (cierra ? T.proy : T.ins) / T.meta : null) + "</b><span>" + (cierra ? "de la meta, proyectado" : "de la meta") + "</span></div>" +
     "<div><b>" + repPct(T.val ? T.ins / T.val : null) + "</b><span>conversión</span></div></div>" +
-    '<div class="scroll"><table class="compacta rep-t"><thead>' + encRes + "</thead><tbody>" + filas + "</tbody></table></div>" +
+    tablaRes(rsL, "Líder") + (rsL.length && rsC.length ? "<h3>Venta técnico</h3>" : "") + tablaRes(rsC, "Canal") +
     (per.lunes ? '<p class="rep-nota">* El compromiso de cada líder es la suma de los coaches que capturaron su Plan semanal, y se compara solo contra lo ' + (cierra ? "que proyectan" : "que instalaron") + " esos coaches.</p>" : "") +
     "</div></section>";
 
@@ -7957,7 +8003,7 @@ function reporteComercialHtml(){
     const pc = r.canc && (r.canc.length + a.ins) ? r.canc.length / (r.canc.length + a.ins) : null;
     const wa = repWhatsApp(r, per, tx);
     const id = "rep-" + r.L.k.replace(/[^A-Z]/g, "");
-    html += '<section class="panel"><h2>' + repEsc(repNombre(r.L.nombre)) + ' <span class="sub">' + r.coaches.length + " coaches · " + r.personas + " personas</span></h2>" +
+    html += '<section class="panel"><h2>' + repEsc(r.L.tit) + ' <span class="sub">' + (r.L.tipo === "canal" ? "canal · " : "") + r.coaches.length + " coaches · " + r.personas + " personas</span></h2>" +
       '<div class="rep" id="' + id + '"><div class="rep-cab">' + tag + "</div>" +
       '<div class="rep-kpis">' + kpis.map(function(k){ return '<div><span class="rep-lb">' + k[0] + "</span><b>" + k[1] + "</b>" + k[2] + "</div>"; }).join("") + "</div>" +
       '<h3>Alcance de la meta ' + (per.tipo === "mes" ? "mensual" : "semanal") + '</h3><div class="rep-meta">' + barras + '</div><p class="rep-nota">Meta por ranking de su gente (la misma de Equipos). ' +
@@ -7975,6 +8021,7 @@ function reporteComercialHtml(){
 
   html += '<section class="panel"><h2>Cómo se calcula <span class="sub">reporte comercial</span></h2><div class="rep"><ul class="rep-bul rep-como">' +
     "<li>Oportunidades por fecha de creación, validadas por fecha de validación (sin las que están en Perdida) e instalaciones por fecha de activación, con las mismas reglas de Semanal. Cada venta cuenta para el líder y el coach que trae la base.</li>" +
+    (canalesTec.length ? "<li>Venta técnico (" + canalesTec.map(function(c){ return c.tit.replace("Venta técnico ", ""); }).join(", ") + "): cada venta cuenta para el canal en que la clasifica la base (la clave del técnico en VENTA TECNICO; lo que no es " + listaAjuste("clavesTecnico").join(" ni ") + " va a otros). La gente y su meta son las personas de la plantilla de ese canal, igual que en Equipos. Se resume aparte de los líderes para no contar dos veces la misma venta.</li>" : "") +
     "<li>Meta: la de Equipos. Cada persona suma su meta semanal según su ranking (Platino, Oro, Plata, Bronce, Condicionado, Entrenamiento, vacantes y sin ranking, con los valores de Ajustes). Validadas y oportunidades llevan el factor escalonado de Ajustes. En el mes, la meta semanal por " + (el("semanasMes").value || "4.33") + " semanas.</li>" +
     "<li>Compromiso: el Plan semanal más reciente de cada coach en la app Día a día (Obj. Instalaciones). Un plan en cero cuenta como sin plan. En rojo, los compromisos abajo de la meta del coach. En el mes no aplica porque el plan es semanal.</li>" +
     "<li>Conversión: instaladas entre validadas del periodo (puede pasar de 100%). Camada de 30 días: de lo validado en los 30 días que terminan el último día del periodo, cuánto ya se instaló; meta " + (el("metaConversion").value || 88) + "%.</li>" +
