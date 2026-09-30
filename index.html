@@ -353,7 +353,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 97</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 98</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -627,13 +627,6 @@
         </label>
         <label class="campo">Plazas de punto de venta local (separadas por ;)
           <input type="text" id="plazasLocales" value="TORREON; LAGUNA; LERDO DURANGO">
-        </label>
-        <label class="campo">Qué cuenta como validada (lo marcado Perdida en la columna J nunca cuenta)
-          <select id="reglaVal">
-            <option value="fecha" selected>Tiene fecha de validación</option>
-            <option value="estatus">Estatus dice "Validada"</option>
-            <option value="ambos">Fecha y estatus "Validada"</option>
-          </select>
         </label>
         <label class="campo">Qué cuenta como instalación
           <select id="reglaIns">
@@ -2223,22 +2216,17 @@ function importeDe(f){
   return f.pp + f.addon;   // pronto pago + adicionales
 }
 
-// columna J de BASE DE DATOS: cuando dice "Perdida" la venta se cayó, así que el
-// renglón no cuenta como validado por más que traiga fecha o estatus de validación.
-// Si la columna no llegara (base vieja o SELECT sin la J), el campo viene vacío y no
-// se descarta nada: el reporte se comporta como antes.
+// columna J de BASE DE DATOS: cuando dice "Perdida" la venta se cayó (Seguimiento OS lo
+// marca en la fecha de validación para revisarlo caso por caso).
 function esPerdida(f){
   return normaliza(f.perdida).indexOf("PERDID") >= 0;
 }
 
+// venta validada = la columna J dice "Ganada" y hay fecha de validación (columna E), que
+// es la que acomoda la venta en su semana o mes. Lo que no diga Ganada (Perdida, vacío o
+// cualquier otro estado) no cuenta, traiga lo que traiga en fecha o estatus.
 function esValidada(f){
-  if (esPerdida(f)) return false;
-  const regla = el("reglaVal").value;
-  const conFecha = !!f.fVal;
-  const conEstatus = /valid/i.test(f.estatus);
-  if (regla === "estatus") return conEstatus;
-  if (regla === "ambos") return conFecha && conEstatus;
-  return conFecha;
+  return normaliza(f.perdida) === "GANADA" && !!f.fVal;
 }
 function esInstalada(f){
   if (!f.fIns) return false;
@@ -8645,7 +8633,7 @@ function descargarCsv(){
 
 /* ---------- arranque ---------- */
 
-["agrupar","reglaVal","reglaIns","planVista","matrizMetrica"].forEach(function(id){
+["agrupar","reglaIns","planVista","matrizMetrica"].forEach(function(id){
   el(id).addEventListener("change", pintar);
 });
 // estos dos, además, pueden cambiar el "periodo vigente" (checkbox del filtro Vendedor)
