@@ -786,8 +786,11 @@
       <label class="campo">Tipo de cuadrilla
         <select id="ordCuadrilla"><option value="">Todas</option></select>
       </label>
-      <label class="campo">Canal de venta
+      <label class="campo" id="cajaOrdCanal">Canal de venta
         <select id="ordCanal"><option value="">Todos</option></select>
+      </label>
+      <label class="campo" id="cajaOrdMunicipio" style="display:none">Municipio
+        <select id="ordMunicipio"><option value="">Todos</option></select>
       </label>
       <label class="campo">Cluster
         <select id="ordCluster"><option value="">Todos</option></select>
@@ -6355,6 +6358,7 @@ function llenarSelectoresOrdenes(){
    ["ordCuadrilla", function(o){ return o.cuadrilla; }, "Todas"],
    ["ordCanal", canalOrden, "Todos"],
    ["ordGeocerca", geocercaDe, "Todas"],
+   ["ordMunicipio", municipioDe, "Todos"],
    ["ordCluster", function(o){ return o.cluster; }, "Todos"]].forEach(function(par){
     const s = el(par[0]);
     if (!s) return;
@@ -6445,14 +6449,19 @@ function tipoEventoFn(){
 // ni el universo ni la hora de corte le aplican
 // filas: por omisión las de ATENCION ORDENES; la sábana también le pasa órdenes armadas
 // con OS POR INSTALAR, para que les apliquen los mismos filtros
-function ordenesFiltradas(sabana, filas){
+// sinCorte: deja fuera la hora de corte (que va contra el término), para quien la mide
+// contra otra fecha, como Eventos generados contra la creación
+function ordenesFiltradas(sabana, filas, sinCorte){
   const prov = el("ordProveedor").value;
   const cua = el("ordCuadrilla").value;
-  const can = el("ordCanal").value;
+  // cada vista usa solo el filtro que muestra: canal en Atención de órdenes, municipio
+  // en la sábana
+  const can = sabana ? "" : el("ordCanal").value;
+  const mun = sabana ? el("ordMunicipio").value : "";
   const clu = el("ordCluster").value;
   const uni = sabana ? "todos" : el("ordUniverso").value;
   const geo = el("ordGeocerca").value;
-  const corte = sabana ? 0 : corteOrdenes();
+  const corte = (sabana || sinCorte) ? 0 : corteOrdenes();
   const cliente = tiposClienteOrdenes();
   return (filas || ORD.filas).filter(function(o){
     if (uni !== "todos"){
@@ -6468,6 +6477,7 @@ function ordenesFiltradas(sabana, filas){
     if (prov && o.prov !== prov) return false;
     if (cua && o.cuadrilla !== cua) return false;
     if (can && canalOrden(o) !== can) return false;
+    if (mun && municipioDe(o) !== mun) return false;
     if (clu && o.cluster !== clu) return false;
     return true;
   });
@@ -7194,10 +7204,60 @@ function ordenesHtml(){
     "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>" +
     detalleCancelacionesHtml();
 
+  /* ---- tabla 4: eventos generados (lo que entró) ---- */
+  // el mismo dato que "Entraron" de la Sábana operaciones: órdenes por su fecha de
+  // creación. Aplican los filtros de la vista; la hora de corte se mide contra la hora
+  // de creación (no hay término que cortar)
+  const corteGen = corteOrdenes();
+  const generadas = ordenesFiltradas(false, null, true).filter(function(o){
+    if (!o.fCre) return false;
+    return !(corteGen && o.fCre.getHours() * 60 + o.fCre.getMinutes() > corteGen);
+  });
+  const gen = new Map();      // tipo -> día -> n
+  const genTot = new Map();   // día -> n
+  const genMes = {};
+  let genMesTot = 0;
+  generadas.forEach(function(o){
+    const t = R.tipoEv(o);
+    const k = claveDia(soloFecha(o.fCre));
+    if (!gen.has(t)) gen.set(t, new Map());
+    gen.get(t).set(k, (gen.get(t).get(k) || 0) + 1);
+    genTot.set(k, (genTot.get(k) || 0) + 1);
+    if (k.slice(0, 7) === mesK && k <= ult.k){ genMes[t] = (genMes[t] || 0) + 1; genMesTot++; }
+  });
+  const filaGen = function(nombre, m, mes, clase){
+    const de = function(c){ return m.get(c.k) || 0; };
+    const sem = cols.reduce(function(a, c){ return a + de(c); }, 0);
+    const ant = colsAnt.reduce(function(a, c){ return a + de(c); }, 0);
+    const prom = cerrados.length ? cerrados.reduce(function(a, i){ return a + de(cols[i]); }, 0) / cerrados.length : null;
+    return "<tr" + (clase ? ' class="' + clase + '"' : "") + "><td>" + nombre + "</td>" +
+      celdaNum(ant, "tot") + cols.map(function(c){ return celdaNum(de(c)); }).join("") +
+      celdaNum(sem, "tot") + '<td class="tot">' + promTxt(prom) + "</td>" +
+      celdaDif(sem, ant) + celdaNum(mes) + "</tr>";
+  };
+  const tiposGen = Array.from(gen.keys()).filter(function(t){
+    return cols.concat(colsAnt).some(function(c){ return gen.get(t).has(c.k); }) || genMes[t];
+  }).sort(function(a, b){
+    const s = function(t){ return cols.reduce(function(x, c){ return x + (gen.get(t).get(c.k) || 0); }, 0); };
+    return s(b) - s(a) || a.localeCompare(b, "es");
+  });
+  const tablaGen = !tiposGen.length ? "" :
+    '<section class="panel"><h2>Eventos generados' +
+    ' <span class="sub">órdenes que entraron cada día, por su fecha de creación (el mismo dato que "Entraron" en la Sábana operaciones)' +
+    " · " + rotUni + rotGeo +
+    (hCorte ? " · <b>solo lo creado hasta las " + hCorte + "</b>, en todos los días" : "") +
+    " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ") · Mes va hasta el " + fCorta(ult.d) + "</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' + encSemAnt + encDias +
+    '<th class="tot" title="' + rotAcum + '">Semana</th><th class="tot" title="promedio por día de los días cerrados">Prom</th>' +
+    "<th>vs sem. ant.</th><th>Mes</th></tr></thead><tbody>" +
+    tiposGen.map(function(t){ return filaGen(t, gen.get(t), genMes[t] || 0); }).join("") +
+    filaGen("Eventos generados", genTot, genMesTot, "total") +
+    "</tbody></table></div></section>";
+
   // primero el total del día y cómo lo repartieron los proveedores, luego lo que se
-  // canceló, enseguida cómo va el día por tipo de evento y hasta el final el detalle
-  // cuadrilla por cuadrilla
-  return tabla1 + tabla2 + tabla3 + estadoHoyHtml() + tabla2b;
+  // canceló, enseguida cómo va el día por tipo de evento, lo que entró y hasta el
+  // final el detalle cuadrilla por cuadrilla
+  return tabla1 + tabla2 + tabla3 + estadoHoyHtml() + tablaGen + tabla2b;
 }
 
 /* --- detalle de una celda de canceladas: quién canceló y por qué --- */
@@ -7428,6 +7488,8 @@ function sabanaHtml(){
   const abiertas = new Map(); // evento -> { n, h, nh }: órdenes vivas y su antigüedad
   const fuera = new Map();   // tipos que no están en la lista, para el aviso
   const asigVistas = new Set(); // "OS|día" ya contadas como asignadas
+  const SEP_MUN = "\u0001";     // evento + SEP_MUN + municipio: conteos por municipio
+  const munis = new Set();
   let maxDia = null;
   const des = desasignacionesPorOs();
   // c*: qué pasó con las asignadas de ese día (completadas el mismo día o después,
@@ -7451,7 +7513,14 @@ function sabanaHtml(){
     const i = llaves.indexOf(normaliza(ev0));
     if (i < 0){ fuera.set(ev0, (fuera.get(ev0) || 0) + 1); return; }
     const ev = lista[i];
-    const meter = function(k, fn){ fn(bucket(ev, k)); fn(bucket(TODOS, k)); };
+    // además del evento y el total, cada conteo cae en su municipio, para el desglose
+    // que se abre al tocar un concepto
+    const mun = municipioDe(o);
+    munis.add(mun);
+    const meter = function(k, fn){
+      fn(bucket(ev, k)); fn(bucket(TODOS, k));
+      fn(bucket(ev + SEP_MUN + mun, k)); fn(bucket(TODOS + SEP_MUN + mun, k));
+    };
 
     if (o.fCre) meter(veDia(o.fCre), function(b){ b.ent++; });
 
@@ -7576,14 +7645,47 @@ function sabanaHtml(){
     const suma = function(campo, cual){ return cols.reduce(function(a, c){ return a + b(c[cual])[campo]; }, 0); };
     const sumaC = function(campo){ return cerrados.reduce(function(a, c){ return a + b(c.k)[campo]; }, 0); };
 
+    // un renglón con sus números; m es el mapa día -> conteos que lo alimenta
+    const renglon = function(m, r, celdaNombre, clase){
+      const bb = function(k){ return m.get(k) || vacia(); };
+      const sm = function(cual){ return cols.reduce(function(a, c){ return a + bb(c[cual])[r[1]]; }, 0); };
+      const sem = sm("k"), ant = sm("kA");
+      const semC = cerrados.reduce(function(a, c){ return a + bb(c.k)[r[1]]; }, 0);
+      return "<tr" + (clase ? ' class="' + clase + '"' : "") + ">" + celdaNombre + celdaNum(ant, "tot") +
+        cols.map(function(c){ return celdaNum(bb(c.k)[r[1]]); }).join("") +
+        celdaNum(sem, "tot") +
+        '<td class="tot">' + (cerrados.length ? promTxt(semC / cerrados.length) : "—") + "</td>" +
+        celdaDif(sem, ant, r[2]) + "</tr>";
+    };
+
+    // con todos los municipios, cada concepto se abre por municipio, igual que el
+    // acordeón de "Estado de las órdenes de hoy por evento". El id lleva el evento y el
+    // concepto para que siga abierto al repintar.
+    const abrible = !el("ordMunicipio").value;
     let filas = "";
     RENGLONES.forEach(function(r){
-      const sem = suma(r[1], "k"), ant = suma(r[1], "kA");
-      filas += '<tr><td title="' + r[3] + '">' + r[0] + "</td>" + celdaNum(ant, "tot") +
-        cols.map(function(c){ return celdaNum(b(c.k)[r[1]]); }).join("") +
-        celdaNum(sem, "tot") +
-        '<td class="tot">' + (cerrados.length ? promTxt(sumaC(r[1]) / cerrados.length) : "—") + "</td>" +
-        celdaDif(sem, ant, r[2]) + "</tr>";
+      if (!abrible){
+        filas += renglon(m, r, '<td title="' + r[3] + '">' + r[0] + "</td>");
+        return;
+      }
+      const id = "sabmun:" + ev + "|" + r[1];
+      const abierto = DET_SEL === id;
+      filas += renglon(m, r, '<td class="clicable" data-det="' + id.replace(/"/g, "&quot;") +
+        '" title="' + r[3] + ' · toca para verlo por municipio">' + (abierto ? "▾ " : "▸ ") + r[0] + "</td>");
+      if (!abierto) return;
+      // los municipios con más movimiento en la semana primero; "Sin municipio" al final
+      const deMun = function(mu){ return porEv.get(ev + SEP_MUN + mu) || new Map(); };
+      const pesoMun = function(mu){
+        const mm = deMun(mu);
+        return cols.reduce(function(a, c){ return a + ((mm.get(c.k) || vacia())[r[1]]) + ((mm.get(c.kA) || vacia())[r[1]]); }, 0);
+      };
+      Array.from(munis).filter(function(mu){ return pesoMun(mu) > 0; }).sort(function(a, z){
+        const sa = a === "Sin municipio", sz = z === "Sin municipio";
+        if (sa !== sz) return sa ? 1 : -1;
+        return pesoMun(z) - pesoMun(a) || a.localeCompare(z, "es");
+      }).forEach(function(mu){
+        filas += renglon(deMun(mu), r, "<td>" + mu + "</td>", "hijo");
+      });
     });
 
     // lo que entró menos lo que salió (atendido o cancelado): si es positivo, el
@@ -9141,6 +9243,9 @@ function ajustaCajasDia(){
   // la sábana trae su propia lista de eventos y mide tiempos: ni universo ni hora de corte
   el("cajaOrdUniverso").style.display = VISTA === "sabana" ? "none" : "";
   el("cajaOrdHora").style.display = VISTA === "sabana" ? "none" : "";
+  // en la sábana el canal de venta cede su lugar al municipio
+  el("cajaOrdCanal").style.display = VISTA === "sabana" ? "none" : "";
+  el("cajaOrdMunicipio").style.display = VISTA === "sabana" ? "" : "none";
   Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
     l.style.display = (esOS || esDupli || esAjustes || esOrdenes) ? "none" : "";
   });
@@ -9278,7 +9383,7 @@ el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter")
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
 el("ordSemana").addEventListener("change", function(){ SEM_ORD_ELEGIDA = true; });
-["ordSemana","ordUniverso","ordHora","ordGeocerca","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte","sabanaEventos"].forEach(function(id){
+["ordSemana","ordUniverso","ordHora","ordGeocerca","ordProveedor","ordCuadrilla","ordCanal","ordMunicipio","ordCluster","ordTiposCliente","ordSubtiposAparte","sabanaEventos"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (esVistaOrdenes()) pintar(); });
 });
 ["hojaGeocercas","colGeocercas"].forEach(function(id){
