@@ -388,6 +388,7 @@
     <button type="button" data-vista="vend0">Vend X Eventos</button>
     <button type="button" data-vista="os">Seguimiento OS</button>
     <button type="button" data-vista="ordenes">Atención de órdenes</button>
+    <button type="button" data-vista="sabana">Sábana operaciones</button>
     <button type="button" data-vista="dupli">Cuentas duplicadas</button>
     <button type="button" data-vista="oprech">Op Rechazadas</button>
     <button type="button" data-vista="equipos">Equipos</button>
@@ -555,6 +556,9 @@
         </label>
         <label class="campo">Subtipos que van en renglón aparte (;)
           <input type="text" id="ordSubtiposAparte" value="Renovacion Tecnologica">
+        </label>
+        <label class="campo">Eventos de la Sábana operaciones, en orden (;)
+          <input type="text" id="sabanaEventos" value="Soporte; Instalacion; Cambio De Domicilio; Recoleccion Pi; Addons; Cambio De Plan; Empresarial; Hallazgo Empresarial; Renovacion Tecnologica; Factibilidad; Addon Wifi Extender; Cambio De Equipo">
         </label>
         <label class="campo">Hoja de geocercas
           <input type="text" id="hojaGeocercas" value="Clusters Colonias" placeholder="Clusters Colonias o su gid">
@@ -762,13 +766,13 @@
       <label class="campo">Día de la semana
         <div id="fOrdDiaSem"></div>
       </label>
-      <label class="campo">Hora de corte
+      <label class="campo" id="cajaOrdHora">Hora de corte
         <select id="ordHora"><option value="">Todo el día</option></select>
       </label>
       <label class="campo">Geocerca
         <select id="ordGeocerca"><option value="">Todas</option></select>
       </label>
-      <label class="campo">Universo de eventos
+      <label class="campo" id="cajaOrdUniverso">Universo de eventos
         <select id="ordUniverso">
           <option value="cliente" selected>Eventos de cliente</option>
           <option value="otros">Planta externa y mantenimiento</option>
@@ -5297,12 +5301,14 @@ async function cargarOsPorInstalar(){
     INFO_OSPI_REPETIDAS = repetidas;
     IDX_CANCELA = null;   // quién canceló cada orden se rearma con lo recién leído
     IDX_CANC_CUA = null;  // y cuántas veces canceló cada cuadrilla, también
+    IDX_ASIG_OS = null;   // y las asignaciones de la Sábana operaciones
     marcarFuente("ospi", "ok", ultAsig || "", OSPI.filas.length);
   }catch(e){
     OSPI = { estado:"falló: " + e.message, enc:[], arriba:[], filas:[], iEnc:0 };
     OSPI_INDICE = new Map();
     IDX_CANCELA = null;
     IDX_CANC_CUA = null;
+    IDX_ASIG_OS = null;
     marcarFuente("ospi", e.message);
   }
   CARGANDO_OSPI = false;
@@ -6251,6 +6257,8 @@ async function cargarOrdenes(){
         tecnico:   buscaCol(enc, ["NOMBRE TECNICO"]),
         creacion:  buscaCol(enc, ["FECHA CREACION"]),
         agenda:    buscaCol(enc, ["FECHA ULTIMA AGENDA"]),
+        // no siempre viene; si viene, la Sábana operaciones la usa como asignación
+        asignacion: buscaCol(enc, ["FECHA ASIGNACION"]),
         // turno de esa misma agenda (columna AC): va junto a la fecha en Seguimiento OS
         turno:     buscaCol(enc, ["TURNO ULTIMA AGENDA"]) >= 0
                      ? buscaCol(enc, ["TURNO ULTIMA AGENDA"])
@@ -6305,6 +6313,7 @@ async function cargarOrdenes(){
             fTer: fT,
             fCre: c.creacion >= 0 ? fechaOrden(v[c.creacion]) : null,
             fAge: c.agenda >= 0 ? fechaOrden(v[c.agenda]) : null,
+            fAsig: c.asignacion >= 0 ? fechaOrden(v[c.asignacion]) : null,
             turno: dame(v, c.turno),
             // columnas AC y AF, para el panel de estado por municipio
             fDia: c.dia >= 0 ? fechaOrden(v[c.dia]) : null,
@@ -6415,14 +6424,16 @@ function tipoEventoFn(){
   };
 }
 
-function ordenesFiltradas(){
+// sabana: la Sábana operaciones trae su propia lista de eventos y mide tiempos, así que
+// ni el universo ni la hora de corte le aplican
+function ordenesFiltradas(sabana){
   const prov = el("ordProveedor").value;
   const cua = el("ordCuadrilla").value;
   const can = el("ordCanal").value;
   const clu = el("ordCluster").value;
-  const uni = el("ordUniverso").value;
+  const uni = sabana ? "todos" : el("ordUniverso").value;
   const geo = el("ordGeocerca").value;
-  const corte = corteOrdenes();
+  const corte = sabana ? 0 : corteOrdenes();
   const cliente = tiposClienteOrdenes();
   return ORD.filas.filter(function(o){
     if (uni !== "todos"){
@@ -7277,6 +7288,252 @@ function detalleCancelacionesHtml(){
     }).join("") +
     '<tr class="total"><td>Total</td>' + celdaNum(info.lista.length) + "<td>100%</td></tr>" +
     "</tbody></table></div></section>";
+}
+
+/* ---------- sábana operaciones ----------
+   Por día: lo que entró (fecha de creación), lo que se asignó, lo que se canceló y lo
+   que se atendió (fecha de término), y cuánto tardó en atenderse. Arriba un bloque con
+   todos los eventos de la lista de Ajustes y debajo uno por cada evento, en ese orden.
+
+   La asignación sale de OS POR INSTALAR (columna Q, un renglón por intento) y, si
+   ATENCION ORDENES trae una columna FECHA ASIGNACION, también de ahí. Una OS que se
+   reasignó el mismo día cuenta una sola vez ese día. */
+
+function sabanaEventos(){
+  return el("sabanaEventos").value.split(";").map(function(s){ return s.trim(); }).filter(Boolean);
+}
+
+// OS normalizada -> fechas en que se asignó, de OS POR INSTALAR
+let IDX_ASIG_OS = null;
+
+function asignacionesPorOs(){
+  if (IDX_ASIG_OS) return IDX_ASIG_OS;
+  const m = new Map();
+  if (OSPI.estado !== "ok") return m;   // sin cachear: al cargar la hoja se rearma
+  // el índice ya viene sin los renglones repetidos de la hoja
+  OSPI_INDICE.forEach(function(rengs, k){
+    rengs.forEach(function(v){
+      const f = fechaOrden(v[COL_Q]);
+      if (!f) return;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(f);
+    });
+  });
+  IDX_ASIG_OS = m;
+  return m;
+}
+
+// menos de un día se lee mejor en horas; de ahí para arriba, en días
+function duracionTxt(h){
+  if (h === null || !isFinite(h)) return "—";
+  return h < 24 ? h.toFixed(1) + " h" : (h / 24).toFixed(1) + " d";
+}
+
+function sabanaHtml(){
+  if (CARGANDO_ORD || ORD.estado === "cargando"){
+    return '<section class="panel"><h2>Sábana operaciones</h2><div class="aviso">Leyendo la pestaña ATENCION ORDENES…</div></section>';
+  }
+  if (ORD.estado !== "ok"){
+    return '<section class="panel"><h2>Sábana operaciones</h2><div class="aviso error">No pude leer ATENCION ORDENES (' +
+      ORD.estado + '). Revisa en Ajustes de la fuente el nombre o gid de la pestaña.</div></section>';
+  }
+  const lista = sabanaEventos();
+  if (!lista.length){
+    return '<section class="panel"><h2>Sábana operaciones</h2><div class="aviso">No hay eventos en la lista de Ajustes de la fuente · Eventos de la Sábana operaciones.</div></section>';
+  }
+
+  const TODOS = "\u0000todos";
+  const llaves = lista.map(normaliza);
+  const tipoEv = tipoEventoFn();
+  const asig = asignacionesPorOs();
+  const HORA = 3600000;
+  const hoy = soloFecha(new Date());
+  const hoyK = claveDia(hoy);
+
+  const porEv = new Map();   // evento -> día -> conteos
+  const abiertas = new Map(); // evento -> { n, h, nh }: órdenes vivas y su antigüedad
+  const fuera = new Map();   // tipos que no están en la lista, para el aviso
+  let maxDia = null;
+  const vacia = function(){ return { ent:0, asig:0, canc:0, term:0, hAt:0, nAt:0, hAs:0, nAs:0 }; };
+  const bucket = function(ev, k){
+    if (!porEv.has(ev)) porEv.set(ev, new Map());
+    const m = porEv.get(ev);
+    if (!m.has(k)) m.set(k, vacia());
+    return m.get(k);
+  };
+  const veDia = function(d){
+    const s = soloFecha(d);
+    if (s <= hoy && (!maxDia || s > maxDia)) maxDia = s;
+    return claveDia(s);
+  };
+
+  ordenesFiltradas(true).forEach(function(o){
+    const ev0 = tipoEv(o);
+    const i = llaves.indexOf(normaliza(ev0));
+    if (i < 0){ fuera.set(ev0, (fuera.get(ev0) || 0) + 1); return; }
+    const ev = lista[i];
+    const meter = function(k, fn){ fn(bucket(ev, k)); fn(bucket(TODOS, k)); };
+
+    if (o.fCre) meter(veDia(o.fCre), function(b){ b.ent++; });
+
+    const fAsig = (asig.get(normOS(o.os)) || []).slice();
+    if (o.fAsig) fAsig.push(o.fAsig);
+    const diasAsig = new Set(fAsig.map(veDia));
+    diasAsig.forEach(function(k){ meter(k, function(b){ b.asig++; }); });
+
+    if (esAbierta(o)){
+      [ev, TODOS].forEach(function(e){
+        if (!abiertas.has(e)) abiertas.set(e, { n:0, h:0, nh:0 });
+        const a = abiertas.get(e);
+        a.n++;
+        if (o.fCre){ a.h += (Date.now() - o.fCre) / HORA; a.nh++; }
+      });
+      return;
+    }
+    if (!o.fTer) return;
+    const k = veDia(o.fTer);
+    if (esCancelada(o)){
+      meter(k, function(b){ b.canc++; });
+    } else if (esTerminada(o)){
+      // creación -> término, y última asignación anterior al término -> término
+      const hAt = (o.fCre && o.fTer >= o.fCre) ? (o.fTer - o.fCre) / HORA : null;
+      let ua = null;
+      fAsig.forEach(function(f){ if (f <= o.fTer && (!ua || f > ua)) ua = f; });
+      const hAs = ua ? (o.fTer - ua) / HORA : null;
+      meter(k, function(b){
+        b.term++;
+        if (hAt !== null){ b.hAt += hAt; b.nAt++; }
+        if (hAs !== null){ b.hAs += hAs; b.nAs++; }
+      });
+    }
+  });
+
+  if (!maxDia){
+    return '<section class="panel"><h2>Sábana operaciones</h2><div class="aviso">Ningún evento de la lista con fechas en lo que dejaron los filtros.</div></section>';
+  }
+
+  const semK = el("ordSemana").value || isoSemana(maxDia);
+  const lunes = lunesDe(semK);
+  const lunesAnt = lunesDe(claveAnterior(semK));
+  const domingo = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + 6);
+  // solo los días elegidos que ya ocurrieron, igual que Atención de órdenes
+  const cols = diasOrdenes().map(function(i){
+    const d = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() + i);
+    const dA = new Date(lunesAnt.getFullYear(), lunesAnt.getMonth(), lunesAnt.getDate() + i);
+    return { d:d, dA:dA, k:claveDia(d), kA:claveDia(dA) };
+  }).filter(function(c){ return c.d <= hoy; });
+  if (!cols.length){
+    return '<section class="panel"><h2>Sábana operaciones</h2><div class="aviso">' +
+      (diasOrdenes().length ? "Esa semana todavía no tiene días transcurridos." : "No hay ningún día de la semana marcado en el filtro.") +
+      "</div></section>";
+  }
+  // el promedio por día deja fuera el día en curso: media jornada lo hundiría
+  const cerrados = cols.filter(function(c){ return c.k !== hoyK; });
+  const hayHoy = cerrados.length < cols.length;
+  const rotSemAnt = fCorta(cols[0].dA) + " al " + fCorta(cols[cols.length - 1].dA);
+
+  const encDias = cols.map(function(c){
+    return "<th" + (c.k === hoyK ? ' title="día en curso: no entra en el promedio"' : "") + ">" +
+      DIAS[diaIndice(c.d)].toUpperCase() + '<span class="mini">' + c.d.getDate() + " " +
+      NOMBRE_MES[c.d.getMonth()].slice(0, 3) + (c.k === hoyK ? " ·hoy" : "") + "</span></th>";
+  }).join("");
+  const encabezado = "<thead><tr><th>Concepto</th>" +
+    '<th class="tot" title="mismos días de la semana anterior">SEM ANT<span class="mini">acumulado</span></th>' +
+    encDias + '<th class="tot">Semana</th><th class="tot" title="promedio por día de los días cerrados">Prom/día</th>' +
+    "<th>vs sem. ant.</th></tr></thead>";
+
+  const RENGLONES = [
+    ["Entraron", "ent", false, "órdenes creadas ese día"],
+    ["Asignadas", "asig", false, "OS asignadas a una cuadrilla ese día (una reasignación el mismo día cuenta una vez)"],
+    ["Canceladas", "canc", true, "órdenes que cerraron canceladas ese día"],
+    ["Atendidas", "term", false, "órdenes terminadas ese día"]
+  ];
+  const TIEMPOS = [
+    ["Promedio de atención", "hAt", "nAt", "de la creación de la orden a su término, de las atendidas ese día"],
+    ["Asignación → atención", "hAs", "nAs", "de la última asignación a su término, de las atendidas ese día que tienen asignación registrada"]
+  ];
+
+  function bloque(ev, titulo, nota){
+    const m = porEv.get(ev) || new Map();
+    const b = function(k){ return m.get(k) || vacia(); };
+    const suma = function(campo, cual){ return cols.reduce(function(a, c){ return a + b(c[cual])[campo]; }, 0); };
+    const sumaC = function(campo){ return cerrados.reduce(function(a, c){ return a + b(c.k)[campo]; }, 0); };
+
+    let filas = "";
+    RENGLONES.forEach(function(r){
+      const sem = suma(r[1], "k"), ant = suma(r[1], "kA");
+      filas += '<tr><td title="' + r[3] + '">' + r[0] + "</td>" + celdaNum(ant, "tot") +
+        cols.map(function(c){ return celdaNum(b(c.k)[r[1]]); }).join("") +
+        celdaNum(sem, "tot") +
+        '<td class="tot">' + (cerrados.length ? promTxt(sumaC(r[1]) / cerrados.length) : "—") + "</td>" +
+        celdaDif(sem, ant, r[2]) + "</tr>";
+    });
+
+    // lo que entró menos lo que salió (atendido o cancelado): si es positivo, el
+    // pendiente creció ese día
+    const bal = function(x){ return x.ent - x.term - x.canc; };
+    const balTxt = function(n){ return n > 0 ? "+" + num(n) : (n < 0 ? "−" + num(-n) : "0"); };
+    const balSem = cols.reduce(function(a, c){ return a + bal(b(c.k)); }, 0);
+    const balAnt = cols.reduce(function(a, c){ return a + bal(b(c.kA)); }, 0);
+    filas += '<tr class="total"><td title="entraron − atendidas − canceladas: positivo es que el pendiente creció">Balance (entra − sale)</td>' +
+      '<td class="tot">' + balTxt(balAnt) + "</td>" +
+      cols.map(function(c){ return "<td>" + balTxt(bal(b(c.k))) + "</td>"; }).join("") +
+      '<td class="tot">' + balTxt(balSem) + "</td>" +
+      '<td class="tot">' + (cerrados.length ? balTxt(Math.round(cerrados.reduce(function(a, c){ return a + bal(b(c.k)); }, 0) / cerrados.length)) : "—") + "</td>" +
+      "<td>—</td></tr>";
+
+    TIEMPOS.forEach(function(t){
+      const celda = function(h, n, extra){
+        const cl = extra || "";
+        if (!n) return '<td class="' + (cl + " cero").trim() + '">—</td>';
+        return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + duracionTxt(h / n) +
+          '<span class="mini">' + num(n) + " orden(es)</span></td>";
+      };
+      const hS = suma(t[1], "k"), nS = suma(t[2], "k");
+      const hA = suma(t[1], "kA"), nA = suma(t[2], "kA");
+      const hC = sumaC(t[1]), nC = sumaC(t[2]);
+      filas += '<tr class="total"><td title="' + t[3] + '">' + t[0] + "</td>" +
+        celda(hA, nA, "tot") +
+        cols.map(function(c){ return celda(b(c.k)[t[1]], b(c.k)[t[2]]); }).join("") +
+        celda(hS, nS, "tot") + celda(hC, nC, "tot") +
+        celdaDif(nS ? hS / nS : null, nA ? hA / nA : null, true) + "</tr>";
+    });
+
+    const a = abiertas.get(ev);
+    const sub = a
+      ? num(a.n) + " orden(es) abiertas hoy" + (a.nh ? ", con " + duracionTxt(a.h / a.nh) + " de antigüedad promedio" : "")
+      : "sin órdenes abiertas";
+    return '<section class="panel"><h2>' + titulo + ' <span class="sub">' + sub + (nota || "") + "</span></h2>" +
+      '<div class="scroll"><table class="compacta">' + encabezado + "<tbody>" + filas + "</tbody></table></div></section>";
+  }
+
+  const conMovimiento = function(ev){
+    const m = porEv.get(ev);
+    const enVentana = m && cols.some(function(c){
+      const x = m.get(c.k) || vacia(), y = m.get(c.kA) || vacia();
+      return x.ent || x.asig || x.canc || x.term || y.ent || y.asig || y.canc || y.term;
+    });
+    return enVentana || abiertas.has(ev);
+  };
+  const sinMov = lista.filter(function(ev){ return !conMovimiento(ev); });
+
+  const avisoAsig = OSPI.estado === "ok" ? "" :
+    " · <b>asignadas incompletas: no se pudo leer OS POR INSTALAR (" + OSPI.estado + ")</b>";
+  const avisoFuera = fuera.size
+    ? " · fuera de la lista (no cuentan): " + Array.from(fuera.keys()).sort().map(function(t){ return t + " " + num(fuera.get(t)); }).join(", ")
+    : "";
+
+  const nota = " · semana " + etiquetaSemana(semK) +
+    ", " + fCorta(lunes) + " al " + fCorta(domingo) + " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
+    (hayHoy ? " · el día en curso entra al acumulado tal como va, pero no al promedio" : "") +
+    " · entraron cuenta por fecha de creación; canceladas y atendidas por fecha de término" +
+    " · las asignadas salen de OS POR INSTALAR" + (ORD.filas.some(function(o){ return o.fAsig; }) ? " y de la fecha de asignación de ATENCION ORDENES" : "") +
+    " · el promedio de atención va de la creación de la orden a su término; en chico, cuántas órdenes lo forman" +
+    avisoAsig + avisoFuera +
+    (sinMov.length ? " · sin movimiento: " + sinMov.join(", ") : "");
+
+  return bloque(TODOS, "Sábana operaciones · todos los eventos", nota) +
+    lista.filter(conMovimiento).map(function(ev){ return bloque(ev, ev); }).join("");
 }
 
 /* ---------- pintado ---------- */
@@ -8330,6 +8587,11 @@ function pintar(){
     // de ahí sale quién canceló cada orden
     if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     html = ordenesHtml();
+  } else if (VISTA === "sabana"){
+    if (ORD.estado === "sin cargar" && !CARGANDO_ORD) cargarOrdenes();
+    // de ahí salen las asignaciones
+    if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
+    html = sabanaHtml();
   } else if (VISTA === "oprech"){
     html = opRechazadasHtml();
   } else if (VISTA === "equipos"){
@@ -8423,7 +8685,7 @@ function pintar(){
       else if (destino) window.location.hash = destino.id;
     });
   });
-  const campos = VISTA === "ordenes"
+  const campos = esVistaOrdenes()
     ? ["orddiasem"]
     : ["director","lider","coach","canal","plan","mes", VISTA === "mes" ? "diames" : "diasem"];
   const filtros = campos.map(function(c){
@@ -8436,6 +8698,8 @@ function pintar(){
     ? "Seguimiento de OS"
     : VISTA === "ordenes"
     ? "Atención de órdenes" + (ORD.estado === "ok" ? " · " + num(ORD.filas.length) + " órdenes leídas" : "")
+    : VISTA === "sabana"
+    ? "Sábana operaciones" + (ORD.estado === "ok" ? " · " + num(ORD.filas.length) + " órdenes leídas" : "")
     : VISTA === "vend0"
     ? "Vend X Eventos"
     : VISTA === "dias30"
@@ -8651,13 +8915,13 @@ function descargarCsv(){
   });
 
   if (!filas.length) return;   // nada que exportar
-  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos", ordenes:"atencion_ordenes" };
+  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos", ordenes:"atencion_ordenes", sabana:"sabana_operaciones" };
   const csv = "\ufeff" + filas.map(function(f){
     return f.map(function(x){ return '"' + String(x === undefined || x === null ? "" : x).replace(/"/g, '""') + '"'; }).join(",");
   }).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" }));
-  const semArchivo = VISTA === "ordenes" ? el("ordSemana").value : el("semana").value;
+  const semArchivo = esVistaOrdenes() ? el("ordSemana").value : el("semana").value;
   a.download = (nombres[VISTA] || "reporte") + "_" + (semArchivo || "") + ".csv";
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
@@ -8705,12 +8969,18 @@ const OPCIONES_AGRUPAR = [
   ["plan", "Plan"]
 ];
 
+// Atención de órdenes y Sábana operaciones leen la misma pestaña y comparten filtros
+function esVistaOrdenes(){ return VISTA === "ordenes" || VISTA === "sabana"; }
+
 function ajustaCajasDia(){
   const esOS = VISTA === "os";
   const esDupli = VISTA === "dupli";
   const esAjustes = VISTA === "ajustes";
   const esOpRech = VISTA === "oprech";
-  const esOrdenes = VISTA === "ordenes";
+  const esOrdenes = esVistaOrdenes();
+  // la sábana trae su propia lista de eventos y mide tiempos: ni universo ni hora de corte
+  el("cajaOrdUniverso").style.display = VISTA === "sabana" ? "none" : "";
+  el("cajaOrdHora").style.display = VISTA === "sabana" ? "none" : "";
   Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
     l.style.display = (esOS || esDupli || esAjustes || esOrdenes) ? "none" : "";
   });
@@ -8845,22 +9115,22 @@ el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar"
 el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
-["ordSemana","ordUniverso","ordHora","ordGeocerca","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte"].forEach(function(id){
-  el(id).addEventListener("change", function(){ if (VISTA === "ordenes") pintar(); });
+["ordSemana","ordUniverso","ordHora","ordGeocerca","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte","sabanaEventos"].forEach(function(id){
+  el(id).addEventListener("change", function(){ if (esVistaOrdenes()) pintar(); });
 });
 ["hojaGeocercas","colGeocercas"].forEach(function(id){
   el(id).addEventListener("change", async function(){
     await cargarGeocercas();
     if (ORD.estado === "ok") llenarSelectoresOrdenes();
-    if (VISTA === "ordenes") pintar();
+    if (esVistaOrdenes()) pintar();
   });
 });
 llenarMulti("orddiasem");   // que el panel no se vea vacío mientras carga la pestaña
 el("btnRecargarOrdenes").addEventListener("click", function(){ ORD.estado = "sin cargar"; cargarOrdenes(); });
 el("btnCsvOrdenes").addEventListener("click", descargarCsv);
-el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
+el("hojaOrdenes").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (esVistaOrdenes()) cargarOrdenes(); });
 // las columnas AC/AF se leen al armar los renglones, así que hay que releer la pestaña
-el("colOrdDia").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (VISTA === "ordenes") cargarOrdenes(); });
+el("colOrdDia").addEventListener("change", function(){ ORD.estado = "sin cargar"; if (esVistaOrdenes()) cargarOrdenes(); });
 el("btnRevisar").addEventListener("click", revisarCruce);
 el("btnRevisarEq").addEventListener("click", revisarEquipos);
 el("btnSubirBase").addEventListener("click", subirBaseDatos);
@@ -9163,9 +9433,9 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "dupli", "oprech", "equipos"];
-  else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes"];
-  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes"];
+  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos"];
+  else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana"];
+  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana"];
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
   // lista fija de "permitidas" (ese mismo botón ya se oculta/muestra en ajustaCajasDia)
