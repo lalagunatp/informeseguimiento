@@ -6426,7 +6426,9 @@ function tipoEventoFn(){
 
 // sabana: la Sábana operaciones trae su propia lista de eventos y mide tiempos, así que
 // ni el universo ni la hora de corte le aplican
-function ordenesFiltradas(sabana){
+// filas: por omisión las de ATENCION ORDENES; la sábana también le pasa órdenes armadas
+// con OS POR INSTALAR, para que les apliquen los mismos filtros
+function ordenesFiltradas(sabana, filas){
   const prov = el("ordProveedor").value;
   const cua = el("ordCuadrilla").value;
   const can = el("ordCanal").value;
@@ -6435,7 +6437,7 @@ function ordenesFiltradas(sabana){
   const geo = el("ordGeocerca").value;
   const corte = sabana ? 0 : corteOrdenes();
   const cliente = tiposClienteOrdenes();
-  return ORD.filas.filter(function(o){
+  return (filas || ORD.filas).filter(function(o){
     if (uni !== "todos"){
       const es = cliente.indexOf(normaliza(o.tipo)) >= 0;
       if (uni === "cliente" ? !es : es) return false;
@@ -7269,7 +7271,7 @@ function detalleCancelacionesHtml(){
     return cuadrillasQueCancelaron(o)[0] === SIN_CUAD;
   }).length;
   const aviso = sinCruce
-    ? ' · <b>' + sinCruce + " sin cuadrilla</b>: OS POR INSTALAR solo trae instalaciones, así que de los demás tipos no hay a quién cruzar"
+    ? ' · <b>' + sinCruce + " sin cuadrilla</b>: no aparecen en OS POR INSTALAR con esa cuenta y fecha de cancelación"
     : "";
 
   return '<section class="panel detalle"><h2>Quién canceló y por qué <span class="sub">' +
@@ -7323,6 +7325,41 @@ function asignacionesPorOs(){
   return m;
 }
 
+// OS que ya se asignaron en OS POR INSTALAR pero todavía no salen en ATENCION ORDENES
+// (esa pestaña se sube aparte y puede venir atrasada). Se arman como órdenes con lo que
+// trae OS POR INSTALAR para que pasen por los mismos filtros; solo aportan asignadas,
+// porque sin fecha de creación ni de término no dicen nada de lo demás.
+function ordenesSoloOspi(){
+  if (OSPI.estado !== "ok") return [];
+  const enOrd = new Set(ORD.filas.map(function(o){ return normOS(o.os); }));
+  const enc = OSPI.enc || [];
+  let iTipo = buscaCol(enc, ["TIPO"], ["SUBTIPO", "ASIGNACION"]);
+  let iSub = buscaCol(enc, ["SUBTIPO"]);
+  let iClu = buscaCol(enc, ["CLUSTER"]);
+  let iCta = buscaCol(enc, ["CUENTA"]);
+  let iTec = buscaCol(enc, ["TECNICO"], ["NOMBRE"]);
+  if (iTipo < 0) iTipo = letraAIndice("D");
+  if (iSub < 0) iSub = letraAIndice("E");
+  if (iClu < 0) iClu = letraAIndice("J");
+  if (iCta < 0) iCta = letraAIndice("C");
+  if (iTec < 0) iTec = letraAIndice("N");
+  const out = [];
+  OSPI_INDICE.forEach(function(rengs, k){
+    if (enOrd.has(k) || !rengs.length) return;
+    const v = rengs[rengs.length - 1];
+    const dame = function(i){ return arreglaMojibake(v[i] || "").trim(); };
+    const usr = dame(iTec);
+    out.push({
+      soloAsig: true,
+      os: k, cuenta: dame(iCta),
+      tipo: dame(iTipo) || "Sin tipo", subtipo: dame(iSub), cluster: dame(iClu),
+      prov: proveedorDeUsuario(usr), cuadrilla: "Sin cuadrilla", canalHoja: "Sin canal",
+      estatus: "", fTer: null, fCre: null, fAsig: null
+    });
+  });
+  return out;
+}
+
 // menos de un día se lee mejor en horas; de ahí para arriba, en días
 function duracionTxt(h){
   if (h === null || !isFinite(h)) return "—";
@@ -7367,7 +7404,7 @@ function sabanaHtml(){
     return claveDia(s);
   };
 
-  ordenesFiltradas(true).forEach(function(o){
+  ordenesFiltradas(true).concat(ordenesFiltradas(true, ordenesSoloOspi())).forEach(function(o){
     const ev0 = tipoEv(o);
     const i = llaves.indexOf(normaliza(ev0));
     if (i < 0){ fuera.set(ev0, (fuera.get(ev0) || 0) + 1); return; }
@@ -7381,6 +7418,7 @@ function sabanaHtml(){
     const diasAsig = new Set(fAsig.map(veDia));
     diasAsig.forEach(function(k){ meter(k, function(b){ b.asig++; }); });
 
+    if (o.soloAsig) return;
     if (esAbierta(o)){
       [ev, TODOS].forEach(function(e){
         if (!abiertas.has(e)) abiertas.set(e, { n:0, h:0, nh:0 });
