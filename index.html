@@ -5303,6 +5303,8 @@ async function cargarOsPorInstalar(){
     IDX_CANC_CUA = null;  // y cuántas veces canceló cada cuadrilla, también
     IDX_ASIG_OS = null;   // y las asignaciones de la Sábana operaciones
     marcarFuente("ospi", "ok", ultAsig || "", OSPI.filas.length);
+    // con las asignaciones ya leídas, la sábana puede tener semanas nuevas
+    if (ORD.estado === "ok" && VISTA === "sabana") llenarSemanasOrdenes();
   }catch(e){
     OSPI = { estado:"falló: " + e.message, enc:[], arriba:[], filas:[], iEnc:0 };
     OSPI_INDICE = new Map();
@@ -6372,12 +6374,26 @@ function llenarSelectoresOrdenes(){
 function semanasOrdenes(){
   const s = new Set();
   ORD.filas.forEach(function(o){ if (o.fTer) s.add(isoSemana(o.fTer)); });
+  // la sábana también cuenta lo que entró y lo que se asignó: una semana que todavía
+  // no cierra nada en ATENCION ORDENES pero ya tiene asignaciones tiene que poder elegirse
+  if (VISTA === "sabana"){
+    const hoy = new Date();
+    ORD.filas.forEach(function(o){ if (o.fCre && o.fCre <= hoy) s.add(isoSemana(o.fCre)); });
+    asignacionesPorOs().forEach(function(fs){
+      fs.forEach(function(f){ if (f <= hoy) s.add(isoSemana(f)); });
+    });
+  }
   return Array.from(s).sort();
 }
 
+// true cuando la semana la eligió la persona; mientras no, cada vez que se rearma la
+// lista queda en la más reciente (si no, se quedaría pegada en la que tocó por omisión
+// antes de que terminara de llegar OS POR INSTALAR)
+let SEM_ORD_ELEGIDA = false;
+
 function llenarSemanasOrdenes(){
   const sel = el("ordSemana");
-  const previo = sel.value;
+  const previo = SEM_ORD_ELEGIDA ? sel.value : "";
   const lista = semanasOrdenes();
   sel.innerHTML = lista.slice().reverse().map(function(k){
     const l = lunesDe(k);
@@ -7390,6 +7406,7 @@ function sabanaHtml(){
   const porEv = new Map();   // evento -> día -> conteos
   const abiertas = new Map(); // evento -> { n, h, nh }: órdenes vivas y su antigüedad
   const fuera = new Map();   // tipos que no están en la lista, para el aviso
+  const asigVistas = new Set(); // "OS|día" ya contadas como asignadas
   let maxDia = null;
   const vacia = function(){ return { ent:0, asig:0, canc:0, term:0, hAt:0, nAt:0, hAs:0, nAs:0 }; };
   const bucket = function(ev, k){
@@ -7413,10 +7430,20 @@ function sabanaHtml(){
 
     if (o.fCre) meter(veDia(o.fCre), function(b){ b.ent++; });
 
-    const fAsig = (asig.get(normOS(o.os)) || []).slice();
+    const osK = normOS(o.os);
+    const fAsig = (asig.get(osK) || []).slice();
     if (o.fAsig) fAsig.push(o.fAsig);
+    // una OS asignada varias veces el mismo día cuenta una sola vez ese día, aunque
+    // venga en varios intentos de OS POR INSTALAR o repetida en ATENCION ORDENES
     const diasAsig = new Set(fAsig.map(veDia));
-    diasAsig.forEach(function(k){ meter(k, function(b){ b.asig++; }); });
+    diasAsig.forEach(function(k){
+      if (osK){
+        const llave = osK + "|" + k;
+        if (asigVistas.has(llave)) return;
+        asigVistas.add(llave);
+      }
+      meter(k, function(b){ b.asig++; });
+    });
 
     if (o.soloAsig) return;
     if (esAbierta(o)){
@@ -7555,8 +7582,22 @@ function sabanaHtml(){
   };
   const sinMov = lista.filter(function(ev){ return !conMovimiento(ev); });
 
-  const avisoAsig = OSPI.estado === "ok" ? "" :
-    " · <b>asignadas incompletas: no se pudo leer OS POR INSTALAR (" + OSPI.estado + ")</b>";
+  // cuántas asignaciones trae OS POR INSTALAR y de qué fechas: si la hoja solo guarda
+  // unos días, aquí se ve por qué los demás salen en cero
+  let nAsig = 0, minAsig = null, maxAsig = null;
+  asig.forEach(function(fs){
+    fs.forEach(function(f){
+      nAsig++;
+      if (!minAsig || f < minAsig) minAsig = f;
+      if (!maxAsig || f > maxAsig) maxAsig = f;
+    });
+  });
+  const avisoAsig = (CARGANDO_OSPI || OSPI.estado === "cargando")
+    ? " · <b>leyendo OS POR INSTALAR, las asignadas todavía no salen</b>"
+    : OSPI.estado !== "ok"
+    ? " · <b>asignadas incompletas: no se pudo leer OS POR INSTALAR (" + OSPI.estado + ")</b>"
+    : " · OS POR INSTALAR trae " + num(nAsig) + " asignación(es)" +
+      (minAsig ? ", del " + fCorta(minAsig) + " al " + fCorta(maxAsig) + "; fuera de esas fechas las asignadas salen en 0" : "");
   const avisoFuera = fuera.size
     ? " · fuera de la lista (no cuentan): " + Array.from(fuera.keys()).sort().map(function(t){ return t + " " + num(fuera.get(t)); }).join(", ")
     : "";
@@ -9120,6 +9161,8 @@ function ajustaAgrupar(){
 Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(b){
   b.addEventListener("click", function(){
     VISTA = b.getAttribute("data-vista");
+    // Atención de órdenes y la sábana arman la lista de semanas distinto
+    if (esVistaOrdenes() && ORD.estado === "ok") llenarSemanasOrdenes();
     ajustaAgrupar();
     ajustaCajasDia();
     if (!MULTI.vendedor.soloPlantilla) llenarMulti("vendedor");
@@ -9153,6 +9196,7 @@ el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar"
 el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
+el("ordSemana").addEventListener("change", function(){ SEM_ORD_ELEGIDA = true; });
 ["ordSemana","ordUniverso","ordHora","ordGeocerca","ordProveedor","ordCuadrilla","ordCanal","ordCluster","ordTiposCliente","ordSubtiposAparte","sabanaEventos"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (esVistaOrdenes()) pintar(); });
 });
