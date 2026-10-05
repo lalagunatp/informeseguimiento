@@ -162,6 +162,7 @@
   tbody td:first-child{font-family:inherit}
   tr.total td{font-weight:700; background:#f4f7fa; border-top:1px solid var(--line)}
   tr.total td:first-child{background:#f4f7fa}
+  tr.subtit td{font-family:inherit; font-size:10.5px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--muted); background:#fff; border-top:2px solid var(--line); padding-top:9px}
   td.sem{border-left:1px solid var(--line)}
   td.tot{background:#f2f5f8; font-weight:700}
   td.dif{font-weight:700}
@@ -7341,6 +7342,26 @@ function asignacionesPorOs(){
   return m;
 }
 
+// OS normalizada -> días (clave) en que una asignación de OS POR INSTALAR terminó en
+// desasignación (columna X con fecha). Se rearma cuando cambia el índice de la hoja.
+let IDX_DES_OS = null;
+
+function desasignacionesPorOs(){
+  if (IDX_DES_OS && IDX_DES_OS.src === OSPI_INDICE) return IDX_DES_OS.m;
+  const m = new Map();
+  if (OSPI.estado !== "ok") return m;
+  OSPI_INDICE.forEach(function(rengs, k){
+    rengs.forEach(function(v){
+      const f = fechaOrden(v[COL_Q]);
+      if (!f || !fechaOrden(v[COL_X])) return;
+      if (!m.has(k)) m.set(k, new Set());
+      m.get(k).add(claveDia(f));
+    });
+  });
+  IDX_DES_OS = { src:OSPI_INDICE, m:m };
+  return m;
+}
+
 // OS que ya se asignaron en OS POR INSTALAR pero todavía no salen en ATENCION ORDENES
 // (esa pestaña se sube aparte y puede venir atrasada). Se arman como órdenes con lo que
 // trae OS POR INSTALAR para que pasen por los mismos filtros; solo aportan asignadas,
@@ -7408,7 +7429,11 @@ function sabanaHtml(){
   const fuera = new Map();   // tipos que no están en la lista, para el aviso
   const asigVistas = new Set(); // "OS|día" ya contadas como asignadas
   let maxDia = null;
-  const vacia = function(){ return { ent:0, asig:0, canc:0, term:0, hAt:0, nAt:0, hAs:0, nAs:0 }; };
+  const des = desasignacionesPorOs();
+  // c*: qué pasó con las asignadas de ese día (completadas el mismo día o después,
+  // canceladas, reasignadas otro día, desasignadas sin reasignar, en curso)
+  const vacia = function(){ return { ent:0, asig:0, canc:0, term:0, hAt:0, nAt:0, hAs:0, nAs:0,
+    cCompHoy:0, cCompDes:0, cCanc:0, cReas:0, cDesP:0, cCurso:0 }; };
   const bucket = function(ev, k){
     if (!porEv.has(ev)) porEv.set(ev, new Map());
     const m = porEv.get(ev);
@@ -7436,13 +7461,31 @@ function sabanaHtml(){
     // una OS asignada varias veces el mismo día cuenta una sola vez ese día, aunque
     // venga en varios intentos de OS POR INSTALAR o repetida en ATENCION ORDENES
     const diasAsig = new Set(fAsig.map(veDia));
-    diasAsig.forEach(function(k){
+    const diasOrden = Array.from(diasAsig).sort();
+    const kTer = o.fTer ? claveDia(o.fTer) : null;
+    const cerrada = !o.soloAsig && !esAbierta(o) && kTer;
+    const desDias = des.get(osK);
+    diasOrden.forEach(function(k, i){
       if (osK){
         const llave = osK + "|" + k;
         if (asigVistas.has(llave)) return;
         asigVistas.add(llave);
       }
-      meter(k, function(b){ b.asig++; });
+      // qué pasó con lo asignado ese día: el cierre le toca a la última asignación
+      // anterior a él; si la OS se volvió a asignar otro día antes de cerrar, esta
+      // asignación se cuenta como desasignada y reasignada
+      const sig = diasOrden[i + 1] || null;
+      let fin;
+      if (cerrada && (!sig || kTer < sig)){
+        fin = esCancelada(o) ? "cCanc" : (kTer === k ? "cCompHoy" : "cCompDes");
+      } else if (sig){
+        fin = "cReas";
+      } else if (desDias && desDias.has(k)){
+        fin = "cDesP";
+      } else {
+        fin = "cCurso";
+      }
+      meter(k, function(b){ b.asig++; b[fin]++; });
     });
 
     if (o.soloAsig) return;
@@ -7518,6 +7561,15 @@ function sabanaHtml(){
     ["Asignación → atención", "hAs", "nAs", "de la última asignación a su término, de las atendidas ese día que tienen asignación registrada"]
   ];
 
+  const DESTINOS = [
+    ["Completadas el mismo día", "cCompHoy", false, "asignadas ese día que se terminaron ese mismo día"],
+    ["Completadas después", "cCompDes", false, "asignadas ese día que se terminaron en un día posterior, sin volver a asignarse"],
+    ["Canceladas", "cCanc", true, "asignadas ese día cuya orden cerró cancelada, sin volver a asignarse antes"],
+    ["Desasignadas y reasignadas otro día", "cReas", true, "se volvieron a asignar en un día posterior antes de cerrar: su desenlace cuenta en ese otro día"],
+    ["Desasignadas sin reasignar", "cDesP", true, "OS POR INSTALAR trae fecha de desasignación y la orden no ha cerrado ni se volvió a asignar"],
+    ["Siguen en curso", "cCurso", false, "todavía no cierran ni se desasignaron (o ATENCION ORDENES aún no las trae)"]
+  ];
+
   function bloque(ev, titulo, nota){
     const m = porEv.get(ev) || new Map();
     const b = function(k){ return m.get(k) || vacia(); };
@@ -7564,6 +7616,34 @@ function sabanaHtml(){
         celdaDif(nS ? hS / nS : null, nA ? hA / nA : null, true) + "</tr>";
     });
 
+    // las asignadas de cada día, seguidas hasta su desenlace: estos renglones suman
+    // exactamente lo que dice Asignadas en esa columna
+    filas += '<tr class="subtit"><td colspan="' + (cols.length + 5) + '">Qué pasó con lo asignado ese día</td></tr>';
+    DESTINOS.forEach(function(r){
+      const sem = suma(r[1], "k"), ant = suma(r[1], "kA");
+      filas += '<tr><td title="' + r[3] + '">' + r[0] + "</td>" + celdaNum(ant, "tot") +
+        cols.map(function(c){ return celdaNum(b(c.k)[r[1]]); }).join("") +
+        celdaNum(sem, "tot") +
+        '<td class="tot">' + (cerrados.length ? promTxt(sumaC(r[1]) / cerrados.length) : "—") + "</td>" +
+        celdaDif(sem, ant, r[2]) + "</tr>";
+    });
+    const comp = function(x){ return x.cCompHoy + x.cCompDes; };
+    const celdaPct = function(n, d, extra){
+      const cl = extra || "";
+      if (!d) return '<td class="' + (cl + " cero").trim() + '">—</td>';
+      return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + pct(n / d) +
+        '<span class="mini">' + num(n) + "/" + num(d) + "</span></td>";
+    };
+    const compS = cols.reduce(function(a, c){ return a + comp(b(c.k)); }, 0);
+    const compA = cols.reduce(function(a, c){ return a + comp(b(c.kA)); }, 0);
+    const compC = cerrados.reduce(function(a, c){ return a + comp(b(c.k)); }, 0);
+    const asigS = suma("asig", "k"), asigA = suma("asig", "kA"), asigC = sumaC("asig");
+    filas += '<tr class="total"><td title="completadas (el mismo día o después) entre asignadas de ese día">% de lo asignado que se completó</td>' +
+      celdaPct(compA, asigA, "tot") +
+      cols.map(function(c){ return celdaPct(comp(b(c.k)), b(c.k).asig); }).join("") +
+      celdaPct(compS, asigS, "tot") + celdaPct(compC, asigC, "tot") +
+      celdaDif(asigS ? compS / asigS : null, asigA ? compA / asigA : null) + "</tr>";
+
     const a = abiertas.get(ev);
     const sub = a
       ? num(a.n) + " orden(es) abiertas hoy" + (a.nh ? ", con " + duracionTxt(a.h / a.nh) + " de antigüedad promedio" : "")
@@ -7608,6 +7688,7 @@ function sabanaHtml(){
     " · entraron cuenta por fecha de creación; canceladas y atendidas por fecha de término" +
     " · las asignadas salen de OS POR INSTALAR" + (ORD.filas.some(function(o){ return o.fAsig; }) ? " y de la fecha de asignación de ATENCION ORDENES" : "") +
     " · el promedio de atención va de la creación de la orden a su término; en chico, cuántas órdenes lo forman" +
+    " · \"Qué pasó con lo asignado\" sigue a las asignadas de cada día hasta su desenlace y suma lo mismo que Asignadas" +
     avisoAsig + avisoFuera +
     (sinMov.length ? " · sin movimiento: " + sinMov.join(", ") : "");
 
