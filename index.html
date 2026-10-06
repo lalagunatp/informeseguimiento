@@ -7811,21 +7811,18 @@ function sabanaHtml(){
       '<td class="tot">' + (cerrados.length ? balTxt(Math.round(balC / cerrados.length)) : "—") + "</td>" +
       "<td>—</td>" + '<td class="tot">' + balTxt(bal7) + "</td></tr>";
 
-    // promedio de atención: balance ÷ atendidas, en días. En los acumulados, el balance
-    // de esos días ÷ las atendidas de esos días
-    const celdaProm = function(bl, at, extra){
-      const cl = extra || "";
-      if (!at) return '<td class="' + (cl + " cero").trim() + '">—</td>';
-      return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + (bl / at).toFixed(2) + " d" +
-        '<span class="mini">' + balTxt(bl) + " ÷ " + num(at) + "</span></td>";
+    // promedio de atención: balance ÷ atendidas por día, en días. Solo en Semana (entre
+    // los días cerrados de la semana, sin el día en curso) y en los últimos 7 días (entre 7)
+    const celdaProm = function(bl, at, dias){
+      if (!at || !dias) return '<td class="tot cero">—</td>';
+      return '<td class="tot">' + (bl / (at / dias)).toFixed(2) + " d" +
+        '<span class="mini">' + balTxt(bl) + " ÷ (" + num(at) + " ÷ " + dias + ")</span></td>";
     };
-    const termS = suma("term", "k"), termA = suma("term", "kA"), termC = sumaC("term"), term7 = suma7("term");
-    filas += '<tr class="total"><td title="balance (entra − sale) ÷ atendidas; en chico, la operación">Promedio de atención</td>' +
-      celdaProm(balAnt, termA, "tot") +
-      cols.map(function(c){ return celdaProm(bal(b(c.k)), b(c.k).term); }).join("") +
-      celdaProm(balSem, termS, "tot") + celdaProm(balC, termC, "tot") +
-      celdaDif(termS ? balSem / termS : null, termA ? balAnt / termA : null, true) +
-      celdaProm(bal7, term7, "tot") + "</tr>";
+    const celdaVacia = '<td class="cero"></td>';
+    filas += '<tr class="total"><td title="balance (entra − sale) ÷ (atendidas ÷ días): cuántos días de atención representa el balance; en chico, la operación">Promedio de atención</td>' +
+      '<td class="tot cero"></td>' + cols.map(function(){ return celdaVacia; }).join("") +
+      celdaProm(balC, sumaC("term"), cerrados.length) + '<td class="tot cero"></td>' + celdaVacia +
+      celdaProm(bal7, suma7("term"), 7) + "</tr>";
 
     // las asignadas de cada día, seguidas hasta su desenlace: estos renglones suman
     // exactamente lo que dice Asignadas en esa columna
@@ -7908,7 +7905,7 @@ function sabanaHtml(){
     " · si OS POR INSTALAR no trae el motivo de cancelación, se usa el de ATENCION ORDENES" +
     " · las asignadas salen de OS POR INSTALAR" + (ORD.filas.some(function(o){ return o.fAsig; }) ? " y de la fecha de asignación de ATENCION ORDENES" : "") +
     " · el balance resta atendidas y canceladas, sin las canceladas por atender (todavía se pueden trabajar)" +
-    " · el promedio de atención es balance ÷ atendidas, en días; en chico, la operación" +
+    " · el promedio de atención es balance ÷ (atendidas ÷ días), en días; solo sale en Semana (días cerrados de la semana: sin el día en curso) y en los últimos 7 días (entre 7)" +
     " · Acumulado últimos 7 días suma los 7 días cerrados de ayer hacia atrás (" + rotUlt7 + "), sin importar la semana elegida" +
     " · \"Qué pasó con lo asignado\" sigue a las asignadas de cada día hasta su desenlace y suma lo mismo que Asignadas" +
     avisoAsig + avisoFuera +
