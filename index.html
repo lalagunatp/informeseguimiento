@@ -7554,7 +7554,7 @@ function sabanaHtml(){
   // canceladas, reasignadas otro día, desasignadas sin reasignar, en curso)
   // canc es el total de canceladas (para el balance); canc* lo separa por motivo
   const motCanc = motivoCancelacionPorOs();
-  const vacia = function(){ return { ent:0, asig:0, canc:0, term:0, hAt:0, nAt:0, hAs:0, nAs:0,
+  const vacia = function(){ return { ent:0, asig:0, canc:0, term:0,
     cancAuto:0, cancImp:0, cancCli:0, cancInst:0, cancTiempo:0,
     cCompHoy:0, cCompDes:0, cReas:0, cDesP:0, cCurso:0,
     c_cancAuto:0, c_cancImp:0, c_cancCli:0, c_cancInst:0, c_cancTiempo:0 }; };
@@ -7586,16 +7586,6 @@ function sabanaHtml(){
     return v <= hoy ? { v:v } : { viva:true };
   };
   const porTiempo = new Map();  // evento -> órdenes que ya cuentan por tiempo
-  // días de atención: evento -> día -> { e: entraron a la fila, s: salieron de ella }
-  const fila = new Map();
-  const filaMov = function(ev, d, campo){
-    [ev, TODOS].forEach(function(e){
-      if (!fila.has(e)) fila.set(e, new Map());
-      const m = fila.get(e), k = claveDia(soloFecha(d));
-      if (!m.has(k)) m.set(k, { e:0, s:0 });
-      m.get(k)[campo]++;
-    });
-  };
   const vivas = new Map();      // evento -> canceladas por atender dentro de los 30 días
   const bucket = function(ev, k){
     if (!porEv.has(ev)) porEv.set(ev, new Map());
@@ -7663,17 +7653,6 @@ function sabanaHtml(){
     });
 
     if (o.soloAsig) return;
-    // la orden está en la fila desde que entra hasta que sale: atendida, cancelada
-    // definitiva (auto, imposibilidad, cliente) o por tiempo. La cancelada por atender
-    // todavía se puede trabajar, así que sigue en la fila.
-    if (o.fCre){
-      let sal = null;
-      if (vence) sal = vence;
-      else if (esTerminada(o)) sal = o.fTer || null;
-      else if (esCancelada(o) && !(et && et.viva)) sal = o.fTer || null;
-      filaMov(ev, o.fCre, "e");
-      if (sal) filaMov(ev, sal, "s");
-    }
     if (vence){
       meter(veDia(vence), function(b){ b.canc++; b.cancTiempo++; });
       [ev, TODOS].forEach(function(e){ porTiempo.set(e, (porTiempo.get(e) || 0) + 1); });
@@ -7695,16 +7674,7 @@ function sabanaHtml(){
       meter(k, function(b){ b.canc++; b[g]++; });
       if (et && et.viva) [ev, TODOS].forEach(function(e){ vivas.set(e, (vivas.get(e) || 0) + 1); });
     } else if (esTerminada(o)){
-      // creación -> término, y última asignación anterior al término -> término
-      const hAt = (o.fCre && o.fTer >= o.fCre) ? (o.fTer - o.fCre) / HORA : null;
-      let ua = null;
-      fAsig.forEach(function(f){ if (f <= o.fTer && (!ua || f > ua)) ua = f; });
-      const hAs = ua ? (o.fTer - ua) / HORA : null;
-      meter(k, function(b){
-        b.term++;
-        if (hAt !== null){ b.hAt += hAt; b.nAt++; }
-        if (hAs !== null){ b.hAs += hAs; b.nAs++; }
-      });
+      meter(k, function(b){ b.term++; });
     }
   });
 
@@ -7731,6 +7701,11 @@ function sabanaHtml(){
   const cerrados = cols.filter(function(c){ return c.k !== hoyK; });
   const hayHoy = cerrados.length < cols.length;
   const rotSemAnt = fCorta(cols[0].dA) + " al " + fCorta(cols[cols.length - 1].dA);
+  // últimos 7 días cerrados, de ayer hacia atrás, sin importar la semana elegida
+  const ult7 = [];
+  for (let i = 7; i >= 1; i--) ult7.push(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - i));
+  const ult7K = ult7.map(claveDia);
+  const rotUlt7 = fCorta(ult7[0]) + " al " + fCorta(ult7[6]);
 
   const encDias = cols.map(function(c){
     return "<th" + (c.k === hoyK ? ' title="día en curso: no entra en el promedio"' : "") + ">" +
@@ -7740,7 +7715,9 @@ function sabanaHtml(){
   const encabezado = "<thead><tr><th>Concepto</th>" +
     '<th class="tot" title="mismos días de la semana anterior">SEM ANT<span class="mini">acumulado</span></th>' +
     encDias + '<th class="tot">Semana</th><th class="tot" title="promedio por día de los días cerrados">Prom/día</th>' +
-    "<th>vs sem. ant.</th></tr></thead>";
+    "<th>vs sem. ant.</th>" +
+    '<th class="tot" title="suma de los últimos 7 días cerrados, de ayer hacia atrás: ' + rotUlt7 + '">Acumulado últimos 7 días' +
+    '<span class="mini">días cerrados · ' + rotUlt7 + "</span></th></tr></thead>";
 
   const RENGLONES = [
     ["Entraron", "ent", false, "órdenes creadas ese día"],
@@ -7751,10 +7728,6 @@ function sabanaHtml(){
     ["Canceladas por atender", "cancInst", true, "el resto de las canceladas ese día: todavía se pueden reactivar mientras no cumplan 30 días desde su creación"],
     ["Canceladas por tiempo", "cancTiempo", true, "abiertas o canceladas por atender que ese día cumplieron 30 días desde su creación sin que la cuenta terminara ese evento: salen de por atender y cuentan aquí"],
     ["Atendidas", "term", false, "órdenes terminadas ese día"]
-  ];
-  const TIEMPOS = [
-    ["Promedio de atención", "hAt", "nAt", "de la creación de la orden a su término, de las atendidas ese día"],
-    ["Asignación → atención", "hAs", "nAs", "de la última asignación a su término, de las atendidas ese día que tienen asignación registrada"]
   ];
 
   const DESTINOS = [
@@ -7775,6 +7748,9 @@ function sabanaHtml(){
     const b = function(k){ return m.get(k) || vacia(); };
     const suma = function(campo, cual){ return cols.reduce(function(a, c){ return a + b(c[cual])[campo]; }, 0); };
     const sumaC = function(campo){ return cerrados.reduce(function(a, c){ return a + b(c.k)[campo]; }, 0); };
+    const suma7 = function(campo, mm){
+      return ult7K.reduce(function(a, k){ return a + ((mm || m).get(k) || vacia())[campo]; }, 0);
+    };
 
     // un renglón con sus números; m es el mapa día -> conteos que lo alimenta
     const renglon = function(m, r, celdaNombre, clase){
@@ -7786,7 +7762,7 @@ function sabanaHtml(){
         cols.map(function(c){ return celdaNum(bb(c.k)[r[1]]); }).join("") +
         celdaNum(sem, "tot") +
         '<td class="tot">' + (cerrados.length ? promTxt(semC / cerrados.length) : "—") + "</td>" +
-        celdaDif(sem, ant, r[2]) + "</tr>";
+        celdaDif(sem, ant, r[2]) + celdaNum(suma7(r[1], m), "tot") + "</tr>";
     };
 
     // con todos los municipios, cada concepto se abre por municipio, igual que el
@@ -7819,119 +7795,48 @@ function sabanaHtml(){
       });
     });
 
-    // lo que entró menos lo que salió (atendido o cancelado): si es positivo, el
-    // pendiente creció ese día
-    const bal = function(x){ return x.ent - x.term - x.canc; };
+    // lo que entró menos lo que salió: atendidas y canceladas, sin las canceladas por
+    // atender (todavía se pueden trabajar). Si es positivo, el pendiente creció ese día
+    const bal = function(x){ return x.ent - x.term - (x.canc - x.cancInst); };
     const balTxt = function(n){ return n > 0 ? "+" + num(n) : (n < 0 ? "−" + num(-n) : "0"); };
-    const balSem = cols.reduce(function(a, c){ return a + bal(b(c.k)); }, 0);
-    const balAnt = cols.reduce(function(a, c){ return a + bal(b(c.kA)); }, 0);
-    filas += '<tr class="total"><td title="entraron − atendidas − canceladas: positivo es que el pendiente creció">Balance (entra − sale)</td>' +
+    const sumaBal = function(lista){ return lista.reduce(function(a, k){ return a + bal(b(k)); }, 0); };
+    const balSem = sumaBal(cols.map(function(c){ return c.k; }));
+    const balAnt = sumaBal(cols.map(function(c){ return c.kA; }));
+    const balC = sumaBal(cerrados.map(function(c){ return c.k; }));
+    const bal7 = sumaBal(ult7K);
+    filas += '<tr class="total"><td title="entraron − atendidas − canceladas (sin las canceladas por atender): positivo es que el pendiente creció">Balance (entra − sale)</td>' +
       '<td class="tot">' + balTxt(balAnt) + "</td>" +
       cols.map(function(c){ return "<td>" + balTxt(bal(b(c.k))) + "</td>"; }).join("") +
       '<td class="tot">' + balTxt(balSem) + "</td>" +
-      '<td class="tot">' + (cerrados.length ? balTxt(Math.round(cerrados.reduce(function(a, c){ return a + bal(b(c.k)); }, 0) / cerrados.length)) : "—") + "</td>" +
-      "<td>—</td></tr>";
+      '<td class="tot">' + (cerrados.length ? balTxt(Math.round(balC / cerrados.length)) : "—") + "</td>" +
+      "<td>—</td>" + '<td class="tot">' + balTxt(bal7) + "</td></tr>";
 
-    TIEMPOS.forEach(function(t){
-      const celda = function(h, n, extra){
-        const cl = extra || "";
-        if (!n) return '<td class="' + (cl + " cero").trim() + '">—</td>';
-        return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + duracionTxt(h / n) +
-          '<span class="mini">' + num(n) + " orden(es)</span></td>";
-      };
-      const hS = suma(t[1], "k"), nS = suma(t[2], "k");
-      const hA = suma(t[1], "kA"), nA = suma(t[2], "kA");
-      const hC = sumaC(t[1]), nC = sumaC(t[2]);
-      filas += '<tr class="total"><td title="' + t[3] + '">' + t[0] + "</td>" +
-        celda(hA, nA, "tot") +
-        cols.map(function(c){ return celda(b(c.k)[t[1]], b(c.k)[t[2]]); }).join("") +
-        celda(hS, nS, "tot") + celda(hC, nC, "tot") +
-        celdaDif(nS ? hS / nS : null, nA ? hA / nA : null, true) + "</tr>";
-    });
-
-    // días de atención, con los acumulados de la fila desde el primer día con datos
-    // hasta hoy: pendientes = entraron − salieron hasta ese día
-    const fm = fila.get(ev) || new Map();
-    const llavesF = Array.from(fm.keys()).sort();
-    const posF = new Map(), cumE = [], cumS = [];
-    if (llavesF.length){
-      const p0 = llavesF[0].split("-");
-      let d = new Date(Number(p0[0]), Number(p0[1]) - 1, Number(p0[2]));
-      let e = 0, sa = 0;
-      while (d <= hoy){
-        const k = claveDia(d), x = fm.get(k);
-        if (x){ e += x.e; sa += x.s; }
-        posF.set(k, cumE.length); cumE.push(e); cumS.push(sa);
-        d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
-      }
-    }
-    const DIAS_PROM_SAL = 7;
-    const metrica = {
-      pend: function(i){ return cumE[i] - cumS[i]; },
-      sal: function(i){
-        const j = i - DIAS_PROM_SAL;
-        return j >= 0 ? (cumS[i] - cumS[j]) / DIAS_PROM_SAL : cumS[i] / (i + 1);
-      },
-      dPS: function(i){
-        const sp = metrica.sal(i);
-        return sp > 0 ? metrica.pend(i) / sp : null;
-      },
-      // fila: lo que ha salido hasta hoy equivale a todo lo que entró hasta el día Y;
-      // estamos atendiendo lo que entró hace (hoy − Y) días
-      dFila: function(i){
-        const meta = cumS[i];
-        let j = i;
-        while (j >= 0 && cumE[j] > meta) j--;
-        if (j === i) return 0;
-        const base = j >= 0 ? cumE[j] : 0;
-        const nuevo = cumE[j + 1] - base;
-        const frac = nuevo > 0 ? (meta - base) / nuevo : 0;
-        return i - j - frac;
-      }
+    // promedio de atención: balance ÷ atendidas, en días. En los acumulados, el balance
+    // de esos días ÷ las atendidas de esos días
+    const celdaProm = function(bl, at, extra){
+      const cl = extra || "";
+      if (!at) return '<td class="' + (cl + " cero").trim() + '">—</td>';
+      return "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + (bl / at).toFixed(2) + " d" +
+        '<span class="mini">' + balTxt(bl) + " ÷ " + num(at) + "</span></td>";
     };
-    const valF = function(clave, k){
-      if (!posF.has(k)) return null;
-      const v = metrica[clave](posF.get(k));
-      return v === null || !isFinite(v) ? null : v;
-    };
-    const DIAS_AT = [
-      ["Pendientes al cierre", "pend", function(v){ return num(Math.round(v)); },
-        "órdenes que entraron y no han salido al cierre del día; incluye las canceladas por atender, que todavía se pueden trabajar"],
-      ["Salida diaria (prom. 7 días)", "sal", function(v){ return num(Math.round(v)); },
-        "promedio de órdenes que salieron por día en los 7 días que terminan ese día: atendidas, canceladas definitivas (auto, imposibilidad, cliente) y por tiempo"],
-      ["Días de atención · pendiente ÷ salida", "dPS", function(v){ return v.toFixed(1) + " d"; },
-        "pendientes al cierre ÷ salida diaria: cuántos días tardaríamos en sacar lo pendiente al ritmo de la última semana"],
-      ["Días de atención · fila", "dFila", function(v){ return v.toFixed(1) + " d"; },
-        "tomando las órdenes en el orden en que entraron: lo que ha salido hasta ese día equivale a lo que entró hasta hace estos días"]
-    ];
-    filas += '<tr class="subtit"><td colspan="' + (cols.length + 5) + '">Días de atención (las canceladas por atender siguen en la fila)</td></tr>';
-    DIAS_AT.forEach(function(r){
-      const fmt = function(v, extra){
-        const cl = extra || "";
-        return v === null ? '<td class="' + (cl + " cero").trim() + '">—</td>'
-                          : "<td" + (cl ? ' class="' + cl + '"' : "") + ">" + r[2](v) + "</td>";
-      };
-      const ult = cols[cols.length - 1];
-      const vS = valF(r[1], ult.k), vA = valF(r[1], ult.kA);
-      const vC = cerrados.map(function(c){ return valF(r[1], c.k); }).filter(function(v){ return v !== null; });
-      const prom = vC.length ? vC.reduce(function(a, v){ return a + v; }, 0) / vC.length : null;
-      filas += '<tr class="total"><td title="' + r[3] + '">' + r[0] + "</td>" +
-        fmt(vA, "tot") +
-        cols.map(function(c){ return fmt(valF(r[1], c.k)); }).join("") +
-        fmt(vS, "tot") + fmt(prom, "tot") +
-        celdaDif(vS, vA, r[1] !== "sal") + "</tr>";
-    });
+    const termS = suma("term", "k"), termA = suma("term", "kA"), termC = sumaC("term"), term7 = suma7("term");
+    filas += '<tr class="total"><td title="balance (entra − sale) ÷ atendidas; en chico, la operación">Promedio de atención</td>' +
+      celdaProm(balAnt, termA, "tot") +
+      cols.map(function(c){ return celdaProm(bal(b(c.k)), b(c.k).term); }).join("") +
+      celdaProm(balSem, termS, "tot") + celdaProm(balC, termC, "tot") +
+      celdaDif(termS ? balSem / termS : null, termA ? balAnt / termA : null, true) +
+      celdaProm(bal7, term7, "tot") + "</tr>";
 
     // las asignadas de cada día, seguidas hasta su desenlace: estos renglones suman
     // exactamente lo que dice Asignadas en esa columna
-    filas += '<tr class="subtit"><td colspan="' + (cols.length + 5) + '">Qué pasó con lo asignado ese día</td></tr>';
+    filas += '<tr class="subtit"><td colspan="' + (cols.length + 6) + '">Qué pasó con lo asignado ese día</td></tr>';
     DESTINOS.forEach(function(r){
       const sem = suma(r[1], "k"), ant = suma(r[1], "kA");
       filas += '<tr><td title="' + r[3] + '">' + r[0] + "</td>" + celdaNum(ant, "tot") +
         cols.map(function(c){ return celdaNum(b(c.k)[r[1]]); }).join("") +
         celdaNum(sem, "tot") +
         '<td class="tot">' + (cerrados.length ? promTxt(sumaC(r[1]) / cerrados.length) : "—") + "</td>" +
-        celdaDif(sem, ant, r[2]) + "</tr>";
+        celdaDif(sem, ant, r[2]) + celdaNum(suma7(r[1]), "tot") + "</tr>";
     });
     const comp = function(x){ return x.cCompHoy + x.cCompDes; };
     const celdaPct = function(n, d, extra){
@@ -7948,7 +7853,8 @@ function sabanaHtml(){
       celdaPct(compA, asigA, "tot") +
       cols.map(function(c){ return celdaPct(comp(b(c.k)), b(c.k).asig); }).join("") +
       celdaPct(compS, asigS, "tot") + celdaPct(compC, asigC, "tot") +
-      celdaDif(asigS ? compS / asigS : null, asigA ? compA / asigA : null) + "</tr>";
+      celdaDif(asigS ? compS / asigS : null, asigA ? compA / asigA : null) +
+      celdaPct(ult7K.reduce(function(a, k){ return a + comp(b(k)); }, 0), suma7("asig"), "tot") + "</tr>";
 
     const a = abiertas.get(ev);
     const nT = porTiempo.get(ev) || 0, nV = vivas.get(ev) || 0;
@@ -8001,7 +7907,9 @@ function sabanaHtml(){
     " · canceladas por tiempo: abiertas o canceladas por atender que cumplieron 30 días desde su creación sin que la cuenta terminara ese evento; cuentan el día que los cumplen y ya no salen como abiertas ni como por atender" +
     " · si OS POR INSTALAR no trae el motivo de cancelación, se usa el de ATENCION ORDENES" +
     " · las asignadas salen de OS POR INSTALAR" + (ORD.filas.some(function(o){ return o.fAsig; }) ? " y de la fecha de asignación de ATENCION ORDENES" : "") +
-    " · el promedio de atención va de la creación de la orden a su término; en chico, cuántas órdenes lo forman" +
+    " · el balance resta atendidas y canceladas, sin las canceladas por atender (todavía se pueden trabajar)" +
+    " · el promedio de atención es balance ÷ atendidas, en días; en chico, la operación" +
+    " · Acumulado últimos 7 días suma los 7 días cerrados de ayer hacia atrás (" + rotUlt7 + "), sin importar la semana elegida" +
     " · \"Qué pasó con lo asignado\" sigue a las asignadas de cada día hasta su desenlace y suma lo mismo que Asignadas" +
     avisoAsig + avisoFuera +
     (sinMov.length ? " · sin movimiento: " + sinMov.join(", ") : "");
