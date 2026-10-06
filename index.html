@@ -7422,6 +7422,47 @@ function desasignacionesPorOs(){
   return m;
 }
 
+// OS normalizada -> motivo de cancelación (columna AC de OS POR INSTALAR). Si la OS
+// trae varios intentos, gana el de fecha de cancelación (columna Z) más reciente; sin
+// ninguna fecha, el último motivo escrito.
+let IDX_MOT_CANC = null;
+
+function motivoCancelacionPorOs(){
+  if (IDX_MOT_CANC && IDX_MOT_CANC.src === OSPI_INDICE) return IDX_MOT_CANC.m;
+  const m = new Map();
+  if (OSPI.estado !== "ok") return m;
+  const enc = OSPI.enc || [];
+  let iFec = buscaCol(enc, ["FECHA CANCELA"]);
+  let iMot = buscaCol(enc, ["MOTIVO CANCELA"]);
+  if (iFec < 0) iFec = letraAIndice("Z");
+  if (iMot < 0) iMot = letraAIndice("AC");
+  OSPI_INDICE.forEach(function(rengs, k){
+    let mejor = null, fMejor = null, suelto = "";
+    rengs.forEach(function(v){
+      const t = arreglaMojibake(String(v[iMot] || "")).trim();
+      if (!t || t === "-" || normaliza(t) === "SIN INFO") return;
+      const f = fechaOrden(v[iFec]);
+      if (f){ if (!fMejor || f >= fMejor){ fMejor = f; mejor = t; } }
+      else suelto = t;
+    });
+    if (mejor || suelto) m.set(k, mejor || suelto);
+  });
+  IDX_MOT_CANC = { src:OSPI_INDICE, m:m };
+  return m;
+}
+
+// grupo de cancelación de la Sábana según el motivo; lo que no es automático, por
+// imposibilidad ni porque el cliente no recibió al técnico (o no trae motivo) queda
+// como cancelada por instalar
+function grupoCancelacion(motivo){
+  const t = normaliza(motivo);
+  if (!t) return "cancInst";
+  if (t.indexOf("PROCESO AUTOMATICO") >= 0 || t.indexOf("CHAT") >= 0) return "cancAuto";
+  if (t.indexOf("OBRA CIVIL") >= 0 || t.indexOf("IMPOSIBILIDAD") >= 0) return "cancImp";
+  if (t.indexOf("NO RECIBE") >= 0) return "cancCli";
+  return "cancInst";
+}
+
 // OS que ya se asignaron en OS POR INSTALAR pero todavía no salen en ATENCION ORDENES
 // (esa pestaña se sube aparte y puede venir atrasada). Se arman como órdenes con lo que
 // trae OS POR INSTALAR para que pasen por los mismos filtros; solo aportan asignadas,
@@ -7494,8 +7535,12 @@ function sabanaHtml(){
   const des = desasignacionesPorOs();
   // c*: qué pasó con las asignadas de ese día (completadas el mismo día o después,
   // canceladas, reasignadas otro día, desasignadas sin reasignar, en curso)
+  // canc es el total de canceladas (para el balance); canc* lo separa por motivo
+  const motCanc = motivoCancelacionPorOs();
   const vacia = function(){ return { ent:0, asig:0, canc:0, term:0, hAt:0, nAt:0, hAs:0, nAs:0,
-    cCompHoy:0, cCompDes:0, cCanc:0, cReas:0, cDesP:0, cCurso:0 }; };
+    cancAuto:0, cancImp:0, cancCli:0, cancInst:0,
+    cCompHoy:0, cCompDes:0, cReas:0, cDesP:0, cCurso:0,
+    c_cancAuto:0, c_cancImp:0, c_cancCli:0, c_cancInst:0 }; };
   const bucket = function(ev, k){
     if (!porEv.has(ev)) porEv.set(ev, new Map());
     const m = porEv.get(ev);
@@ -7546,7 +7591,7 @@ function sabanaHtml(){
       const sig = diasOrden[i + 1] || null;
       let fin;
       if (cerrada && (!sig || kTer < sig)){
-        fin = esCancelada(o) ? "cCanc" : (kTer === k ? "cCompHoy" : "cCompDes");
+        fin = esCancelada(o) ? "c_" + grupoCancelacion(motCanc.get(osK)) : (kTer === k ? "cCompHoy" : "cCompDes");
       } else if (sig){
         fin = "cReas";
       } else if (desDias && desDias.has(k)){
@@ -7570,7 +7615,8 @@ function sabanaHtml(){
     if (!o.fTer) return;
     const k = veDia(o.fTer);
     if (esCancelada(o)){
-      meter(k, function(b){ b.canc++; });
+      const g = grupoCancelacion(motCanc.get(osK));
+      meter(k, function(b){ b.canc++; b[g]++; });
     } else if (esTerminada(o)){
       // creación -> término, y última asignación anterior al término -> término
       const hAt = (o.fCre && o.fTer >= o.fCre) ? (o.fTer - o.fCre) / HORA : null;
@@ -7622,7 +7668,10 @@ function sabanaHtml(){
   const RENGLONES = [
     ["Entraron", "ent", false, "órdenes creadas ese día"],
     ["Asignadas", "asig", false, "OS asignadas a una cuadrilla ese día (una reasignación el mismo día cuenta una vez)"],
-    ["Canceladas", "canc", true, "órdenes que cerraron canceladas ese día"],
+    ["Cancelación auto", "cancAuto", true, "canceladas ese día por proceso automático o por el cliente desde chat AI (motivo de OS POR INSTALAR)"],
+    ["Cancelada por imposibilidad", "cancImp", true, "canceladas ese día por obra civil / imposibilidad dentro del domicilio o imposibilidad técnica"],
+    ["Cancelada por cliente", "cancCli", true, "canceladas ese día porque el cliente no recibe al técnico"],
+    ["Canceladas por instalar", "cancInst", true, "el resto de las canceladas ese día, incluidas las que no traen motivo en OS POR INSTALAR"],
     ["Atendidas", "term", false, "órdenes terminadas ese día"]
   ];
   const TIEMPOS = [
@@ -7633,7 +7682,10 @@ function sabanaHtml(){
   const DESTINOS = [
     ["Completadas el mismo día", "cCompHoy", false, "asignadas ese día que se terminaron ese mismo día"],
     ["Completadas después", "cCompDes", false, "asignadas ese día que se terminaron en un día posterior, sin volver a asignarse"],
-    ["Canceladas", "cCanc", true, "asignadas ese día cuya orden cerró cancelada, sin volver a asignarse antes"],
+    ["Cancelación auto", "c_cancAuto", true, "asignadas ese día que cerraron canceladas por proceso automático o desde chat AI, sin volver a asignarse antes"],
+    ["Cancelada por imposibilidad", "c_cancImp", true, "asignadas ese día que cerraron canceladas por obra civil o imposibilidad técnica, sin volver a asignarse antes"],
+    ["Cancelada por cliente", "c_cancCli", true, "asignadas ese día que cerraron canceladas porque el cliente no recibe al técnico, sin volver a asignarse antes"],
+    ["Canceladas por instalar", "c_cancInst", true, "asignadas ese día que cerraron canceladas por cualquier otro motivo (o sin motivo), sin volver a asignarse antes"],
     ["Desasignadas y reasignadas otro día", "cReas", true, "se volvieron a asignar en un día posterior antes de cerrar: su desenlace cuenta en ese otro día"],
     ["Desasignadas sin reasignar", "cDesP", true, "OS POR INSTALAR trae fecha de desasignación y la orden no ha cerrado ni se volvió a asignar"],
     ["Siguen en curso", "cCurso", false, "todavía no cierran ni se desasignaron (o ATENCION ORDENES aún no las trae)"]
@@ -7788,6 +7840,7 @@ function sabanaHtml(){
     ", " + fCorta(lunes) + " al " + fCorta(domingo) + " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
     (hayHoy ? " · el día en curso entra al acumulado tal como va, pero no al promedio" : "") +
     " · entraron cuenta por fecha de creación; canceladas y atendidas por fecha de término" +
+    " · las canceladas se separan por el motivo de cancelación de OS POR INSTALAR (columna AC); las que no traen motivo van a canceladas por instalar" +
     " · las asignadas salen de OS POR INSTALAR" + (ORD.filas.some(function(o){ return o.fAsig; }) ? " y de la fecha de asignación de ATENCION ORDENES" : "") +
     " · el promedio de atención va de la creación de la orden a su término; en chico, cuántas órdenes lo forman" +
     " · \"Qué pasó con lo asignado\" sigue a las asignadas de cada día hasta su desenlace y suma lo mismo que Asignadas" +
@@ -7795,7 +7848,38 @@ function sabanaHtml(){
     (sinMov.length ? " · sin movimiento: " + sinMov.join(", ") : "");
 
   return bloque(TODOS, "Sábana operaciones · todos los eventos", nota) +
-    lista.filter(conMovimiento).map(function(ev){ return bloque(ev, ev); }).join("");
+    lista.filter(conMovimiento).map(function(ev){ return bloque(ev, ev); }).join("") +
+    motivosCancelacionHtml(motCanc);
+}
+
+// cada motivo de cancelación distinto que trae OS POR INSTALAR, cuántas OS lo tienen y a
+// qué grupo de la sábana va: así se ve con los datos reales si algún texto quedó mal
+// clasificado, o si aparece un motivo nuevo
+function motivosCancelacionHtml(motCanc){
+  if (OSPI.estado !== "ok") return "";
+  const GRUPOS = { cancAuto:"Cancelación auto", cancImp:"Cancelada por imposibilidad",
+                   cancCli:"Cancelada por cliente", cancInst:"Canceladas por instalar" };
+  const cuenta = new Map();
+  motCanc.forEach(function(m){ cuenta.set(m, (cuenta.get(m) || 0) + 1); });
+  if (!cuenta.size){
+    return '<section class="panel"><h2>Motivos de cancelación leídos</h2><div class="aviso">OS POR INSTALAR no trae ningún motivo en la columna AC (MOTIVO CANCELACION).</div></section>';
+  }
+  const orden = ["cancAuto", "cancImp", "cancCli", "cancInst"];
+  const motivos = Array.from(cuenta.keys()).sort(function(a, b){
+    return orden.indexOf(grupoCancelacion(a)) - orden.indexOf(grupoCancelacion(b)) ||
+      cuenta.get(b) - cuenta.get(a) || a.localeCompare(b, "es");
+  });
+  const total = Array.from(cuenta.values()).reduce(function(a, n){ return a + n; }, 0);
+  return '<section class="panel"><h2>Motivos de cancelación leídos <span class="sub">' +
+    "cada texto distinto de la columna AC de OS POR INSTALAR, cuántas OS lo traen (todas las fechas de la hoja) y a qué concepto de la sábana va" +
+    " · si alguno está en el concepto equivocado, ese texto es el que hay que ajustar</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr><th>Motivo de cancelación</th><th>Va a</th><th>OS</th><th>% del total</th></tr></thead><tbody>' +
+    motivos.map(function(m){
+      return '<tr><td class="envuelve">' + m.replace(/</g, "&lt;") + "</td><td>" + GRUPOS[grupoCancelacion(m)] + "</td>" +
+        celdaNum(cuenta.get(m)) + "<td>" + pct(cuenta.get(m) / total) + "</td></tr>";
+    }).join("") +
+    '<tr class="total"><td>Total</td><td>—</td>' + celdaNum(total) + "<td>100%</td></tr>" +
+    "</tbody></table></div></section>";
 }
 
 /* ---------- pintado ---------- */
