@@ -7768,30 +7768,43 @@ function sabanaHtml(){
     // con todos los municipios, cada concepto se abre por municipio, igual que el
     // acordeón de "Estado de las órdenes de hoy por evento". El id lleva el evento y el
     // concepto para que siga abierto al repintar.
-    const abrible = !el("ordMunicipio").value;
+    // El bloque de todos los eventos se abre por evento (con o sin municipio elegido).
+    const porEvento = ev === TODOS;
+    const abrible = porEvento || !el("ordMunicipio").value;
+    // renglones del desglose: [nombre, mapa día -> conteos], los de más movimiento
+    // primero (peso), sin los que están en cero; "Sin municipio" va al final
+    const desglose = function(peso){
+      const pesoDe = function(mm){
+        return cols.reduce(function(a, c){ return a + peso(mm.get(c.k) || vacia()) + peso(mm.get(c.kA) || vacia()); }, 0) +
+          ult7K.reduce(function(a, k){ return a + peso(mm.get(k) || vacia()); }, 0);
+      };
+      const hijos = porEvento
+        ? lista.map(function(e){ return [e, porEv.get(e) || new Map()]; })
+        : Array.from(munis).map(function(mu){ return [mu, porEv.get(ev + SEP_MUN + mu) || new Map()]; });
+      return hijos.map(function(h){ return h.concat([pesoDe(h[1])]); })
+        .filter(function(h){ return h[2] > 0; })
+        .sort(function(x, z){
+          const sx = x[0] === "Sin municipio", sz = z[0] === "Sin municipio";
+          if (sx !== sz) return sx ? 1 : -1;
+          return z[2] - x[2] || (porEvento ? lista.indexOf(x[0]) - lista.indexOf(z[0]) : x[0].localeCompare(z[0], "es"));
+        });
+    };
+    // celda del nombre: si se puede abrir, con su flecha; devuelve [celda, abierto]
+    const nombreAbrible = function(clave, nombre, titulo){
+      if (!abrible) return ['<td title="' + titulo + '">' + nombre + "</td>", false];
+      const id = "sabmun:" + ev + "|" + clave;
+      const abierto = DET_SEL === id;
+      return ['<td class="clicable" data-det="' + id.replace(/"/g, "&quot;") +
+        '" title="' + titulo + " · toca para verlo por " + (porEvento ? "evento" : "municipio") + '">' +
+        (abierto ? "▾ " : "▸ ") + nombre + "</td>", abierto];
+    };
     let filas = "";
     RENGLONES.forEach(function(r){
-      if (!abrible){
-        filas += renglon(m, r, '<td title="' + r[3] + '">' + r[0] + "</td>");
-        return;
-      }
-      const id = "sabmun:" + ev + "|" + r[1];
-      const abierto = DET_SEL === id;
-      filas += renglon(m, r, '<td class="clicable" data-det="' + id.replace(/"/g, "&quot;") +
-        '" title="' + r[3] + ' · toca para verlo por municipio">' + (abierto ? "▾ " : "▸ ") + r[0] + "</td>");
-      if (!abierto) return;
-      // los municipios con más movimiento en la semana primero; "Sin municipio" al final
-      const deMun = function(mu){ return porEv.get(ev + SEP_MUN + mu) || new Map(); };
-      const pesoMun = function(mu){
-        const mm = deMun(mu);
-        return cols.reduce(function(a, c){ return a + ((mm.get(c.k) || vacia())[r[1]]) + ((mm.get(c.kA) || vacia())[r[1]]); }, 0);
-      };
-      Array.from(munis).filter(function(mu){ return pesoMun(mu) > 0; }).sort(function(a, z){
-        const sa = a === "Sin municipio", sz = z === "Sin municipio";
-        if (sa !== sz) return sa ? 1 : -1;
-        return pesoMun(z) - pesoMun(a) || a.localeCompare(z, "es");
-      }).forEach(function(mu){
-        filas += renglon(deMun(mu), r, "<td>" + mu + "</td>", "hijo");
+      const nm = nombreAbrible(r[1], r[0], r[3]);
+      filas += renglon(m, r, nm[0]);
+      if (!nm[1]) return;
+      desglose(function(x){ return x[r[1]]; }).forEach(function(h){
+        filas += renglon(h[1], r, "<td>" + h[0] + "</td>", "hijo");
       });
     });
 
@@ -7799,17 +7812,27 @@ function sabanaHtml(){
     // atender (todavía se pueden trabajar). Si es positivo, el pendiente creció ese día
     const bal = function(x){ return x.ent - x.term - (x.canc - x.cancInst); };
     const balTxt = function(n){ return n > 0 ? "+" + num(n) : (n < 0 ? "−" + num(-n) : "0"); };
-    const sumaBal = function(lista){ return lista.reduce(function(a, k){ return a + bal(b(k)); }, 0); };
-    const balSem = sumaBal(cols.map(function(c){ return c.k; }));
-    const balAnt = sumaBal(cols.map(function(c){ return c.kA; }));
-    const balC = sumaBal(cerrados.map(function(c){ return c.k; }));
-    const bal7 = sumaBal(ult7K);
-    filas += '<tr class="total"><td title="entraron − atendidas − canceladas (sin las canceladas por atender): positivo es que el pendiente creció">Balance (entra − sale)</td>' +
-      '<td class="tot">' + balTxt(balAnt) + "</td>" +
-      cols.map(function(c){ return "<td>" + balTxt(bal(b(c.k))) + "</td>"; }).join("") +
-      '<td class="tot">' + balTxt(balSem) + "</td>" +
-      '<td class="tot">' + (cerrados.length ? balTxt(Math.round(balC / cerrados.length)) : "—") + "</td>" +
-      "<td>—</td>" + '<td class="tot">' + balTxt(bal7) + "</td></tr>";
+    const mueve = function(x){ return x.ent + x.term + x.canc; };
+    const kSem = cols.map(function(c){ return c.k; }), kAnt = cols.map(function(c){ return c.kA; });
+    const kCer = cerrados.map(function(c){ return c.k; });
+    const sumaEn = function(mm, llaves, fn){
+      return llaves.reduce(function(a, k){ return a + fn(mm.get(k) || vacia()); }, 0);
+    };
+    const filaBal = function(mm, celdaNombre, clase){
+      const balC = sumaEn(mm, kCer, bal);
+      return "<tr" + (clase ? ' class="' + clase + '"' : ' class="total"') + ">" + celdaNombre +
+        '<td class="tot">' + balTxt(sumaEn(mm, kAnt, bal)) + "</td>" +
+        cols.map(function(c){ return "<td>" + balTxt(bal(mm.get(c.k) || vacia())) + "</td>"; }).join("") +
+        '<td class="tot">' + balTxt(sumaEn(mm, kSem, bal)) + "</td>" +
+        '<td class="tot">' + (cerrados.length ? balTxt(Math.round(balC / cerrados.length)) : "—") + "</td>" +
+        "<td>—</td>" + '<td class="tot">' + balTxt(sumaEn(mm, ult7K, bal)) + "</td></tr>";
+    };
+    const nmBal = nombreAbrible("balance", "Balance (entra − sale)",
+      "entraron − atendidas − canceladas (sin las canceladas por atender): positivo es que el pendiente creció");
+    filas += filaBal(m, nmBal[0]);
+    if (nmBal[1]){
+      desglose(mueve).forEach(function(h){ filas += filaBal(h[1], "<td>" + h[0] + "</td>", "hijo"); });
+    }
 
     // promedio de atención: balance ÷ atendidas por día, en días. Solo en Semana (entre
     // los días cerrados de la semana, sin el día en curso) y en los últimos 7 días (entre 7)
@@ -7819,10 +7842,20 @@ function sabanaHtml(){
         '<span class="mini">' + balTxt(bl) + " ÷ (" + num(at) + " ÷ " + dias + ")</span></td>";
     };
     const celdaVacia = '<td class="cero"></td>';
-    filas += '<tr class="total"><td title="balance (entra − sale) ÷ (atendidas ÷ días): cuántos días de atención representa el balance; en chico, la operación">Promedio de atención</td>' +
-      '<td class="tot cero"></td>' + cols.map(function(){ return celdaVacia; }).join("") +
-      celdaProm(balC, sumaC("term"), cerrados.length) + '<td class="tot cero"></td>' + celdaVacia +
-      celdaProm(bal7, suma7("term"), 7) + "</tr>";
+    const term = function(x){ return x.term; };
+    const filaProm = function(mm, celdaNombre, clase){
+      return "<tr" + (clase ? ' class="' + clase + '"' : ' class="total"') + ">" + celdaNombre +
+        '<td class="tot cero"></td>' + cols.map(function(){ return celdaVacia; }).join("") +
+        celdaProm(sumaEn(mm, kCer, bal), sumaEn(mm, kCer, term), cerrados.length) +
+        '<td class="tot cero"></td>' + celdaVacia +
+        celdaProm(sumaEn(mm, ult7K, bal), sumaEn(mm, ult7K, term), 7) + "</tr>";
+    };
+    const nmProm = nombreAbrible("promedio", "Promedio de atención",
+      "balance (entra − sale) ÷ (atendidas ÷ días): cuántos días de atención representa el balance; en chico, la operación");
+    filas += filaProm(m, nmProm[0]);
+    if (nmProm[1]){
+      desglose(mueve).forEach(function(h){ filas += filaProm(h[1], "<td>" + h[0] + "</td>", "hijo"); });
+    }
 
     // las asignadas de cada día, seguidas hasta su desenlace: estos renglones suman
     // exactamente lo que dice Asignadas en esa columna
