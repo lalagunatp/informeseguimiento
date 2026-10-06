@@ -7792,7 +7792,9 @@ function sabanaHtml(){
     // celda del nombre: si se puede abrir, con su flecha; devuelve [celda, abierto]
     const nombreAbrible = function(clave, nombre, titulo){
       if (!abrible) return ['<td title="' + titulo + '">' + nombre + "</td>", false];
-      const id = "sabmun:" + ev + "|" + clave;
+      // TODOS lleva un \u0000 que el navegador cambia por "�" al leer el atributo: con
+      // él, el id del clic nunca coincide con DET_SEL y el desglose no abre
+      const id = "sabmun:" + (porEvento ? "*todos*" : ev) + "|" + clave;
       const abierto = DET_SEL === id;
       return ['<td class="clicable" data-det="' + id.replace(/"/g, "&quot;") +
         '" title="' + titulo + " · toca para verlo por " + (porEvento ? "evento" : "municipio") + '">' +
