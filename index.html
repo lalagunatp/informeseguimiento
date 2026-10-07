@@ -4519,6 +4519,12 @@ function metasEquipo(){
 // meta de instalaciones; validación sube 15% y oportunidad otro 15%
 function metaDeGrupo(grupo, tipo){
   const campo = el("agrupar").value;
+  if (campo === "canal"){
+    // venta técnico por canal: meta de Ajustes, igual para instalaciones, validadas y oportunidades
+    const m = /^VENTA TECNICO (.+)$/.exec(normaliza(grupo));
+    const v = m ? repMetaTec(m[1]) : 0;
+    return v > 0 ? v : null;
+  }
   if (campo !== "lider" && campo !== "coach") return null;
   if (!PLANTILLA.length) return null;
   const base = metasEquipo()[campo][grupo];
@@ -9211,7 +9217,8 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
   });
   const pesos = pesosSemana(sem, b.tipo);
   const dias = enCurso ? diasCorridos : 7;
-  let hayMeta = false;
+  // si algún grupo tiene meta, todos llevan las columnas (con "—" donde no hay)
+  const hayMeta = grupos.some(function(g){ return metaDeGrupo(g, b.tipo) !== null; });
 
   // detalle clicable de oportunidades rechazadas: solo aplica al panel Oportunidad
   const rechAct = b.tipo === "op" ? rechazadasPorSemana(sem) : null;
@@ -9219,8 +9226,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
 
   function celdasMeta(g, total, proy){
     const meta = g === null ? null : metaDeGrupo(g, b.tipo);
-    if (meta === null) return { html:"", meta:null };
-    hayMeta = true;
+    if (meta === null) return { html: hayMeta ? '<td class="sem">—</td><td>—</td>' : "", meta:null };
     const av = meta ? total / meta : null;
     const pr = meta ? proy / meta : null;
     let cl = "";
@@ -9274,7 +9280,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
            celdaNum(proyT, "", tituloProy(infoT, "Total")) + metaHtml + "</tr>";
 
   return '<section class="panel"><h2>' + b.titulo.toUpperCase() +
-         ' <span class="sub">' + b.nota + (hayMeta ? " · meta semanal del equipo" : "") +
+         ' <span class="sub">' + b.nota + (hayMeta ? (el("agrupar").value === "canal" ? " · meta semanal de venta técnico" : " · meta semanal del equipo") : "") +
          (enCurso ? " · proyección: acumulado de " + dias + " día(s) entre el peso que esos días tuvieron en las últimas 5 semanas cerradas" : "") +
          '</span></h2><div class="scroll"><table>' +
          "<thead><tr><th>" + tituloGrupo() + "</th>" +
@@ -9597,7 +9603,9 @@ el("btnSubirOrdenes").addEventListener("click", subirAtencionOrdenes);
 });
 el("minimosRanking").addEventListener("change", function(){ if (VISTA === "vend0") pintar(); });
 ["metasTecnico","minimoTecnico"].forEach(function(id){
-  el(id).addEventListener("change", function(){ if (VISTA === "reporte") pintar(); });
+  el(id).addEventListener("change", function(){
+    if (VISTA === "reporte" || (id === "metasTecnico" && (VISTA === "semana" || VISTA === "mes"))) pintar();
+  });
 });
 ["dupliSemana","dupliMes"].forEach(function(id){
   el(id).addEventListener("change", function(){ if (VISTA === "dupli") pintar(); });
