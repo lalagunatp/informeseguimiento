@@ -4506,14 +4506,28 @@ let META_EQUIPO = null;
 
 function metasEquipo(){
   if (META_EQUIPO) return META_EQUIPO;
-  const m = { lider:{}, coach:{} };
+  const m = { lider:{}, coach:{}, canal:{} };
   PLANTILLA.forEach(function(p){
     const v = metaDe(metalDe(p));
     m.lider[p.lider] = (m.lider[p.lider] || 0) + v;
     m.coach[p.coach] = (m.coach[p.coach] || 0) + v;
+    // canal por el puesto de la plantilla (columna F): VENDEDOR = cambaceo,
+    // PROMOVENDEDOR PUNTO DE VENTA = punto de venta; venta técnico tiene meta fija en Ajustes
+    const canal = canalMetaDe(p);
+    if (canal) m.canal[canal] = (m.canal[canal] || 0) + v;
   });
   META_EQUIPO = m;
   return m;
+}
+
+// canal (normalizado) al que suma la meta de una persona de la plantilla; "" si no aplica.
+// Cambaceo se separa en local / foráneo por el líder, igual que canalDe con la venta
+function canalMetaDe(p){
+  const pu = normaliza(p.puesto);
+  if (pu.indexOf("PUNTO DE VENTA") >= 0) return normaliza("Punto de venta");
+  if (pu === "VENDEDOR")
+    return normaliza(listaAjuste("lideresLocales").indexOf(normaliza(p.lider)) >= 0 ? "Cambaceo" : "Cambaceo foráneo");
+  return "";
 }
 
 // meta de instalaciones; validación sube 15% y oportunidad otro 15%
@@ -4522,12 +4536,14 @@ function metaDeGrupo(grupo, tipo){
   if (campo === "canal"){
     // venta técnico por canal: meta de Ajustes, igual para instalaciones, validadas y oportunidades
     const m = /^VENTA TECNICO (.+)$/.exec(normaliza(grupo));
-    const v = m ? repMetaTec(m[1]) : 0;
-    return v > 0 ? v : null;
-  }
-  if (campo !== "lider" && campo !== "coach") return null;
+    if (m){
+      const v = repMetaTec(m[1]);
+      return v > 0 ? v : null;
+    }
+  } else if (campo !== "lider" && campo !== "coach") return null;
   if (!PLANTILLA.length) return null;
-  const base = metasEquipo()[campo][grupo];
+  const base = campo === "canal" ? metasEquipo().canal[normaliza(grupo)] : metasEquipo()[campo][grupo];
+  if (campo === "canal" && !base) return null;
   if (base === undefined) return null;
   const f = Number(el("factorMeta").value) || 15;
   if (tipo === "ins") return Math.round(base);
@@ -9280,7 +9296,7 @@ function bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos){
            celdaNum(proyT, "", tituloProy(infoT, "Total")) + metaHtml + "</tr>";
 
   return '<section class="panel"><h2>' + b.titulo.toUpperCase() +
-         ' <span class="sub">' + b.nota + (hayMeta ? (el("agrupar").value === "canal" ? " · meta semanal de venta técnico" : " · meta semanal del equipo") : "") +
+         ' <span class="sub">' + b.nota + (hayMeta ? (el("agrupar").value === "canal" ? " · meta semanal del canal" : " · meta semanal del equipo") : "") +
          (enCurso ? " · proyección: acumulado de " + dias + " día(s) entre el peso que esos días tuvieron en las últimas 5 semanas cerradas" : "") +
          '</span></h2><div class="scroll"><table>' +
          "<thead><tr><th>" + tituloGrupo() + "</th>" +
