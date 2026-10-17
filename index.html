@@ -3490,12 +3490,23 @@ function registroDe(p){
   return RANKINGS.get(p.numero) || RANK_NOMBRE.get(normaliza(p.nombre)) || null;
 }
 
+// alta (columna G de PLANTILLA) dentro de los últimos 7 días, contando hoy
+function altaReciente(p){
+  const a = repAlta(p);
+  if (!a) return false;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const dias = Math.round((hoy - a) / 86400000);
+  return dias >= 0 && dias <= 7;
+}
+
 function metalDe(p){
   if (p.vacante) return "Vacante";
   const r = registroDe(p);
-  if (!r || !r.ranking) return "Sin ranking";
+  // quien no trae ranking pero acaba de ingresar va como Entrenamiento
+  const sinRanking = altaReciente(p) ? "Entrenamiento" : "Sin ranking";
+  if (!r || !r.ranking) return sinRanking;
   const n = normaliza(r.ranking);
-  let metal = "Sin ranking";
+  let metal = sinRanking;
   if (n.indexOf("ORO") >= 0) metal = "Oro";
   else if (n.indexOf("PLATA") >= 0) metal = "Plata";
   else if (n.indexOf("BRONCE") >= 0) metal = "Bronce";
