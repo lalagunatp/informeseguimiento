@@ -5419,6 +5419,48 @@ function ultimaAgendaDeOs(os, cuenta){
   return fCorta(o.fAge) + (o.turno ? " / " + o.turno : "");
 }
 
+// técnico que instaló: la orden de Instalación TERMINADA de ATENCION ORDENES (por OS y si
+// no, por cuenta; de varias gana la de término más reciente) y, si ahí no aparece, la
+// asignación de OS POR INSTALAR que tiene fecha en COMPLETA (W), con usuario N y nombre O
+function tecnicoQueInstalo(fila){
+  const junta = function(usu, nom){
+    usu = String(usu || "").trim(); nom = String(nom || "").trim();
+    if (/^SIN\b/.test(normaliza(usu))) usu = "";
+    if (/^SIN\b/.test(normaliza(nom))) nom = "";
+    if (!usu || normaliza(usu) === normaliza(nom)) return nom || usu;
+    return nom ? usu + " · " + nom : usu;
+  };
+  let cargando = false;
+  if (CARGANDO_ORD || ORD.estado === "cargando") cargando = true;
+  else if (ORD.estado === "ok"){
+    const os = normOS(fila.os), cta = clave(fila.cuenta);
+    const busca = function(cond){
+      let mejor = null;
+      ORD.filas.forEach(function(o){
+        if (!cond(o) || !esTerminada(o) || normaliza(o.tipo).indexOf("INSTALACION") !== 0) return;
+        if (!mejor || (o.fTer && (!mejor.fTer || o.fTer > mejor.fTer))) mejor = o;
+      });
+      return mejor;
+    };
+    const o = busca(function(o){ return normOS(o.os) === os; }) ||
+              (cta ? busca(function(o){ return clave(o.cuenta) === cta; }) : null);
+    const t = o ? junta(o.tecnico !== o.tecnicoNom ? o.tecnico : "", o.tecnicoNom || o.tecnico) : "";
+    if (t) return t;
+  }
+  if (CARGANDO_OSPI || OSPI.estado === "cargando") cargando = true;
+  else if (OSPI.estado === "ok"){
+    const iN = letraAIndice("N"), iO = letraAIndice("O"), iW = letraAIndice("W");
+    const conCompleta = (OSPI_INDICE.get(normOS(fila.os)) || []).filter(function(v){
+      const w = limpiaValor(v[iW]);
+      return w && w !== "-" && normaliza(w) !== "SIN INFO";
+    });
+    const v = conCompleta[conCompleta.length - 1];
+    const t = v ? junta(limpiaValor(v[iN]), limpiaValor(v[iO])) : "";
+    if (t) return t;
+  }
+  return cargando ? "Cargando…" : "—";
+}
+
 function seguimientoOsHtml(){
   const q = normOS(OS_BUSCADA);
   if (!q){
@@ -5467,7 +5509,8 @@ function seguimientoOsHtml(){
       ["Plan", fila.plan],
       ["Vendedor", vendedor],
       ["Coach", coach],
-      ["Líder", lider]
+      ["Líder", lider],
+      ["Técnico que instaló", tecnicoQueInstalo(fila)]
     ];
     return '<section class="panel"><h2>Seguimiento OS</h2>' +
       '<div class="aviso" style="font-size:16px;color:var(--v-tx);background:var(--v-bg)">' +
