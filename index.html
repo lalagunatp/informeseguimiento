@@ -5432,13 +5432,6 @@ function seguimientoOsHtml(){
       '<div class="aviso error">No encontré la OS <b>' + OS_BUSCADA + '</b> en la base de datos.</div></section>';
   }
 
-  if (fila.fIns){
-    return '<section class="panel"><h2>Seguimiento OS</h2>' +
-      '<div class="aviso" style="font-size:16px;color:var(--v-tx);background:var(--v-bg)">' +
-      "<b>VENTA INSTALADA EL DÍA " + fCorta(fila.fIns) + "</b><br>" +
-      fila.os + " · " + fila.cliente + " · " + fila.colonia + "</div></section>";
-  }
-
   // datos de la venta
   let vendedor = fila.vendedor, coach = fila.coach, lider = fila.lider;
 
@@ -5462,6 +5455,29 @@ function seguimientoOsHtml(){
   fila.vendedorMuestra = vendedor;
   fila.coachMuestra = coach;
   fila.liderMuestra = lider;
+
+  // ya instalada: solo la fecha y quién la vendió, sin historial ni captura de seguimiento
+  if (fila.fIns){
+    const canalTxt = fila.canal + (fila.subcanal && fila.subcanal !== fila.canal ? " · " + fila.subcanal : "");
+    const datosIns = [
+      ["OS", fila.os],
+      ["Cliente", fila.cliente],
+      ["Colonia", fila.colonia],
+      ["Canal de venta", canalTxt],
+      ["Plan", fila.plan],
+      ["Vendedor", vendedor],
+      ["Coach", coach],
+      ["Líder", lider]
+    ];
+    return '<section class="panel"><h2>Seguimiento OS</h2>' +
+      '<div class="aviso" style="font-size:16px;color:var(--v-tx);background:var(--v-bg)">' +
+      "<b>✔ VENTA INSTALADA EL DÍA " + fCorta(fila.fIns) + "</b></div>" +
+      '<div class="scroll"><table class="ficha compacta" style="max-width:620px"><tbody>' +
+      datosIns.map(function(d){
+        return '<tr><td class="rot">' + d[0] + "</td><td>" + (d[1] || "—") + "</td></tr>";
+      }).join("") +
+      "</tbody></table></div></section>";
+  }
 
   let duplicidadTxt = "NO";
   let grupoDup = null;
