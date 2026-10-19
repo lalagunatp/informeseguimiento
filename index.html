@@ -276,6 +276,7 @@
   .rep-br.v{background:var(--v-tx)} .rep-br.a{background:#c79200} .rep-br.r{background:var(--r-tx)}
   .rep-bp{background:repeating-linear-gradient(135deg, #8795a3 0 3px, transparent 3px 6px); opacity:.55}
   .rep-mk{position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--ink)}
+  .rep-mk.hoy{width:0; background:none; border-left:2px dotted var(--ink); opacity:.7}
   .rep-mv{font-size:12px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums}
   .rep-mv b{font-size:14px}
   .rep-mv b.v{color:var(--v-tx)} .rep-mv b.a{color:var(--a-tx)} .rep-mv b.r{color:var(--r-tx)}
@@ -8346,11 +8347,39 @@ function repCompromiso(coach, lunes){
 function repPeriodo(){
   const hoy = soloFecha(new Date());
   const lunesAct = lunesDe(isoSemana(hoy));
+  // hasta el último día ya cerrado (ayer) con instalaciones cargadas, desde `ini`; si
+  // todavía no hay día cerrado (lunes o día 1), lo que lleve el propio `ini`
+  const ultimoCerrado = function(ini){
+    const ayer = repDia(hoy, -1);
+    let fin = ini;
+    if (ayer >= ini) FILAS.forEach(function(f){ if (f.fIns && f.fIns > fin && f.fIns <= ayer) fin = f.fIns; });
+    return fin;
+  };
+  // mes en curso: del día 1 al último día cerrado, contra los mismos días del mes anterior
+  // (parejo) y contra el mes anterior completo (referencia). Proyecta igual que la semana
+  // en curso, con el ritmo con que se cerraron los dos meses anteriores
+  if (REP.periodo === "mescurso"){
+    const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const ultimo = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+    const fin = ultimoCerrado(ini), n = fin.getDate();
+    // mismos días de k meses atrás (si ese mes es más corto, hasta su último día)
+    const atras = function(k){
+      const i = new Date(ini.getFullYear(), ini.getMonth() - k, 1), u = new Date(ini.getFullYear(), ini.getMonth() - k + 1, 0);
+      return { ini:i, fin:new Date(i.getFullYear(), i.getMonth(), Math.min(n, u.getDate())), ult:u };
+    };
+    const A = atras(1), B = atras(2);
+    const nom = NOMBRE_MES[ini.getMonth()], nomA = NOMBRE_MES[A.ini.getMonth()];
+    return { tipo:"mescurso", esMes:true, ini:ini, fin:fin, iniA:A.ini, finA:A.fin, finAc:A.ult, iniB:B.ini, finB:B.fin, finBc:B.ult, lunes:null,
+      dias:n, diasMes:ultimo.getDate(), frac:n / ultimo.getDate(), abierta:fin < ultimo, proyecta:fin < ultimo,
+      titulo:"Mes en curso: " + nom + " al día " + n,
+      detalle:"Del 1 al " + n + " de " + nom + " (" + n + " de " + ultimo.getDate() + " días), contra los mismos días de " + nomA + " y contra " + nomA + " completo.",
+      etqA:nomA.slice(0, 3) + " 1" + (A.fin.getDate() > 1 ? "–" + A.fin.getDate() : ""), etqAc:nomA.slice(0, 3) + " completo", nomA:nomA };
+  }
   if (REP.periodo === "mes"){
     const ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1), fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
     const iniA = new Date(hoy.getFullYear(), hoy.getMonth() - 2, 1), finA = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 0);
     const nom = NOMBRE_MES[ini.getMonth()];
-    return { tipo:"mes", ini:ini, fin:fin, iniA:iniA, finA:finA, lunes:null,
+    return { tipo:"mes", esMes:true, ini:ini, fin:fin, iniA:iniA, finA:finA, lunes:null,
       titulo:"Mes cerrado: " + nom + " " + ini.getFullYear(),
       detalle:"Del 1 al " + fin.getDate() + " de " + nom + ", contra " + NOMBRE_MES[iniA.getMonth()] + ".",
       etqA:NOMBRE_MES[iniA.getMonth()].slice(0, 3) };
@@ -8367,15 +8396,11 @@ function repPeriodo(){
   // instalaciones cargadas si la base todavía no trae el de ayer. El día de hoy no entra:
   // va a medias y haría ver una caída contra los mismos días de la semana pasada. En lunes
   // todavía no hay día cerrado, así que se muestra lo que lleve el propio lunes.
-  const ayer = repDia(hoy, -1);
-  let fin = lunesAct;
-  if (ayer >= lunesAct){
-    FILAS.forEach(function(f){ if (f.fIns && f.fIns > fin && f.fIns <= ayer) fin = f.fIns; });
-  }
+  const fin = ultimoCerrado(lunesAct);
   const n = diaIndice(fin);
   const s = Number(isoSemana(lunesAct).split("-")[1]);
-  return { tipo:"actual", ini:lunesAct, fin:fin, iniA:repDia(lunesAct, -7), finA:repDia(fin, -7), lunes:lunesAct,
-    iniB:repDia(lunesAct, -14), finB:repDia(fin, -14), dias:n + 1, abierta:n < 6,
+  return { tipo:"actual", ini:lunesAct, fin:fin, iniA:repDia(lunesAct, -7), finA:repDia(fin, -7), finAc:repDia(lunesAct, -1), lunes:lunesAct,
+    iniB:repDia(lunesAct, -14), finB:repDia(fin, -14), finBc:repDia(lunesAct, -8), dias:n + 1, abierta:n < 6, proyecta:n < 6,
     titulo:"Semana en curso: semana " + s + " al " + DIAS_LARGOS[n].toLowerCase(),
     detalle:"Del " + repFecha(lunesAct) + " al " + repFecha(fin) + ", contra los mismos días de la semana " + (s - 1) + ".",
     etqA:"S" + (s - 1) + " " + (n === 6 ? "" : "L–" + DIAS[n].charAt(0).toUpperCase()) };
@@ -8458,7 +8483,7 @@ function repCanceladas(ini, fin){
 function repMetaInst(personas){ return personas.reduce(function(s, p){ return s + metaDe(metalDe(p)); }, 0); }
 function repMetaDe(instSemana, per){
   const f = 1 + (Number(el("factorMeta").value) || 15) / 100;
-  const ins = per.tipo === "mes" ? Math.round(instSemana * (Number(el("semanasMes").value) || 4.33)) : instSemana;
+  const ins = per.esMes ? Math.round(instSemana * (Number(el("semanasMes").value) || 4.33)) : instSemana;
   const val = Math.round(ins * f);
   return { ins:ins, val:val, op:Math.round(val * f) };
 }
@@ -8518,9 +8543,17 @@ function repMetaTec(cve){
 }
 function repMinTec(){ const n = Number(el("minimoTecnico").value); return isFinite(n) && n > 0 ? n : 1; }
 function repSemMes(){ return Number(el("semanasMes").value) || 4.33; }
+function repMinMes(){ return Math.round(repMinTec() * repSemMes()); }
+// mínimo que se pide en el periodo; en el mes en curso, la parte proporcional a los días
+// que lleva el mes (hacia arriba), para no marcar a todos a media quincena
+function repMinPer(per){
+  if (per.tipo === "mescurso") return Math.ceil(repMinMes() * per.frac);
+  return per.esMes ? repMinMes() : repMinTec();
+}
 function repMinTexto(per){
-  const n = per.tipo === "mes" ? Math.round(repMinTec() * repSemMes()) : repMinTec();
-  return n + (n === 1 ? " instalación" : " instalaciones") + (per.tipo === "mes" ? " en el mes" : " en la semana");
+  const n = repMinPer(per), u = function(k){ return k + (k === 1 ? " instalación" : " instalaciones"); };
+  if (per.tipo === "mescurso") return u(n) + " al día " + per.dias + ", proporcional a " + u(repMinMes()) + " en el mes";
+  return u(n) + (per.esMes ? " en el mes" : " en la semana");
 }
 function repAlta(p){
   const s = String(p.fechaAlta || "").trim();
@@ -8568,8 +8601,9 @@ function repCanalesTec(){
 // vendedores de un canal técnico debajo del mínimo en el periodo, con cuántas semanas
 // (o meses) seguidas llevan así; no se cuentan periodos anteriores a su alta
 function repSinInstTec(gente, per){
-  const minS = repMinTec(), esMes = per.tipo === "mes";
-  const minP = esMes ? Math.round(minS * repSemMes()) : minS;
+  // el periodo del reporte con su mínimo (proporcional en el mes en curso); los periodos
+  // anteriores, ya completos, con el mínimo entero
+  const esMes = !!per.esMes, minP = repMinPer(per), minAnt = esMes ? repMinMes() : repMinTec();
   const lista = [];
   gente.forEach(function(p){
     const cod = repCodigoDe(p);
@@ -8583,7 +8617,7 @@ function repSinInstTec(gente, per){
       const ini = esMes ? new Date(per.ini.getFullYear(), per.ini.getMonth() - i, 1) : repDia(per.lunes, -7 * i);
       const fin = esMes ? new Date(per.ini.getFullYear(), per.ini.getMonth() - i + 1, 0) : repDia(ini, 6);
       if (alta && fin < alta) break;
-      if (repInsTec(cod, ini, fin) >= minP) break;
+      if (repInsTec(cod, ini, fin) >= minAnt) break;
       racha++;
     }
     lista.push({ nombre:p.nombre, cod:cod, coach:p.coach, n:n, racha:racha, nuevo: !!(alta && alta > per.ini) });
@@ -8600,18 +8634,22 @@ function repLider(L, per, canc){
   const r = { L:L, tec:tec, act:repMedir(deL, per.ini, per.fin), ant:repMedir(deL, per.iniA, per.finA),
     cam:repCamada(deL, per.fin), metaSem:tec ? L.metaSem : repMetaInst(gente), personas:gente.length };
   if (tec){
-    const m = per.tipo === "mes" ? Math.round(L.metaSem * repSemMes()) : L.metaSem;
+    const m = per.esMes ? Math.round(L.metaSem * repSemMes()) : L.metaSem;
     r.meta = { ins:m, val:m, op:m };
     r.sinInst = repSinInstTec(gente, per);
   } else r.meta = repMetaDe(r.metaSem, per);
+  // mes en curso: lo que de la meta del mes ya le tocaba a estas alturas, y el mes anterior completo
+  r.metaF = per.frac && r.meta.ins ? Math.round(r.meta.ins * per.frac) : 0;
+  r.antC = per.etqAc ? repMedir(deL, per.iniA, per.finAc) : null;
   r.canc = canc ? canc.filter(L.cancDe) : null;
   r.cancA = per.cancA ? per.cancA.filter(L.cancDe) : null;
 
-  // proyección de la semana en curso: el ritmo con el que el líder cerró las dos semanas anteriores
+  // proyección de la semana (o el mes) en curso: el ritmo con el que el líder cerró las dos
+  // semanas (o los dos meses) anteriores
   r.fac = 1;
-  if (per.tipo === "actual" && per.abierta){
-    const fullA = repMedir(deL, per.iniA, repDia(per.iniA, 6)).ins, partA = r.ant.ins;
-    const fullB = repMedir(deL, per.iniB, repDia(per.iniB, 6)).ins, partB = repMedir(deL, per.iniB, per.finB).ins;
+  if (per.proyecta){
+    const fullA = (r.antC || repMedir(deL, per.iniA, per.finAc)).ins, partA = r.ant.ins;
+    const fullB = repMedir(deL, per.iniB, per.finBc).ins, partB = repMedir(deL, per.iniB, per.finB).ins;
     r.fac = (partA + partB) ? (fullA + fullB) / (partA + partB) : 1;
     r.jdHist = Math.round(((fullA - partA) + (fullB - partB)) / 2);
   }
@@ -8634,10 +8672,12 @@ function repLider(L, per, canc){
     const suyos = gente.filter(function(p){ return normaliza(p.coach) === k; });
     const act = repMedir(deC, per.ini, per.fin);
     const x = { nombre:c, k:k, act:act, ant:repMedir(deC, per.iniA, per.finA), cam:repCamada(deC, per.fin),
+      antC: per.etqAc ? repMedir(deC, per.iniA, per.finAc) : null,
       meta:tec ? 0 : repMetaDe(repMetaInst(suyos), per).ins, personas:suyos.filter(function(p){ return !p.vacante; }).length,
       proy:Math.round(act.ins * r.fac),
       comp: per.lunes && !tec ? repCompromiso(c, per.lunes) : null,
       canc: r.canc ? r.canc.filter(function(z){ return (tec ? z.coachTec : z.coach) === k; }).length : null };
+    x.metaF = per.frac && x.meta ? Math.round(x.meta * per.frac) : 0;
     x.sinInst = tec ? r.sinInst.filter(function(v){ return normaliza(v.coach) === k; }).length
       : suyos.filter(function(p){ return !p.vacante && !act.vend.get(normaliza(p.nombre)); }).length;
     if (tec) x.recur = r.sinInst.filter(function(v){ return normaliza(v.coach) === k && v.racha >= 2; }).length;
@@ -8676,14 +8716,19 @@ function repConteo(lista, campo){
 function repTextos(r, per){
   const a = r.act, b = r.ant, lec = [], opp = [];
   const lbl = per.etqA.trim();
-  const cierra = per.tipo === "actual" && per.abierta;
+  const cierra = per.proyecta;
+  const resta = per.esMes ? "del mes" : "de la semana";
   lec.push("Instaló " + a.ins + " contra " + b.ins + " de " + lbl + " (" + (b.ins ? (a.ins >= b.ins ? "+" : "−") + Math.abs(Math.round((a.ins - b.ins) / b.ins * 100)) + "%" : "sin comparativo") +
     "). Levantó " + a.op + " oportunidades (" + lbl + ": " + b.op + ") y validó " + a.val + " (" + lbl + ": " + b.val + ").");
+  if (r.antC) lec.push(repNombre(per.nomA) + " completo cerró con " + r.antC.ins + " instalaciones" +
+    (r.antC.ins > a.ins ? "; le faltan " + (r.antC.ins - a.ins) + " para igualarlo" + (cierra ? " y la proyección es de " + r.proy : "") + "." : "; ya lo superó."));
   const base = cierra ? r.proy : a.ins;
   if (r.meta.ins){
     const al = base / r.meta.ins;
     lec.push(cierra
-      ? "Meta de la semana: " + r.meta.ins + " instalaciones. Lleva " + repPct(a.ins / r.meta.ins) + " y con la proyección de " + r.proy + " llegaría al " + repPct(al) + ". Para cumplirla le faltan " + Math.max(0, r.meta.ins - a.ins) + " en lo que resta de la semana; en esos días suele hacer " + r.jdHist + "."
+      ? "Meta " + resta + ": " + r.meta.ins + " instalaciones. Lleva " + a.ins + " (" + repPct(a.ins / r.meta.ins) + ")" +
+        (r.metaF ? "; a la fecha le tocaban " + r.metaF + ", va al " + repPct(a.ins / r.metaF) + " del ritmo" : "") +
+        ". Con la proyección de " + r.proy + " llegaría al " + repPct(al) + ". Para cumplirla le faltan " + Math.max(0, r.meta.ins - a.ins) + " en lo que resta " + resta + "; en esos días suele hacer " + r.jdHist + "."
       : "Meta del periodo: " + r.meta.ins + " instalaciones. Llegó al " + repPct(al) + (al >= 1 ? "." : ", le faltaron " + (r.meta.ins - a.ins) + "."));
   }
   if (r.comp){
@@ -8699,7 +8744,7 @@ function repTextos(r, per){
   if (!r.tec) lec.push("Rechazo: " + repPct(a.pRech) + " de las oportunidades (" + a.rech + " de " + a.op + ")" + (tr ? "; el motivo principal es " + tr[0].toLowerCase() + " (" + tr[1] + ")." : "."));
   const recur = r.tec ? r.sinInst.filter(function(v){ return v.racha >= 2; }) : [];
   if (r.tec) lec.push("Vendedores debajo del mínimo (" + repMinTexto(per) + "): " + r.sinInst.length + " de " + r.personas +
-    (r.sinInst.length ? ", " + recur.length + " recurrentes (" + (per.tipo === "mes" ? "también el mes anterior" : "2 semanas o más seguidas") + ")." : "."));
+    (r.sinInst.length ? ", " + recur.length + " recurrentes (" + (per.esMes ? "también el mes anterior" : "2 semanas o más seguidas") + ")." : "."));
   if (r.canc){
     const pc = (r.canc.length + a.ins) ? r.canc.length / (r.canc.length + a.ins) : null;
     const tc = repConteo(r.canc, "motivo")[0];
@@ -8715,7 +8760,7 @@ function repTextos(r, per){
   if (r.comp && r.comp.sin.length) opp.push("<b>Sin compromiso capturado:</b> " + r.comp.sin.map(repNombre).join(", ") + ". Sin plan no hay contra qué medir a esos equipos.");
   const caida = r.coaches.filter(function(c){ return c.ant.ins - c.act.ins >= 5; }).sort(function(x, y){ return (y.ant.ins - y.act.ins) - (x.ant.ins - x.act.ins); })[0];
   if (caida) opp.push("<b>" + repNombre(caida.nombre) + ":</b> bajó de " + caida.ant.ins + " a " + caida.act.ins + " instalaciones contra " + lbl + ". Revisar asistencia, permisos y zonas.");
-  if (recur.length) opp.push("<b>Sin llegar al mínimo de forma recurrente:</b> " + recur.slice(0, 6).map(function(v){ return repNombre(v.nombre) + " (" + v.racha + (per.tipo === "mes" ? " meses" : " semanas") + ")"; }).join(", ") +
+  if (recur.length) opp.push("<b>Sin llegar al mínimo de forma recurrente:</b> " + recur.slice(0, 6).map(function(v){ return repNombre(v.nombre) + " (" + v.racha + (per.esMes ? " meses" : " semanas") + ")"; }).join(", ") +
     (recur.length > 6 ? " y " + (recur.length - 6) + " más" : "") + ". Revisar con su coach si sigue activo en venta y darle acompañamiento.");
   const rechAlto = r.tec ? null : r.coaches.filter(function(c){ return c.act.op >= 10 && c.act.pRech >= 0.27; }).sort(function(x, y){ return y.act.pRech - x.act.pRech; })[0];
   if (rechAlto) opp.push("<b>" + repNombre(rechAlto.nombre) + "</b> rechaza " + repPct(rechAlto.act.pRech) + " de lo que levanta. Revisar la calidad de la venta antes de subirla.");
@@ -8731,14 +8776,18 @@ function repTextos(r, per){
   return { lec:lec, opp:opp };
 }
 
-function repBarra(lbl, real, meta, proy){
+// `frac` (mes en curso): parte del mes que ya pasó; marca punteada en lo que ya tocaba
+function repBarra(lbl, real, meta, proy, frac){
   if (!meta) return "";
   const esc = function(v){ return Math.min(v / meta / 1.2 * 100, 100).toFixed(1); };
   const al = (proy != null ? proy : real) / meta;
+  const aFecha = frac ? Math.round(meta * frac) : 0;
   return '<div class="rep-mrow"><span class="rep-ml">' + lbl + '</span><div class="rep-mb">' +
     (proy != null ? '<span class="rep-bp" style="width:' + esc(proy) + '%"></span>' : "") +
-    '<span class="rep-br ' + repClsMeta(al) + '" style="width:' + esc(real) + '%"></span><span class="rep-mk" style="left:' + (100 / 1.2).toFixed(1) + '%"></span></div>' +
+    '<span class="rep-br ' + repClsMeta(al) + '" style="width:' + esc(real) + '%"></span><span class="rep-mk" style="left:' + (100 / 1.2).toFixed(1) + '%"></span>' +
+    (aFecha ? '<span class="rep-mk hoy" style="left:' + esc(aFecha) + '%"></span>' : "") + "</div>" +
     '<span class="rep-mv"><b class="' + repClsMeta(al) + '">' + repPct(real / meta) + "</b> " + real + " de " + meta +
+    (aFecha ? " · a la fecha " + aFecha + " (" + repPct(real / aFecha) + ")" : "") +
     (proy != null ? " · proyección " + proy + " (" + repPct(proy / meta) + ")" : "") + "</span></div>";
 }
 
@@ -8748,12 +8797,13 @@ function repLista(pares, pie){
 }
 
 function repWhatsApp(r, per, tx){
-  const a = r.act, cierra = per.tipo === "actual" && per.abierta;
+  const a = r.act, cierra = per.proyecta;
+  const compl = function(k){ return r.antC ? " · " + per.etqAc + ": " + r.antC[k] : ""; };
   const lineas = ["*Reporte comercial · " + per.titulo + "*", (r.L.tipo === "canal" ? "*Canal:* " : "*Líder:* ") + r.L.tit, per.detalle, "",
-    "• Oportunidades: " + a.op + " (" + per.etqA.trim() + ": " + r.ant.op + ")",
-    "• Validadas: " + a.val + " (" + per.etqA.trim() + ": " + r.ant.val + ")",
-    "• Instalaciones: " + a.ins + " (" + per.etqA.trim() + ": " + r.ant.ins + ")",
-    r.meta.ins ? "• Meta: " + r.meta.ins + " · alcance " + repPct(a.ins / r.meta.ins) + (cierra ? " · cierre proyectado " + r.proy + " (" + repPct(r.proy / r.meta.ins) + ")" : "")
+    "• Oportunidades: " + a.op + " (" + per.etqA.trim() + ": " + r.ant.op + compl("op") + ")",
+    "• Validadas: " + a.val + " (" + per.etqA.trim() + ": " + r.ant.val + compl("val") + ")",
+    "• Instalaciones: " + a.ins + " (" + per.etqA.trim() + ": " + r.ant.ins + compl("ins") + ")",
+    r.meta.ins ? "• Meta: " + r.meta.ins + " · alcance " + repPct(a.ins / r.meta.ins) + (r.metaF ? " · a la fecha " + r.metaF + " (" + repPct(a.ins / r.metaF) + ")" : "") + (cierra ? " · cierre proyectado " + r.proy + " (" + repPct(r.proy / r.meta.ins) + ")" : "")
       : "• Sin meta" + (cierra ? " · cierre proyectado " + r.proy : "")];
   if (r.comp) lineas.push("• Compromiso del plan: " + r.comp.ins + " (" + r.comp.con + " de " + r.comp.total + " coaches) · " + repPct(r.comp.ins ? r.comp.real / r.comp.ins : null));
   lineas.push("• Conversión: " + repPct(a.conv) + " · camada 30 días " + repPct(r.cam.pct));
@@ -8801,11 +8851,11 @@ function reporteComercialHtml(){
   let html = '<section class="panel"><h2>Reporte comercial <span class="sub">' + per.titulo + "</span></h2>" +
     '<div class="rep"><div class="controles rep-controles">' +
     '<label class="campo">Periodo<select id="repPeriodo">' +
-    [["actual", "Semana en curso"], ["cerrada", "Semana cerrada"], ["mes", "Mes cerrado"]].map(function(o){
+    [["actual", "Semana en curso"], ["cerrada", "Semana cerrada"], ["mescurso", "Mes en curso"], ["mes", "Mes cerrado"]].map(function(o){
       return '<option value="' + o[0] + '"' + (REP.periodo === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
     }).join("") + "</select></label>" + opcL +
     '<div class="acciones"><button type="button" id="repImprimir">Imprimir o guardar PDF</button></div></div>' +
-    '<p class="rep-per">' + per.detalle + (per.tipo === "actual" && per.abierta ? " La proyección de cierre usa el ritmo con el que cada líder terminó las dos semanas anteriores." : "") + "</p>" +
+    '<p class="rep-per">' + per.detalle + (per.proyecta ? " La proyección de cierre usa el ritmo con el que cada líder terminó " + (per.esMes ? "los dos meses anteriores." : "las dos semanas anteriores.") : "") + "</p>" +
     (avisos.length ? '<div class="aviso">' + avisos.join("<br>") + "</div>" : "");
   if (!listos){ return html + "</div></section>"; }
 
@@ -8814,15 +8864,18 @@ function reporteComercialHtml(){
   const elegidos = grupos.filter(function(l){ return !REP.lider || l.k === REP.lider; });
   const rs = elegidos.map(function(L){ return repLider(L, per, canc); });
   const rsL = rs.filter(function(r){ return r.L.tipo === "lider"; }), rsC = rs.filter(function(r){ return r.L.tipo === "canal"; });
-  const cierra = per.tipo === "actual" && per.abierta;
+  const cierra = per.proyecta;
+  // mes en curso: columna del mes anterior completo y alcance contra lo que ya tocaba
+  const compl = !!per.etqAc, aFecha = !!per.frac;
 
   // resumen del distrito (o del líder): líderes y venta técnico por separado, para no
   // sumar dos veces una venta que trae líder y además es de un canal técnico
   const totales = function(lista){
-    const T = { op:0, val:0, ins:0, antIns:0, rech:0, meta:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0, sin:0, pers:0, recur:0 };
+    const T = { op:0, val:0, ins:0, antIns:0, antC:0, rech:0, meta:0, metaF:0, proy:0, comp:0, compReal:0, cam:0, camI:0, canc:0, sin:0, pers:0, recur:0 };
     lista.forEach(function(r){
       if (r.sinInst){ T.sin += r.sinInst.length; T.pers += r.personas; T.recur += r.sinInst.filter(function(v){ return v.racha >= 2; }).length; }
       T.op += r.act.op; T.val += r.act.val; T.ins += r.act.ins; T.antIns += r.ant.ins; T.rech += r.act.rech; T.meta += r.meta.ins; T.proy += r.proy;
+      T.antC += r.antC ? r.antC.ins : 0; T.metaF += r.metaF;
       if (r.comp){ T.comp += r.comp.ins; T.compReal += r.comp.real; }
       T.cam += r.cam.v; T.camI += r.cam.i; T.canc += r.canc ? r.canc.length : 0;
     });
@@ -8831,7 +8884,9 @@ function reporteComercialHtml(){
   const T = totales(rsL.length ? rsL : rsC);
   // venta técnico (tec): sin compromiso ni rechazo; en su lugar, vendedores debajo del mínimo
   const filaRes = function(nombre, x, ancla, tec){
-    return "<tr><td class=\"rep-nm\">" + (ancla ? '<a href="#' + ancla + '">' + nombre + "</a>" : nombre) + "</td><td>" + x.op + "</td><td>" + x.val + '</td><td class="rep-b">' + x.ins + "</td><td>" + x.dIns + "</td><td>" + (x.meta || "—") + '</td><td class="dif ' + repClsMeta(x.alc) + '">' + repPct(x.alc) + "</td>" +
+    return "<tr><td class=\"rep-nm\">" + (ancla ? '<a href="#' + ancla + '">' + nombre + "</a>" : nombre) + "</td><td>" + x.op + "</td><td>" + x.val + '</td><td class="rep-b">' + x.ins + "</td><td>" + x.dIns + "</td>" + (compl ? "<td>" + x.antC + "</td>" : "") +
+      "<td>" + (x.meta || "—") + '</td><td class="dif ' + repClsMeta(x.alc) + '">' + repPct(x.alc) + "</td>" +
+      (aFecha ? "<td>" + (x.metaF || "—") + '</td><td class="dif ' + repClsMeta(x.alcF) + '">' + repPct(x.alcF) + "</td>" : "") +
       (cierra ? '<td class="rep-b">' + x.proy + '</td><td class="dif ' + repClsMeta(x.alcP) + '">' + repPct(x.alcP) + "</td>" : "") +
       (per.lunes && !tec ? "<td>" + x.comp + '</td><td class="dif ' + repClsMeta(x.alcC) + '">' + repPct(x.alcC) + "</td>" : "") +
       '<td class="dif ' + repClsConv(x.conv) + '">' + repPct(x.conv) + '</td><td class="dif ' + repClsConv(x.cam) + '">' + repPct(x.cam) + "</td>" +
@@ -8842,26 +8897,28 @@ function reporteComercialHtml(){
     if (!lista.length) return "";
     let filas = lista.map(function(r){
       const nc = r.canc ? r.canc.length : 0;
-      return filaRes(repEsc(r.L.tit), { op:r.act.op, val:r.act.val, ins:r.act.ins, dIns:repDelta(r.act.ins, r.ant.ins), meta:r.meta.ins,
-        alc: r.meta.ins ? r.act.ins / r.meta.ins : null, proy:r.proy, alcP: r.meta.ins ? r.proy / r.meta.ins : null,
+      return filaRes(repEsc(r.L.tit), { op:r.act.op, val:r.act.val, ins:r.act.ins, dIns:repDelta(r.act.ins, r.ant.ins), antC: r.antC ? r.antC.ins : 0, meta:r.meta.ins,
+        alc: r.meta.ins ? r.act.ins / r.meta.ins : null, metaF:r.metaF, alcF: r.metaF ? r.act.ins / r.metaF : null, proy:r.proy, alcP: r.meta.ins ? r.proy / r.meta.ins : null,
         comp: r.comp ? r.comp.ins + ' <span class="rep-cov">(' + r.comp.con + "/" + r.comp.total + ")</span>" : "—",
         alcC: r.comp && r.comp.ins ? r.comp.real / r.comp.ins : null, conv:r.act.conv, cam:r.cam.pct, rech:r.act.pRech,
         sin: r.sinInst ? r.sinInst.length : 0, pers:r.personas, recur: r.sinInst ? r.sinInst.filter(function(v){ return v.racha >= 2; }).length : 0,
         canc:nc, pc:(nc + r.act.ins) ? nc / (nc + r.act.ins) : null }, "rep-" + r.L.k.replace(/[^A-Z]/g, ""), tec);
     }).join("");
     const T = totales(lista);
-    if (lista.length > 1) filas += filaRes("<b>Total</b>", { op:T.op, val:T.val, ins:T.ins, dIns:repDelta(T.ins, T.antIns), meta:T.meta,
-      alc: T.meta ? T.ins / T.meta : null, proy:T.proy, alcP: T.meta ? T.proy / T.meta : null, comp:T.comp, alcC: T.comp ? T.compReal / T.comp : null,
+    if (lista.length > 1) filas += filaRes("<b>Total</b>", { op:T.op, val:T.val, ins:T.ins, dIns:repDelta(T.ins, T.antIns), antC:T.antC, meta:T.meta,
+      alc: T.meta ? T.ins / T.meta : null, metaF:T.metaF, alcF: T.metaF ? T.ins / T.metaF : null, proy:T.proy, alcP: T.meta ? T.proy / T.meta : null, comp:T.comp, alcC: T.comp ? T.compReal / T.comp : null,
       conv: T.val ? T.ins / T.val : null, cam: T.cam ? T.camI / T.cam : null, rech: T.op ? T.rech / T.op : null,
       sin:T.sin, pers:T.pers, recur:T.recur,
       canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }, "", tec).replace("<tr>", '<tr class="total">');
-    const encRes = "<tr><th class=\"rep-nm\">" + rotulo + "</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th><th>Meta</th><th>Alcance</th>" +
+    const encRes = "<tr><th class=\"rep-nm\">" + rotulo + "</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc + "</th>" : "") +
+      "<th>" + (per.esMes ? "Meta del mes" : "Meta") + "</th><th>Alcance</th>" + (aFecha ? "<th>Meta a la fecha</th><th>Alcance a la fecha</th>" : "") +
       (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes && !tec ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
       "<th>Conversión</th><th>Camada 30 d</th>" + (tec ? "<th>Vend. debajo del mínimo</th><th>Recurrentes</th>" : "<th>% rechazo</th>") +
       (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
     return '<div class="scroll"><table class="compacta rep-t"><thead>' + encRes + "</thead><tbody>" + filas + "</tbody></table></div>";
   };
   html += '<div class="rep-big"><div><b>' + T.ins + "</b><span>instalaciones" + (rsL.length && rsC.length ? " (líderes de venta)" : "") + "</span></div>" + (cierra ? "<div><b>" + T.proy + "</b><span>cierre proyectado</span></div>" : "") +
+    (aFecha ? "<div><b>" + repPct(T.metaF ? T.ins / T.metaF : null) + "</b><span>de la meta a la fecha (" + per.dias + " de " + per.diasMes + " días)</span></div>" : "") +
     "<div><b>" + repPct(T.meta ? (cierra ? T.proy : T.ins) / T.meta : null) + "</b><span>" + (cierra ? "de la meta, proyectado" : "de la meta") + "</span></div>" +
     "<div><b>" + repPct(T.val ? T.ins / T.val : null) + "</b><span>conversión</span></div></div>" +
     tablaRes(rsL, "Líder") + (rsL.length && rsC.length ? "<h3>Venta técnico</h3>" : "") + tablaRes(rsC, "Canal", true) +
@@ -8874,41 +8931,44 @@ function reporteComercialHtml(){
     const al = r.meta.ins ? (cierra ? r.proy : a.ins) / r.meta.ins : null;
     const tag = al === null ? "" : al >= 1 ? '<span class="rep-tag v">Cumple la meta</span>' : al >= 0.9 ? '<span class="rep-tag a">Cerca de la meta</span>' : '<span class="rep-tag r">Debajo de la meta</span>';
     const nRec = r.tec ? r.sinInst.filter(function(v){ return v.racha >= 2; }).length : 0;
-    const kpis = [["Oportunidades", a.op, repDelta(a.op, r.ant.op)], ["Validadas", a.val, repDelta(a.val, r.ant.val)], ["Instalaciones", a.ins, repDelta(a.ins, r.ant.ins)],
+    const kpis = [["Oportunidades", a.op, repDelta(a.op, r.ant.op)], ["Validadas", a.val, repDelta(a.val, r.ant.val)], ["Instalaciones", a.ins, repDelta(a.ins, r.ant.ins) + (r.antC ? '<span class="rep-d">' + per.etqAc + ": " + r.antC.ins + "</span>" : "")],
       r.tec ? ["Debajo del mínimo", r.sinInst.length + ' <span class="rep-cov">de ' + r.personas + "</span>", '<span class="rep-d' + (nRec ? " r" : "") + '">' + nRec + " recurrentes</span>"]
         : ["% rechazo", repPct(a.pRech), repDelta(a.pRech || 0, r.ant.pRech || 0, true)], ["ARPU sin IVA", "$" + Math.round(a.arpu), repDelta(a.arpu, r.ant.arpu)],
       cierra ? ["Cierre proyectado", r.proy, '<span class="rep-d">' + repPct(r.meta.ins ? r.proy / r.meta.ins : null) + " de la meta</span>"] : ["Conversión", repPct(a.conv), '<span class="rep-d">camada 30 d: ' + repPct(r.cam.pct) + "</span>"]];
-    const barras = repBarra("Oportunidades", a.op, r.meta.op, cierra ? Math.round(a.op * r.fac) : null) +
-      repBarra("Validadas", a.val, r.meta.val, cierra ? Math.round(a.val * r.fac) : null) + repBarra("Instalaciones", a.ins, r.meta.ins, cierra ? r.proy : null);
+    const barras = repBarra("Oportunidades", a.op, r.meta.op, cierra ? Math.round(a.op * r.fac) : null, per.frac) +
+      repBarra("Validadas", a.val, r.meta.val, cierra ? Math.round(a.val * r.fac) : null, per.frac) + repBarra("Instalaciones", a.ins, r.meta.ins, cierra ? r.proy : null, per.frac);
+    const celC = function(c){ return compl ? "<td>" + (c.antC ? c.antC.ins : 0) + "</td>" : ""; };
     const filasC = r.tec ? r.coaches.map(function(c){
-      return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" +
+      return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" + celC(c) +
         (cierra ? '<td class="rep-b">' + c.proy + "</td>" : "") +
         '<td class="dif ' + repClsConv(c.act.conv) + '">' + repPct(c.act.conv) + '</td><td class="dif ' + repClsConv(c.cam.pct) + '">' + repPct(c.cam.pct) + "</td>" +
         (r.canc ? "<td>" + c.canc + "</td>" : "") + "<td>" + c.cam.pend + "</td><td>" + c.sinInst + "</td><td" + (c.recur ? ' class="rep-rojo"' : "") + ">" + c.recur + "</td></tr>";
     }).join("") : r.coaches.map(function(c){
       const alc = c.meta ? (cierra ? c.proy : c.act.ins) / c.meta : null;
       const vsC = c.comp ? (cierra ? c.proy : c.act.ins) / c.comp.ins : null;
-      return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" +
+      const alcF = c.metaF ? c.act.ins / c.metaF : null;
+      return '<tr><td class="rep-nm">' + repEsc(repNombre(c.nombre)) + "</td><td>" + c.personas + "</td><td>" + c.act.op + "</td><td>" + c.act.val + '</td><td class="rep-b">' + c.act.ins + "</td><td>" + repDeltaN(c.act.ins, c.ant.ins) + "</td>" + celC(c) +
         (cierra ? '<td class="rep-b">' + c.proy + "</td>" : "") + "<td>" + c.meta + '</td><td class="dif ' + repClsMeta(alc) + '">' + repPct(alc) + "</td>" +
+        (aFecha ? "<td>" + (c.metaF || "—") + '</td><td class="dif ' + repClsMeta(alcF) + '">' + repPct(alcF) + "</td>" : "") +
         (per.lunes ? (c.comp ? '<td class="' + (c.comp.ins < c.meta ? "rep-rojo" : "") + '">' + c.comp.ins + '</td><td class="dif ' + repClsMeta(vsC) + '">' + repPct(vsC) + "</td>" : '<td class="rep-rojo">sin plan</td><td>—</td>') : "") +
         '<td class="dif ' + repClsConv(c.act.conv) + '">' + repPct(c.act.conv) + '</td><td class="dif ' + repClsConv(c.cam.pct) + '">' + repPct(c.cam.pct) + "</td><td" + (c.act.pRech >= 0.27 && c.act.op >= 10 ? ' class="rep-rojo"' : "") + ">" + repPct(c.act.pRech) + "</td>" +
         (r.canc ? "<td>" + c.canc + "</td>" : "") + "<td>" + c.cam.pend + "</td><td" + (c.sinInst >= 3 ? ' class="rep-rojo"' : "") + ">" + c.sinInst + "</td></tr>";
     }).join("");
     const encC = r.tec
-      ? '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (cierra ? "<th>Proy.</th>" : "") +
+      ? '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc + "</th>" : "") + (cierra ? "<th>Proy.</th>" : "") +
         "<th>Conv.</th><th>Camada 30 d</th>" + (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Debajo del mínimo</th><th>Recurrentes</th></tr>"
-      : '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (cierra ? "<th>Proy.</th>" : "") +
-        "<th>Meta</th><th>Alcance</th>" + (per.lunes ? "<th>Compromiso</th><th>vs comp.</th>" : "") + "<th>Conv.</th><th>Camada 30 d</th><th>% rech.</th>" +
+      : '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc + "</th>" : "") + (cierra ? "<th>Proy.</th>" : "") +
+        "<th>" + (per.esMes ? "Meta del mes" : "Meta") + "</th><th>Alcance" + (cierra ? " proy." : "") + "</th>" + (aFecha ? "<th>Meta a la fecha</th><th>Alcance a la fecha</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs comp.</th>" : "") + "<th>Conv.</th><th>Camada 30 d</th><th>% rech.</th>" +
         (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Vend. sin inst.</th></tr>";
     // venta técnico: vendedores debajo del mínimo, con las semanas (o meses) seguidas
-    const uni = per.tipo === "mes" ? "meses" : "semanas";
+    const uni = per.esMes ? "meses" : "semanas";
     const tablaSin = !r.tec ? "" : "<h3>Vendedores debajo del mínimo (" + repMinTexto(per) + ")</h3>" + (r.sinInst.length
-      ? '<div class="scroll"><table class="compacta rep-t"><thead><tr><th class="rep-nm">Vendedor</th><th class="rep-nm">Código</th><th class="rep-nm">Coach</th><th>Inst.</th><th>' + (per.tipo === "mes" ? "Meses" : "Semanas") + " seguidas</th><th>Recurrente</th></tr></thead><tbody>" +
+      ? '<div class="scroll"><table class="compacta rep-t"><thead><tr><th class="rep-nm">Vendedor</th><th class="rep-nm">Código</th><th class="rep-nm">Coach</th><th>Inst.</th><th>' + (per.esMes ? "Meses" : "Semanas") + " seguidas</th><th>Recurrente</th></tr></thead><tbody>" +
         r.sinInst.map(function(v){
-          return '<tr><td class="rep-nm">' + repEsc(repNombre(v.nombre)) + (v.nuevo ? ' <span class="rep-cov">(alta en el periodo)</span>' : "") + '</td><td class="rep-nm">' + repEsc(v.cod) + '</td><td class="rep-nm">' + repEsc(repNombre(v.coach)) + "</td><td>" + v.n + "</td><td>" + v.racha + (v.racha >= (per.tipo === "mes" ? 3 : 4) ? "+" : "") + "</td>" +
+          return '<tr><td class="rep-nm">' + repEsc(repNombre(v.nombre)) + (v.nuevo ? ' <span class="rep-cov">(alta en el periodo)</span>' : "") + '</td><td class="rep-nm">' + repEsc(v.cod) + '</td><td class="rep-nm">' + repEsc(repNombre(v.coach)) + "</td><td>" + v.n + "</td><td>" + v.racha + (v.racha >= (per.esMes ? 3 : 4) ? "+" : "") + "</td>" +
             (v.racha >= 2 ? '<td class="rep-rojo">Sí</td>' : "<td>No</td>") + "</tr>";
         }).join("") + "</tbody></table></div>" +
-        '<p class="rep-nota">Semanas (o meses) seguidas debajo del mínimo, contando el periodo del reporte y hasta ' + (per.tipo === "mes" ? "2 meses" : "3 semanas") + " atrás, sin contar lo anterior a su alta. Recurrente: 2 o más " + uni + " seguidas.</p>"
+        '<p class="rep-nota">Semanas (o meses) seguidas debajo del mínimo, contando el periodo del reporte y hasta ' + (per.esMes ? "2 meses" : "3 semanas") + " atrás, sin contar lo anterior a su alta. Recurrente: 2 o más " + uni + " seguidas.</p>"
       : '<p class="rep-nota">Todos los vendedores del canal llegaron al mínimo.</p>');
     // venta técnico: el vendedor es el código SLK/CRC del técnico, no el vendedor de BASE DE DATOS
     const topVend = r.tec
@@ -8922,10 +8982,11 @@ function reporteComercialHtml(){
       '<div class="rep" id="' + id + '"><div class="rep-cab">' + tag + "</div>" +
       '<div class="rep-kpis">' + kpis.map(function(k){ return '<div><span class="rep-lb">' + k[0] + "</span><b>" + k[1] + "</b>" + k[2] + "</div>"; }).join("") + "</div>" +
       (r.meta.ins
-        ? '<h3>Alcance de la meta ' + (per.tipo === "mes" ? "mensual" : "semanal") + '</h3><div class="rep-meta">' + barras + '</div><p class="rep-nota">' +
-          (r.tec ? "Meta fija del canal: " + r.L.metaSem + " por semana en instalaciones, validadas y oportunidades" + (per.tipo === "mes" ? ", por " + repSemMes() + " semanas en el mes" : "") + " (Ajustes). "
+        ? '<h3>Alcance de la meta ' + (per.esMes ? "mensual" : "semanal") + '</h3><div class="rep-meta">' + barras + '</div><p class="rep-nota">' +
+          (r.tec ? "Meta fija del canal: " + r.L.metaSem + " por semana en instalaciones, validadas y oportunidades" + (per.esMes ? ", por " + repSemMes() + " semanas en el mes" : "") + " (Ajustes). "
             : "Meta por ranking de su gente (la misma de Equipos). ") +
-          (cierra ? "Barra sólida: lo real; rayado: la proyección al domingo. " : "") + "La línea negra marca el 100%.</p>"
+          (cierra ? "Barra sólida: lo real; rayado: la proyección " + (per.esMes ? "al cierre del mes" : "al domingo") + ". " : "") + "La línea negra marca el 100%" +
+          (per.frac ? "; la punteada, lo que de la meta ya tocaba al día " + per.dias + " (" + per.dias + " de " + per.diasMes + " días)." : ".") + "</p>"
         : (r.tec ? '<p class="rep-nota">Este canal no tiene meta.</p>' : "")) +
       '<div class="rep-dos"><div><h3>Lectura</h3><ul class="rep-bul">' + tx.lec.map(function(t){ return "<li>" + t + "</li>"; }).join("") + "</ul></div>" +
       '<div><h3>Áreas de oportunidad</h3><ul class="rep-bul rep-opp">' + tx.opp.map(function(t){ return "<li>" + t + "</li>"; }).join("") + "</ul></div></div>" +
@@ -8950,6 +9011,7 @@ function reporteComercialHtml(){
     "<li>Conversión: instaladas entre validadas del periodo (puede pasar de 100%). Camada de 30 días: de lo validado en los 30 días que terminan el último día del periodo, cuánto ya se instaló; meta " + (el("metaConversion").value || 88) + "%.</li>" +
     "<li>Instalaciones canceladas: ATENCION ORDENES, tipo Instalación con estatus Cancelada, por fecha de término; se asignan al líder y coach de la venta que originó la cuenta. % de cancelación = canceladas entre (instaladas + canceladas).</li>" +
     "<li>Semana en curso: se compara contra los mismos días de la semana anterior. La proyección multiplica lo instalado por el ritmo con el que cada líder cerró las dos semanas anteriores (semana completa entre los mismos días).</li>" +
+    "<li>Mes en curso: del día 1 al último día ya cerrado. El cambio en % se compara contra los mismos días del mes anterior, y como referencia se muestra lo que cerró el mes anterior completo. La meta del mes es la semanal por " + repSemMes() + " semanas; la meta a la fecha es la parte que corresponde a los días que ya pasaron (ej. 18 de 31 días), para saber si va en ritmo. La proyección multiplica lo instalado por el ritmo con el que cada líder cerró los dos meses anteriores (mes completo entre los mismos días). En venta técnico, el mínimo por vendedor es la parte proporcional del mínimo mensual, redondeada hacia arriba. No lleva compromiso porque el Plan es semanal.</li>" +
     "<li>Lectura y áreas de oportunidad: se generan con reglas fijas sobre estos números.</li></ul></div></section>";
   return html;
 }
