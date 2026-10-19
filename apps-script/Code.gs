@@ -28,7 +28,11 @@ var CFG = {
   PUESTOS_TOTAL: 'DIRECTOR DISTRITAL; COACH DE VENTAS TECNICO; LIDER VENTAS; LIDER DE VENTAS',
 
   // Puestos que SOLO ven la vista de Seguimiento OS (separados por ;)
-  PUESTOS_OS: 'ANALISTA DE ATENCION A CLIENTES; GERENTE DE OPERACIONES; SUPERVISOR DE PLANTA INTERNA; COORDINADOR PE'
+  PUESTOS_OS: 'ANALISTA DE ATENCION A CLIENTES; GERENTE DE OPERACIONES; SUPERVISOR DE PLANTA INTERNA; COORDINADOR PE',
+
+  // Puestos que ven Cuentas duplicadas, Op Rechazadas y, en Ajustes, solo la descarga
+  // de instalaciones de venta técnico (separados por ;)
+  PUESTOS_COBRANZA: 'GERENTE DE SERVICIO; ESPECIALISTA DE COBRANZA'
 };
 
 
@@ -267,11 +271,18 @@ function _determinarAcceso(puesto) {
     if (p.indexOf(o) >= 0 || o.indexOf(p) >= 0) return 'os';
   }
 
+  var cob = CFG.PUESTOS_COBRANZA.split(';');
+  for (var k = 0; k < cob.length; k++) {
+    var c = _normalizar(cob[k]);
+    if (!c) continue;
+    if (p.indexOf(c) >= 0 || c.indexOf(p) >= 0) return 'cobranza';
+  }
+
   return '';
 }
 
 function _determinarAlcance(puesto, acceso) {
-  if (acceso === 'os') return 'todo';
+  if (acceso === 'os' || acceso === 'cobranza') return 'todo';
 
   var p = _normalizar(puesto);
   if (p.indexOf('DIRECTOR') >= 0)                            return 'todo';
