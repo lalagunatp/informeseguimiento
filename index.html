@@ -124,11 +124,17 @@
   .panel > h2 span.sub{font-weight:400; letter-spacing:.2px; text-transform:none; color:var(--muted); font-size:12px}
   .controles{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; padding:12px 14px}
   label.campo{display:flex; flex-direction:column; gap:4px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted)}
-  select,input[type=text]{
+  select,input[type=text],input[type=date]{
     font:inherit; padding:7px 8px; border:1px solid var(--line); border-radius:7px;
     background:#fff; color:var(--ink); width:100%;
   }
   .acciones{display:flex; gap:8px; flex-wrap:wrap; padding:0 14px 12px}
+  /* descarga de instalaciones de venta técnico: pasos 1 y 2, cada uno en su renglón */
+  .dt-paso{padding:12px 14px 4px}
+  .dt-tit{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin-bottom:6px}
+  .dt-grupo{display:flex; gap:6px; flex-wrap:wrap}
+  .dt-grupo .n{opacity:.75; font-size:11.5px; margin-left:4px}
+  .dt-fechas{display:grid; grid-template-columns:repeat(2,minmax(0,180px)); gap:10px; margin-top:10px}
   button{
     font:inherit; font-size:13px; padding:8px 13px; border-radius:7px; cursor:pointer;
     border:1px solid var(--azul); background:var(--azul); color:#fff;
@@ -687,6 +693,37 @@
     </div>
     <div id="ultimaCargaVentaTecnico" class="aviso"></div>
     <div id="avisoCargaVentaTecnico" class="aviso oculto"></div>
+  </section>
+
+  <section class="panel oculto" id="panelDescargaTec">
+    <h2>Descargar instalaciones · Venta técnico <span class="sub">elige el canal y las fechas de instalación · el archivo trae una instalación por renglón</span></h2>
+    <div class="dt-paso">
+      <div class="dt-tit">1 · Canal</div>
+      <div class="dt-grupo" id="dtCanal">
+        <button type="button" data-dtcanal="TODAS">Todas</button>
+        <button type="button" data-dtcanal="SLK" class="sec">SLK</button>
+        <button type="button" data-dtcanal="CRC" class="sec">CRC</button>
+        <button type="button" data-dtcanal="OTROS" class="sec">Otros</button>
+      </div>
+    </div>
+    <div class="dt-paso">
+      <div class="dt-tit">2 · Fechas de instalación</div>
+      <div class="dt-grupo" id="dtRapidos">
+        <button type="button" data-dtrango="semana" class="sec">Esta semana</button>
+        <button type="button" data-dtrango="semanaAnt" class="sec">Semana pasada</button>
+        <button type="button" data-dtrango="mes" class="sec">Este mes</button>
+        <button type="button" data-dtrango="mesAnt" class="sec">Mes anterior</button>
+      </div>
+      <div class="dt-fechas">
+        <label class="campo">Desde <input type="date" id="dtDesde"></label>
+        <label class="campo">Hasta <input type="date" id="dtHasta"></label>
+      </div>
+    </div>
+    <div id="dtResumen" class="aviso"></div>
+    <div id="dtVista"></div>
+    <div class="acciones" style="padding-top:12px">
+      <button type="button" id="btnDescargaTec">Descargar CSV</button>
+    </div>
   </section>
 
   <section class="panel oculto" id="panelCargaOspi">
@@ -9209,7 +9246,10 @@ function pintar(){
   } else if (VISTA === "ajustes"){
     // el contenido real vive en el panel fijo #panelAjustes (arriba de #salida);
     // aquí solo van las notas de la Sábana operaciones
-    html = sabanaNotaHtml();
+    // la descarga de venta técnico lleva el municipio, que sale de Clusters Colonias
+    if (puedeDescargarTec() && GEO.estado === "sin cargar") cargarGeocercas(true);
+    pintarDescargaTec();
+    html = esCobranza() ? "" : sabanaNotaHtml();
   } else if (VISTA === "mes"){
     html = mensualHtml();
     const meses = mesesElegidos();
@@ -9531,6 +9571,159 @@ function descargarCsv(){
   setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
 }
 
+/* ---------- Ajustes · descargar instalaciones de venta técnico ---------- */
+
+// Gerente de Servicio, Especialista de Cobranza y el número 65068028. Las instalaciones
+// son las mismas que cuenta el reporte (esInstalada), del subcanal VENTA TECNICO.
+let DT_CANAL = "TODAS";
+
+function puedeDescargarTec(){
+  if (!PERFIL) return false;
+  return esCobranza() || String(PERFIL.numero || "").trim() === "65068028";
+}
+
+// SLK, CRC u OTROS, según el canal ya armado con el cruce de la pestaña VENTA TECNICO
+function grupoTec(f){
+  const c = normaliza(f.canal);
+  if (c === "VENTA TECNICO SLK") return "SLK";
+  if (c === "VENTA TECNICO CRC") return "CRC";
+  return "OTROS";
+}
+
+// el vendedor de venta técnico es el código de la columna F de VENTA TECNICO (usuario /
+// número de empleado) y su nombre sale de PLANTILLA; si no cruzó, lo que traiga la base
+function vendedorTec(f){
+  const cod = f.codTec || "";
+  const per = cod ? MAPA_TEC_PERSONA.get(cod) : null;
+  const id = cod || clave(f.numvendedor);
+  let nombre = per && per.nombre ? per.nombre : f.vendedor;
+  if (normaliza(nombre) === normaliza(id)) nombre = "";
+  return [id, nombre].filter(Boolean).join(" · ") || "Sin vendedor";
+}
+
+function dtFecha(id){
+  const v = el(id).value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const p = v.split("-").map(Number);
+  return new Date(p[0], p[1] - 1, p[2]);
+}
+function dtPonFecha(id, d){
+  el(id).value = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+// botones rápidos: llenan Desde / Hasta, que siguen pudiéndose mover a mano
+function dtRango(tipo){
+  const hoy = new Date();
+  const h = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const lunes = new Date(h.getFullYear(), h.getMonth(), h.getDate() - (h.getDay() + 6) % 7);
+  let desde, hasta;
+  if (tipo === "semana"){ desde = lunes; hasta = h; }
+  else if (tipo === "semanaAnt"){
+    desde = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() - 7);
+    hasta = new Date(lunes.getFullYear(), lunes.getMonth(), lunes.getDate() - 1);
+  }
+  else if (tipo === "mesAnt"){
+    desde = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+    hasta = new Date(h.getFullYear(), h.getMonth(), 0);
+  }
+  else { desde = new Date(h.getFullYear(), h.getMonth(), 1); hasta = h; }
+  dtPonFecha("dtDesde", desde);
+  dtPonFecha("dtHasta", hasta);
+}
+
+// instalaciones de venta técnico dentro de las fechas, sin filtrar canal todavía
+function dtInstalaciones(){
+  const desde = dtFecha("dtDesde"), hasta = dtFecha("dtHasta");
+  if (!desde || !hasta) return [];
+  const tope = new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate() + 1);
+  return FILAS.filter(function(f){
+    return enAlcance(f) && normaliza(f.subcanal).indexOf("VENTA TECNICO") >= 0 &&
+           esInstalada(f) && f.fIns >= desde && f.fIns < tope;
+  }).sort(function(a, b){ return a.fIns - b.fIns; });
+}
+
+const COLS_DT = ["No. de cuenta", "No. de oportunidad", "Canal de ventas", "Vendedor (usuario / no. empleado · nombre)",
+                 "Municipio", "Cluster", "Fecha oportunidad", "Fecha validación", "Fecha instalación"];
+
+function dtRenglon(f){
+  const g = grupoTec(f);
+  return [clave(f.cuenta), clave(f.oportunidad), "Venta técnico " + (g === "OTROS" ? "otros" : g),
+          vendedorTec(f), municipioDe(f), f.cluster || "",
+          f.fOp ? fCorta(f.fOp) : "", f.fVal ? fCorta(f.fVal) : "", f.fIns ? fCorta(f.fIns) : ""];
+}
+
+function pintarDescargaTec(){
+  if (!puedeDescargarTec() || VISTA !== "ajustes") return;
+  if (!el("dtDesde").value || !el("dtHasta").value) dtRango("mes");
+
+  const desde = dtFecha("dtDesde"), hasta = dtFecha("dtHasta");
+  const todas = dtInstalaciones();
+  const cuenta = { TODAS: todas.length, SLK:0, CRC:0, OTROS:0 };
+  todas.forEach(function(f){ cuenta[grupoTec(f)]++; });
+
+  Array.prototype.forEach.call(document.querySelectorAll("#dtCanal button"), function(b){
+    const k = b.getAttribute("data-dtcanal");
+    b.classList.toggle("sec", k !== DT_CANAL);
+    b.innerHTML = b.textContent.replace(/\s*\d[\d,]*$/, "") + ' <span class="n">' + cuenta[k].toLocaleString("es-MX") + "</span>";
+  });
+
+  const filas = DT_CANAL === "TODAS" ? todas : todas.filter(function(f){ return grupoTec(f) === DT_CANAL; });
+  const nomCanal = { TODAS:"todas las ventas", SLK:"SLK", CRC:"CRC", OTROS:"otros" }[DT_CANAL];
+  const btn = el("btnDescargaTec");
+  let aviso = "";
+
+  if (!desde || !hasta){
+    aviso = "Elige las dos fechas: desde y hasta.";
+  } else if (desde > hasta){
+    aviso = "La fecha <b>Desde</b> va después de <b>Hasta</b>: corrígela para ver las instalaciones.";
+  } else {
+    aviso = "<b>" + filas.length.toLocaleString("es-MX") + "</b> instalación(es) de venta técnico · " + nomCanal +
+            " · del <b>" + fCorta(desde) + "</b> al <b>" + fCorta(hasta) + "</b>";
+    if (INFO_TECNICO.estado !== "ok" && INFO_TECNICO.estado !== "sin cruce"){
+      aviso += '<br>No se pudo leer la pestaña VENTA TECNICO: todo sale como "otros" y sin usuario del técnico.';
+    }
+    if (GEO.estado === "cargando") aviso += "<br>Cargando los municipios…";
+  }
+  el("dtResumen").innerHTML = aviso;
+  btn.disabled = !filas.length || !desde || !hasta || desde > hasta;
+  btn.textContent = filas.length ? "Descargar CSV · " + filas.length.toLocaleString("es-MX") + " renglón(es)" : "Descargar CSV";
+
+  // vista previa: los primeros renglones, tal cual salen en el archivo
+  if (!filas.length || btn.disabled){ el("dtVista").innerHTML = ""; return; }
+  const muestra = filas.slice(0, 8).map(dtRenglon);
+  el("dtVista").innerHTML =
+    '<div class="scroll" style="padding:0 14px"><table class="compacta"><thead><tr>' +
+    COLS_DT.map(function(c){ return "<th>" + repEsc(c) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+    muestra.map(function(r){ return "<tr>" + r.map(function(x){ return "<td>" + repEsc(x) + "</td>"; }).join("") + "</tr>"; }).join("") +
+    "</tbody></table></div>" +
+    (filas.length > muestra.length
+      ? '<div class="aviso" style="border-top:0">Vista previa de los primeros ' + muestra.length + " · el archivo trae los " + filas.length.toLocaleString("es-MX") + "</div>"
+      : "");
+}
+
+function descargarInstalacionesTec(){
+  const desde = dtFecha("dtDesde"), hasta = dtFecha("dtHasta");
+  if (!desde || !hasta || desde > hasta) return;
+  const todas = dtInstalaciones();
+  const filas = DT_CANAL === "TODAS" ? todas : todas.filter(function(f){ return grupoTec(f) === DT_CANAL; });
+  if (!filas.length) return;
+  // cuenta y oportunidad van como texto (="…") para que Excel no les quite ceros ni las
+  // pase a notación científica
+  const comoTexto = [0, 1];
+  const csv = "﻿" + [COLS_DT].concat(filas.map(dtRenglon)).map(function(r, i){
+    return r.map(function(x, j){
+      const s = String(x === undefined || x === null ? "" : x).replace(/"/g, '""');
+      return (i > 0 && s && comoTexto.indexOf(j) >= 0) ? '"=""' + s + '"""' : '"' + s + '"';
+    }).join(",");
+  }).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type:"text/csv;charset=utf-8" }));
+  const f8 = function(d){ return d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0"); };
+  a.download = "instalaciones_venta_tecnico_" + DT_CANAL.toLowerCase() + "_" + f8(desde) + "_" + f8(hasta) + ".csv";
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+}
+
 /* ---------- arranque ---------- */
 
 ["agrupar","reglaIns","planVista","matrizMetrica"].forEach(function(id){
@@ -9614,6 +9807,7 @@ function ajustaCajasDia(){
   el("panelAjustes").classList.toggle("oculto", !(vePermiso && esAjustes));
   el("panelCargaBase").classList.toggle("oculto", !(puedeCargarBase() && esAjustes));
   el("panelCargaDatos").classList.toggle("oculto", !(puedeCargarDatos() && esAjustes));
+  el("panelDescargaTec").classList.toggle("oculto", !(puedeDescargarTec() && esAjustes));
   el("panelCargaOspi").classList.toggle("oculto", !(puedeCargarOsPorInstalar() && esAjustes));
   el("panelCargaOrdenes").classList.toggle("oculto", !(puedeCargarOrdenes() && esAjustes));
   el("cajaOS").style.display = esOS ? "" : "none";
@@ -9748,6 +9942,14 @@ el("btnSubirVentaTecnicoNuevo").addEventListener("click", subirVentaTecnicoNuevo
 el("btnSubirVentaTecnico").addEventListener("click", subirVentaTecnico);
 el("btnSubirOsPorInstalar").addEventListener("click", subirOsPorInstalar);
 el("btnSubirOrdenes").addEventListener("click", subirAtencionOrdenes);
+Array.prototype.forEach.call(document.querySelectorAll("#dtCanal button"), function(b){
+  b.addEventListener("click", function(){ DT_CANAL = b.getAttribute("data-dtcanal"); pintarDescargaTec(); });
+});
+Array.prototype.forEach.call(document.querySelectorAll("#dtRapidos button"), function(b){
+  b.addEventListener("click", function(){ dtRango(b.getAttribute("data-dtrango")); pintarDescargaTec(); });
+});
+["dtDesde","dtHasta"].forEach(function(id){ el(id).addEventListener("change", pintarDescargaTec); });
+el("btnDescargaTec").addEventListener("click", descargarInstalacionesTec);
 ["gidRanking","gidEntrena","gidPlantilla"].forEach(function(id){
   el(id).addEventListener("change", function(){ INFO_EQ.estado = "sin cargar"; if (VISTA === "equipos") cargarEquipos(); });
 });
@@ -9838,7 +10040,15 @@ function puedeVerAjustes(){
 // solo para subir OS por instalar, nunca ven el panel de Ajustes de la fuente
 function puedeEntrarAjustes(){
   if (puedeVerAjustes()) return true;
+  if (esCobranza()) return true;
   return !!PERFIL && PERFIL.acceso === "os";
+}
+
+// Gerente de Servicio y Especialista de Cobranza ("acceso: cobranza", lo calcula el Apps
+// Script al entrar): Cuentas duplicadas, Op Rechazadas y, en Ajustes, solo la descarga
+// de instalaciones de venta técnico
+function esCobranza(){
+  return !!PERFIL && PERFIL.acceso === "cobranza";
 }
 
 // subir información nueva a BASE DE DATOS: Director Distrital o el número 65068028
@@ -10047,6 +10257,7 @@ function abrirApp(){
   let permitidas = null;
   if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos"];
   else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana"];
+  else if (esCobranza()) permitidas = ["dupli", "oprech"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana"];
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
@@ -10063,6 +10274,13 @@ function abrirApp(){
         b.classList.toggle("on", b.getAttribute("data-vista") === VISTA);
       });
     }
+  }
+  // cobranza entra directo a Ajustes, que es donde está su descarga
+  if (esCobranza()){
+    VISTA = "ajustes";
+    Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(b){
+      b.classList.toggle("on", b.getAttribute("data-vista") === VISTA);
+    });
   }
   // la app Día a día abre esta misma liga con #reporte: se entra directo al Reporte comercial
   if (/^#reporte$/i.test(location.hash) && puedeVerReporte()){
