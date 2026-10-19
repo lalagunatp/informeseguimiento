@@ -251,6 +251,10 @@
   .rep-big b{font-size:28px; line-height:1.1; font-variant-numeric:tabular-nums; color:var(--azul)}
   .rep-big span{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted)}
   table.rep-t td.rep-nm, table.rep-t th.rep-nm{text-align:left}
+  /* encabezados a dos renglones (cortes con <br>) y celdas más juntas: en laptop la
+     tabla completa cabe sin barra horizontal */
+  table.rep-t th, table.rep-t td{padding:5px 5px}
+  table.rep-t thead th{vertical-align:bottom; line-height:1.25}
   table.rep-t td.rep-nm a{color:var(--ink); text-decoration:none; border-bottom:1px dotted var(--muted)}
   table.rep-t td.rep-b{font-weight:700}
   table.rep-t tr.total td{border-top:2px solid var(--line); font-weight:700}
@@ -8910,11 +8914,12 @@ function reporteComercialHtml(){
       conv: T.val ? T.ins / T.val : null, cam: T.cam ? T.camI / T.cam : null, rech: T.op ? T.rech / T.op : null,
       sin:T.sin, pers:T.pers, recur:T.recur,
       canc:T.canc, pc:(T.canc + T.ins) ? T.canc / (T.canc + T.ins) : null }, "", tec).replace("<tr>", '<tr class="total">');
-    const encRes = "<tr><th class=\"rep-nm\">" + rotulo + "</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs " + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc + "</th>" : "") +
-      "<th>" + (per.esMes ? "Meta del mes" : "Meta") + "</th><th>Alcance</th>" + (aFecha ? "<th>Meta a la fecha</th><th>Alcance a la fecha</th>" : "") +
-      (cierra ? "<th>Proyección</th><th>Proy. vs meta</th>" : "") + (per.lunes && !tec ? "<th>Compromiso</th><th>vs comp.*</th>" : "") +
-      "<th>Conversión</th><th>Camada 30 d</th>" + (tec ? "<th>Vend. debajo del mínimo</th><th>Recurrentes</th>" : "<th>% rechazo</th>") +
-      (canc ? "<th>Inst. canc.</th><th>% canc.</th>" : "") + "</tr>";
+    // encabezados en dos renglones (cortes fijos con <br>) para que la tabla quepa a lo ancho
+    const encRes = "<tr><th class=\"rep-nm\">" + rotulo + "</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs<br>" + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc.replace(" ", "<br>") + "</th>" : "") +
+      "<th>" + (per.esMes ? "Meta<br>del mes" : "Meta") + "</th><th>Alcance</th>" + (aFecha ? "<th>Meta a<br>la fecha</th><th>Alcance a<br>la fecha</th>" : "") +
+      (cierra ? "<th>Proyección</th><th>Proy.<br>vs meta</th>" : "") + (per.lunes && !tec ? "<th>Compromiso</th><th>vs<br>comp.*</th>" : "") +
+      "<th>Conversión</th><th>Camada<br>30 d</th>" + (tec ? "<th>Bajo el<br>mínimo</th><th>Recurrentes</th>" : "<th>%<br>rechazo</th>") +
+      (canc ? "<th>Inst.<br>canc.</th><th>%<br>canc.</th>" : "") + "</tr>";
     return '<div class="scroll"><table class="compacta rep-t"><thead>' + encRes + "</thead><tbody>" + filas + "</tbody></table></div>";
   };
   html += '<div class="rep-big"><div><b>' + T.ins + "</b><span>instalaciones" + (rsL.length && rsC.length ? " (líderes de venta)" : "") + "</span></div>" + (cierra ? "<div><b>" + T.proy + "</b><span>cierre proyectado</span></div>" : "") +
@@ -8955,11 +8960,11 @@ function reporteComercialHtml(){
         (r.canc ? "<td>" + c.canc + "</td>" : "") + "<td>" + c.cam.pend + "</td><td" + (c.sinInst >= 3 ? ' class="rep-rojo"' : "") + ">" + c.sinInst + "</td></tr>";
     }).join("");
     const encC = r.tec
-      ? '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc + "</th>" : "") + (cierra ? "<th>Proy.</th>" : "") +
-        "<th>Conv.</th><th>Camada 30 d</th>" + (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Debajo del mínimo</th><th>Recurrentes</th></tr>"
-      : '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs ' + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc + "</th>" : "") + (cierra ? "<th>Proy.</th>" : "") +
-        "<th>" + (per.esMes ? "Meta del mes" : "Meta") + "</th><th>Alcance" + (cierra ? " proy." : "") + "</th>" + (aFecha ? "<th>Meta a la fecha</th><th>Alcance a la fecha</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs comp.</th>" : "") + "<th>Conv.</th><th>Camada 30 d</th><th>% rech.</th>" +
-        (r.canc ? "<th>Inst. canc.</th>" : "") + "<th>Por instalar</th><th>Vend. sin inst.</th></tr>";
+      ? '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs<br>' + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc.replace(" ", "<br>") + "</th>" : "") + (cierra ? "<th>Proy.</th>" : "") +
+        "<th>Conv.</th><th>Camada<br>30 d</th>" + (r.canc ? "<th>Inst.<br>canc.</th>" : "") + "<th>Por<br>instalar</th><th>Bajo el<br>mínimo</th><th>Recurrentes</th></tr>"
+      : '<tr><th class="rep-nm">Coach</th><th>Vend.</th><th>Oport.</th><th>Valid.</th><th>Inst.</th><th>vs<br>' + per.etqA + "</th>" + (compl ? "<th>" + per.etqAc.replace(" ", "<br>") + "</th>" : "") + (cierra ? "<th>Proy.</th>" : "") +
+        "<th>" + (per.esMes ? "Meta<br>del mes" : "Meta") + "</th><th>Alcance" + (cierra ? "<br>proy." : "") + "</th>" + (aFecha ? "<th>Meta a<br>la fecha</th><th>Alcance a<br>la fecha</th>" : "") + (per.lunes ? "<th>Compromiso</th><th>vs<br>comp.</th>" : "") + "<th>Conv.</th><th>Camada<br>30 d</th><th>%<br>rech.</th>" +
+        (r.canc ? "<th>Inst.<br>canc.</th>" : "") + "<th>Por<br>instalar</th><th>Vend.<br>sin inst.</th></tr>";
     // venta técnico: vendedores debajo del mínimo, con las semanas (o meses) seguidas
     const uni = per.esMes ? "meses" : "semanas";
     const tablaSin = !r.tec ? "" : "<h3>Vendedores debajo del mínimo (" + repMinTexto(per) + ")</h3>" + (r.sinInst.length
