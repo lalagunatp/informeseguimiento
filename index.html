@@ -6184,6 +6184,18 @@ function municipioDe(o){
 // se guardan todos.
 let IDX_CANCELA = null;
 
+// día en que terminó un intento de una OS cancelada. La hoja escribe la MISMA FECHA
+// CANCELADA (columna Z) en todos los intentos de la OS, la de la cancelación final: la
+// 143930111 trae 21/10 17:43 en los intentos del 19, del 20 y del 21. Lo que fecha a
+// cada intento es su DESASIGNACION (columna X): si la trae antes de esa fecha, el
+// intento terminó ese día; si no, es el que se canceló al final.
+function fechaCancelacionIntento(v, iFec){
+  const f = fechaOrden(v[iFec]);
+  if (!f) return null;                  // sin fecha de cancelación no hubo cancelación
+  const d = fechaOrden(v[COL_X]);
+  return d && d < f ? d : f;
+}
+
 function indiceCancelaciones(){
   if (IDX_CANCELA) return IDX_CANCELA;
   const m = new Map();
@@ -6200,7 +6212,7 @@ function indiceCancelaciones(){
   OSPI.filas.forEach(function(r){
     const v = celdasTexto(r);
     const cta = clave(v[iCta]);
-    const f = fechaOrden(v[iFec]);
+    const f = fechaCancelacionIntento(v, iFec);
     if (!cta || !f) return;
     const k = cta + "|" + claveDia(soloFecha(f));
     if (!m.has(k)) m.set(k, new Set());
@@ -6260,8 +6272,8 @@ function cancelacionesPorCuadrilla(){
   // que trae la hoja, que si no inflarían el conteo
   OSPI_INDICE.forEach(function(rengs){
     rengs.forEach(function(v){
-      const f = fechaOrden(v[iFec]);
-      if (!f) return;                   // sin fecha de cancelación no hubo cancelación
+      const f = fechaCancelacionIntento(v, iFec);
+      if (!f) return;
       const u = String(v[iTec] || "").trim();
       // "Sin Tecnico Asignado" es un marcador de la hoja, no una cuadrilla
       if (!u || /^SIN\b/.test(normaliza(u))) return;
@@ -6645,7 +6657,8 @@ function celdaProd(ev, cuad, extra){
 }
 
 /* --- canceladas de cada día, para "Órdenes canceladas por día" ---
-   Salen de OS POR INSTALAR, que guarda cada intento con su FECHA CANCELADA (columna Z):
+   Salen de OS POR INSTALAR, un renglón por intento, cada uno en el día en que terminó
+   (fechaCancelacionIntento):
    si la cuenta se canceló el martes y otra vez el miércoles, cuenta un día y el otro;
    si después se instaló, la cancelación sigue contando el día en que pasó.
 
@@ -6689,8 +6702,8 @@ function cancelacionesPorDia(tipoEv){
   // se recorre el índice, no OSPI.filas: ahí los renglones ya vienen sin los repetidos
   OSPI_INDICE.forEach(function(rengs, kOs){
     rengs.forEach(function(v){
-      const f = fechaOrden(v[iFec]);
-      if (!f) return;                   // sin fecha de cancelación no hubo cancelación
+      const f = fechaCancelacionIntento(v, iFec);
+      if (!f) return;
       const u = String(v[iTec] || "").trim();
       const tec = /^SIN\b/.test(normaliza(u)) ? "" : u;
       const mot = arreglaMojibake(String(v[iMot] || "")).trim();
