@@ -6644,6 +6644,104 @@ function celdaProd(ev, cuad, extra){
     '<span class="mini">' + num(ev) + "/" + num(cuad) + "</span></td>";
 }
 
+/* --- canceladas de cada día, para "Órdenes canceladas por día" ---
+   Salen de OS POR INSTALAR, que guarda cada intento con su FECHA CANCELADA (columna Z):
+   si la cuenta se canceló el martes y otra vez el miércoles, cuenta un día y el otro;
+   si después se instaló, la cancelación sigue contando el día en que pasó.
+
+   Cada día una cuenta cuenta una vez (por tipo de evento), aunque ese día se haya
+   cancelado varias veces: las cuadrillas de cada intento salen juntas en su renglón
+   del detalle (cuadrillasQueCancelaron).
+
+   Para aplicar los filtros de la vista, cada intento se cruza por OS contra ATENCION
+   ORDENES y se toma ese renglón con la fecha y el motivo de la cancelación; el
+   proveedor es el de la cuadrilla que canceló. La OS que no está en ATENCION ORDENES
+   va con el tipo de OS POR INSTALAR y sin filtros: solo le aplican el universo y la
+   hora de corte, que no dependen de nada que falte. */
+function cancelacionesPorDia(tipoEv){
+  if (OSPI.estado !== "ok") return [];
+  const enc = OSPI.enc || [];
+  let iTec = buscaCol(enc, ["TECNICO"], ["NOMBRE"]);
+  let iFec = buscaCol(enc, ["FECHA CANCELA"]);
+  let iCta = buscaCol(enc, ["CUENTA"]);
+  // "TIPO" a secas es la columna D; se evitan "SUBTIPO ORDEN" y "TIPO ASIGNACION"
+  let iTipo = buscaCol(enc, ["TIPO"], ["SUBTIPO", "ASIGNACION"]);
+  let iSub = buscaCol(enc, ["SUBTIPO"]);
+  let iMot = buscaCol(enc, ["MOTIVO CANCELA"]);
+  if (iTec < 0) iTec = letraAIndice("N");
+  if (iFec < 0) iFec = letraAIndice("Z");
+  if (iCta < 0) iCta = letraAIndice("C");
+  if (iTipo < 0) iTipo = letraAIndice("D");
+  if (iSub < 0) iSub = letraAIndice("E");
+  if (iMot < 0) iMot = letraAIndice("AC");
+
+  const porOs = new Map();
+  // el tipo de OS POR INSTALAR se escribe como en ATENCION ORDENES, para que caiga en
+  // el mismo renglón de la tabla aunque una hoja lo traiga en mayúsculas o sin acento
+  const tipoComo = new Map();
+  ORD.filas.forEach(function(o){
+    const k = normOS(o.os);
+    if (k && !porOs.has(k)) porOs.set(k, o);
+    if (!tipoComo.has(normaliza(o.tipo))) tipoComo.set(normaliza(o.tipo), o.tipo);
+  });
+
+  const cruzadas = [], sueltas = [];
+  // se recorre el índice, no OSPI.filas: ahí los renglones ya vienen sin los repetidos
+  OSPI_INDICE.forEach(function(rengs, kOs){
+    rengs.forEach(function(v){
+      const f = fechaOrden(v[iFec]);
+      if (!f) return;                   // sin fecha de cancelación no hubo cancelación
+      const u = String(v[iTec] || "").trim();
+      const tec = /^SIN\b/.test(normaliza(u)) ? "" : u;
+      const mot = arreglaMojibake(String(v[iMot] || "")).trim();
+      const o = porOs.get(kOs);
+      if (o){
+        cruzadas.push(Object.assign({}, o, {
+          fTer: f, estatus: "CANCELADA",
+          motivo: mot || o.motivo,
+          prov: tec ? proveedorDeUsuario(tec) : o.prov
+        }));
+      } else {
+        const t = arreglaMojibake(String(v[iTipo] || "")).trim();
+        sueltas.push({
+          cuenta: String(v[iCta] || "").trim(),
+          os: String(v[1] || "").trim(),
+          tipo: tipoComo.get(normaliza(t)) || t || "Sin tipo",
+          subtipo: arreglaMojibake(String(v[iSub] || "")).trim(),
+          cluster: "", empresa: "Sin proveedor", cuadrilla: "Sin cuadrilla",
+          tecnico: "", tecnicoNom: "", canalHoja: "Sin canal",
+          prov: tec ? proveedorDeUsuario(tec) : "",
+          motivo: mot, estatus: "CANCELADA", estado: "",
+          fTer: f, fCre: null, fAge: null, fAsig: null,
+          sinCruce: true
+        });
+      }
+    });
+  });
+
+  // las sueltas solo pasan por el universo y la hora de corte
+  const uni = el("ordUniverso").value;
+  const cliente = tiposClienteOrdenes();
+  const corte = corteOrdenes();
+  const sueltasOk = sueltas.filter(function(o){
+    if (uni !== "todos"){
+      const es = cliente.indexOf(normaliza(o.tipo)) >= 0;
+      if (uni === "cliente" ? !es : es) return false;
+    }
+    return !(corte && o.fTer.getHours() * 60 + o.fTer.getMinutes() > corte);
+  });
+
+  // una por cuenta, día y tipo de evento; se queda la del último intento del día, que
+  // es la que trae el motivo con que terminó ese día
+  const m = new Map();
+  ordenesFiltradas(false, cruzadas).concat(sueltasOk).forEach(function(o){
+    const k = (clave(o.cuenta) || "OS " + normOS(o.os)) + "|" + claveDia(soloFecha(o.fTer)) + "|" + tipoEv(o);
+    const prev = m.get(k);
+    if (!prev || o.fTer >= prev.fTer) m.set(k, o);
+  });
+  return Array.from(m.values());
+}
+
 // arma, para cada día con movimiento, lo que necesitan las tablas de la vista
 function resumenOrdenes(){
   const filas = ordenesFiltradas();
@@ -6689,17 +6787,26 @@ function resumenOrdenes(){
         b.mismoDia[tipo].si++;
         b.mismoDiaTot++;
       }
-    } else if (esCancelada(o)){
-      b.canc++;
-      b.cancTipos[tipo] = (b.cancTipos[tipo] || 0) + 1;
-      // aquí NO se cuenta la cancelación por cuadrilla: esta pestaña trae el estado
-      // actual de la OS, así que una orden cancelada y luego instalada ya no aparece
-      // como cancelada. Eso lo resuelve cancelacionesPorCuadrilla(), con OS POR INSTALAR.
-      // se guardan las órdenes, no solo el conteo: el detalle de cada celda las necesita
-      b.cancLista.push(o);
-      if (!b.cancListaTipo[tipo]) b.cancListaTipo[tipo] = [];
-      b.cancListaTipo[tipo].push(o);
     }
+    // las canceladas NO se cuentan aquí: esta pestaña trae el estado actual de la OS,
+    // así que una orden cancelada el martes y vuelta a cancelar el miércoles solo
+    // saldría el miércoles, y una cancelada y luego instalada ya no saldría. Se cuentan
+    // abajo, con OS POR INSTALAR.
+  });
+
+  // una cuenta por día (y tipo de evento) en que se canceló, aunque ese día se haya
+  // cancelado varias veces; se guardan las cuentas, no solo el conteo: el detalle de
+  // cada celda las necesita
+  cancelacionesPorDia(tipoEv).forEach(function(o){
+    const dia = soloFecha(o.fTer);
+    if (!maxDia || dia > maxDia) maxDia = dia;
+    const b = bucket(claveDia(dia));
+    const tipo = tipoEv(o);
+    b.canc++;
+    b.cancTipos[tipo] = (b.cancTipos[tipo] || 0) + 1;
+    b.cancLista.push(o);
+    if (!b.cancListaTipo[tipo]) b.cancListaTipo[tipo] = [];
+    b.cancListaTipo[tipo].push(o);
   });
 
   return { filas:filas, dias:dias, abiertas:abiertas, abiertasTot:abiertasTot, maxDia:maxDia, tipoEv:tipoEv };
@@ -7333,7 +7440,8 @@ function ordenesHtml(){
 
   const tabla3 = !tiposC.length ? "" :
     '<section class="panel"><h2>Órdenes canceladas por día' +
-    ' <span class="sub">aquí el verde es bajar · la última columna es qué parte de los eventos atendidos de ese tipo terminó en cancelación · <b>toca un número</b> para ver quién canceló y por qué</span></h2>' +
+    ' <span class="sub">aquí el verde es bajar · cada día son las cuentas que se cancelaron ese día (de OS POR INSTALAR, por su fecha de cancelación): una cuenta cuenta una vez aunque ese día se haya cancelado varias veces, y sigue contando aunque después se haya instalado' +
+    " · la última columna es qué parte de los eventos atendidos de ese tipo terminó en cancelación · <b>toca un número</b> para ver quién canceló y por qué" + avisoCanc + "</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr><th>Tipo de evento</th>' + encSemAnt + encDias +
     '<th class="tot">Semana</th><th class="tot">Prom</th><th>vs sem. ant.</th><th>% de cancelación</th>' +
     "</tr></thead><tbody>" + f3 + "</tbody></table></div></section>" +
@@ -7472,7 +7580,7 @@ function detalleCancelacionesHtml(){
     }
   });
   filas += '<tr class="total"><td>Total</td><td>' + cuadrillas.size + " cuadrilla(s)</td><td>" +
-    num(info.lista.length) + " orden(es)</td><td>" + canales.size + " canal(es)</td><td></td><td>" +
+    num(info.lista.length) + " cuenta(s)</td><td>" + canales.size + " canal(es)</td><td></td><td>" +
     motivos.size + " motivo(s)</td></tr>";
 
   const porMotivo = Array.from(motivos.keys()).sort(function(a, b){
@@ -7482,12 +7590,15 @@ function detalleCancelacionesHtml(){
   const sinCruce = info.lista.filter(function(o){
     return cuadrillasQueCancelaron(o)[0] === SIN_CUAD;
   }).length;
-  const aviso = sinCruce
-    ? ' · <b>' + sinCruce + " sin cuadrilla</b>: no aparecen en OS POR INSTALAR con esa cuenta y fecha de cancelación"
-    : "";
+  const fueraDeAtn = info.lista.filter(function(o){ return o.sinCruce; }).length;
+  const aviso = (sinCruce
+    ? ' · <b>' + sinCruce + " sin cuadrilla</b>: OS POR INSTALAR no trae el técnico de esa cancelación"
+    : "") + (fueraDeAtn
+    ? " · " + fueraDeAtn + " no están en ATENCION ORDENES: van con el tipo de OS POR INSTALAR y sin los filtros de la vista"
+    : "");
 
   return '<section class="panel detalle"><h2>Quién canceló y por qué <span class="sub">' +
-    info.rotulo + " · " + info.lista.length + " orden(es)" + aviso +
+    info.rotulo + " · " + info.lista.length + " cuenta(s), una por día aunque se haya cancelado varias veces" + aviso +
     " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Cuadrilla</th><th>Cuenta</th><th>OS</th><th>Canal de Ventas</th><th>Coach</th>" +
