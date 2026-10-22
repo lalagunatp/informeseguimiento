@@ -6420,8 +6420,12 @@ async function cargarOrdenes(){
         estatus:   buscaCol(enc, ["ESTATUS"]),
         estado:    buscaCol(enc, ["ESTADO"]),
         motivo:    buscaCol(enc, ["MOTIVO"]),
-        canal:     buscaCol(enc, ["CANAL VENTA"])
+        canal:     buscaCol(enc, ["CANAL VENTA"]),
+        // una OS puede traer varias OT (un renglón por cada una); la OT va en la columna
+        // D. Se busca por letra: "OT" es tan corto que por texto pega con otros encabezados
+        ot:        enc.findIndex(function(h){ return normaliza(h) === "OT"; })
       };
+      if (c.ot < 0) c.ot = letraAIndice("D");
       // el panel "Estado de las órdenes de hoy" va por letra de columna, no por nombre
       // de encabezado: son las columnas AC (fecha del día) y AF (estado) que se
       // configuran en Ajustes de la fuente
@@ -6445,6 +6449,7 @@ async function cargarOrdenes(){
           filas.push({
             cuenta: dame(v, c.cuenta),
             os: dame(v, c.os),
+            ot: dame(v, c.ot),
             tipo: tipo || "Sin tipo",
             subtipo: dame(v, c.subtipo),
             cluster: dame(v, c.cluster),
@@ -6592,6 +6597,40 @@ function tipoEventoFn(){
   };
 }
 
+/* --- una OS, una vez ---
+   En ATENCION ORDENES una OS (columna C) puede venir en varios renglones, uno por cada
+   OT (columna D). Para contarla una sola vez se toma el renglón de la OT más nueva (el
+   número más alto), pero con la fecha de creación de la primera OT, que es cuando la
+   OS entró. Devuelve esos renglones en el orden de la hoja (filas) y, por OS, el
+   renglón elegido y su fecha de entrada (porOs). Los renglones sin OS van tal cual. */
+let IDX_OS_OT = null;
+
+function numOt(ot){ return Number(String(ot || "").replace(/\D/g, "")) || 0; }
+
+function ordenesPorOs(){
+  if (IDX_OS_OT && IDX_OS_OT.src === ORD.filas) return IDX_OS_OT;
+  const porOs = new Map();   // OS normalizada -> { o: renglón de la OT más nueva, fCre: creación de la primera }
+  ORD.filas.forEach(function(o){
+    const k = normOS(o.os);
+    if (!k) return;
+    const x = porOs.get(k);
+    if (!x){ porOs.set(k, { o:o, fCre:o.fCre }); return; }
+    // con la misma OT (o sin OT) gana el renglón de más abajo
+    if (numOt(o.ot) >= numOt(x.o.ot)) x.o = o;
+    if (o.fCre && (!x.fCre || o.fCre < x.fCre)) x.fCre = o.fCre;
+  });
+  const filas = [];
+  ORD.filas.forEach(function(o){
+    const k = normOS(o.os);
+    if (!k){ filas.push(o); return; }
+    const x = porOs.get(k);
+    if (x.o !== o) return;
+    filas.push(x.fCre === o.fCre ? o : Object.assign({}, o, { fCre:x.fCre }));
+  });
+  IDX_OS_OT = { src:ORD.filas, porOs:porOs, filas:filas };
+  return IDX_OS_OT;
+}
+
 // sabana: la Sábana operaciones trae su propia lista de eventos y mide tiempos, así que
 // ni el universo ni la hora de corte le aplican
 // filas: por omisión las de ATENCION ORDENES; la sábana también le pasa órdenes armadas
@@ -6610,7 +6649,9 @@ function ordenesFiltradas(sabana, filas, sinCorte){
   const geo = el("ordGeocerca").value;
   const corte = (sabana || sinCorte) ? 0 : corteOrdenes();
   const cliente = tiposClienteOrdenes();
-  return (filas || ORD.filas).filter(function(o){
+  // Atención de órdenes ve cada OS una vez (la de la OT más nueva); la sábana ve todos
+  // los renglones y solo en "Entraron" cuenta la OS una vez
+  return (filas || (sabana ? ORD.filas : ordenesPorOs().filas)).filter(function(o){
     if (uni !== "todos"){
       const es = cliente.indexOf(normaliza(o.tipo)) >= 0;
       if (uni === "cliente" ? !es : es) return false;
@@ -6688,13 +6729,13 @@ function cancelacionesPorDia(tipoEv){
   if (iSub < 0) iSub = letraAIndice("E");
   if (iMot < 0) iMot = letraAIndice("AC");
 
+  // cada OS se cruza con el renglón de su OT más nueva
   const porOs = new Map();
+  ordenesPorOs().porOs.forEach(function(x, k){ porOs.set(k, x.o); });
   // el tipo de OS POR INSTALAR se escribe como en ATENCION ORDENES, para que caiga en
   // el mismo renglón de la tabla aunque una hoja lo traiga en mayúsculas o sin acento
   const tipoComo = new Map();
   ORD.filas.forEach(function(o){
-    const k = normOS(o.os);
-    if (k && !porOs.has(k)) porOs.set(k, o);
     if (!tipoComo.has(normaliza(o.tipo))) tipoComo.set(normaliza(o.tipo), o.tipo);
   });
 
@@ -7499,7 +7540,7 @@ function ordenesHtml(){
   });
   const tablaGen = !tiposGen.length ? "" :
     '<section class="panel"><h2>Eventos generados' +
-    ' <span class="sub">órdenes que entraron cada día, por su fecha de creación (el mismo dato que "Entraron" en la Sábana operaciones)' +
+    ' <span class="sub">órdenes que entraron cada día, por su fecha de creación; una OS con varias OT cuenta una vez, con la creación de la primera (el mismo dato que "Entraron" en la Sábana operaciones)' +
     " · " + rotUni + rotGeo +
     (hCorte ? " · <b>solo lo creado hasta las " + hCorte + "</b>, en todos los días" : "") +
     " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ") · Mes va hasta el " + fCorta(ult.d) + "</span></h2>" +
@@ -7857,6 +7898,7 @@ function sabanaHtml(){
     return claveDia(s);
   };
 
+  const unaVez = ordenesPorOs().porOs;
   ordenesFiltradas(true).concat(ordenesFiltradas(true, ordenesSoloOspi())).forEach(function(o){
     const ev0 = tipoEv(o);
     const i = llaves.indexOf(normaliza(ev0));
@@ -7871,9 +7913,14 @@ function sabanaHtml(){
       fn(bucket(ev + SEP_MUN + mun, k)); fn(bucket(TODOS + SEP_MUN + mun, k));
     };
 
-    if (o.fCre) meter(veDia(o.fCre), function(b){ b.ent++; });
-
     const osK = normOS(o.os);
+    // "Entraron" cuenta cada OS una vez aunque traiga varias OT: en el renglón de la OT
+    // más nueva y con la creación de la primera. Las que solo vienen en OS POR INSTALAR
+    // no están en ese índice y entran con su propia fecha.
+    const unaOs = osK ? unaVez.get(osK) : null;
+    const fEnt = !unaOs ? o.fCre : (unaOs.o === o ? unaOs.fCre : null);
+    if (fEnt) meter(veDia(fEnt), function(b){ b.ent++; });
+
     const fAsig = (asig.get(osK) || []).slice();
     if (o.fAsig) fAsig.push(o.fAsig);
     // una OS asignada varias veces el mismo día cuenta una sola vez ese día, aunque
@@ -8192,7 +8239,7 @@ function sabanaHtml(){
   const nota = " · semana " + etiquetaSemana(semK) +
     ", " + fCorta(lunes) + " al " + fCorta(domingo) + " · SEM ANT acumula los mismos días de la semana anterior (" + rotSemAnt + ")" +
     (hayHoy ? " · el día en curso entra al acumulado tal como va, pero no al promedio" : "") +
-    " · entraron cuenta por fecha de creación; canceladas y atendidas por fecha de término" +
+    " · entraron cuenta por fecha de creación, una vez por OS aunque traiga varias OT (la creación de la primera); canceladas y atendidas por fecha de término" +
     " · las canceladas se separan por el motivo de cancelación de OS POR INSTALAR (columna AC); las que no traen motivo en ninguna hoja van a canceladas por atender" +
     " · canceladas por tiempo: abiertas o canceladas por atender que cumplieron 30 días desde su creación sin que la cuenta terminara ese evento; cuentan el día que los cumplen y ya no salen como abiertas ni como por atender" +
     " · si OS POR INSTALAR no trae el motivo de cancelación, se usa el de ATENCION ORDENES" +
