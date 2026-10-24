@@ -95,7 +95,7 @@ function _manejar(e) {
 
       // ---- SUBIR LO NUEVO A BASE DE DATOS (y quitar lo duplicado viejo) ----
       case 'subirBaseDatos':
-        res = _subirBaseDatos(p.token || '', p.colLlave || 'Q', p.filas || '');
+        res = _subirBaseDatos(p.token || '', p.colLlave || 'Q', p.colCuenta || 'O', p.filas || '');
         break;
 
       // ---- ÚLTIMA VEZ QUE SE REEMPLAZÓ CADA HOJA ----
@@ -712,9 +712,11 @@ function _subirAtencionOrdenes(token, destino, filaInicioStr, filasJson) {
 
 // A diferencia de las otras dos hojas, aquí NO se reemplaza todo. El archivo del día
 // entra hasta arriba (debajo del encabezado) y enseguida se BORRAN los renglones
-// viejos que traigan la misma oportunidad. Todo lo demás de la base queda intacto:
-// no se reescribe ni un renglón que no venga en el archivo, justamente para no
-// arriesgar que una fecha o un número se reinterprete al volverlo a escribir.
+// viejos que traigan la misma oportunidad + cuenta factura. Todo lo demás de la base
+// queda intacto: no se reescribe ni un renglón que no venga en el archivo, justamente
+// para no arriesgar que una fecha o un número se reinterprete al volverlo a escribir.
+// La OS no entra en la llave porque una oportunidad puede llegar primero sin OS y
+// tenerla después; la oportunidad y la cuenta factura existen desde el principio.
 
 // llave para comparar oportunidades: sin espacios, comas ni guiones, y sin el ".0"
 // que a veces deja Sheets al leer un número
@@ -722,7 +724,16 @@ function _llaveBase(v) {
   return _limpiarNum(v).replace(/[^0-9A-Z]/g, '');
 }
 
-function _subirBaseDatos(token, colLlave, filasJson) {
+// una parte de la llave de BASE DE DATOS (oportunidad o cuenta): como _llaveBase(), pero
+// además sin ceros a la izquierda, porque al escribir con USER_ENTERED la hoja
+// convierte "0123" en 123 y luego el archivo y la hoja ya no coincidirían
+function _llaveParteBase(v) {
+  var s = _llaveBase(v);
+  if (/^\d+$/.test(s)) s = s.replace(/^0+(?=\d)/, '');
+  return s;
+}
+
+function _subirBaseDatos(token, colLlave, colCuenta, filasJson) {
   var v = _validar(token);
   if (!v.ok) return v;
 
@@ -733,6 +744,21 @@ function _subirBaseDatos(token, colLlave, filasJson) {
     return { ok: false, error: 'No tienes permiso para actualizar BASE DE DATOS.' };
   }
 
+  // el borrado va por número de renglón: si dos cargas se cruzaran (dos personas a
+  // la vez, o un reintento mientras la primera sigue corriendo), la segunda borraría
+  // renglones que ya se movieron. El candado hace que una espere a la otra.
+  var candado = LockService.getScriptLock();
+  if (!candado.tryLock(30000)) {
+    return { ok: false, error: 'Hay otra carga de BASE DE DATOS en curso. Espera a que termine y vuelve a intentar.' };
+  }
+  try {
+    return _aplicarCargaBase(v.perfil, colLlave, colCuenta, filasJson);
+  } finally {
+    candado.releaseLock();
+  }
+}
+
+function _aplicarCargaBase(perfil, colLlave, colCuenta, filasJson) {
   var filas;
   try {
     filas = JSON.parse(filasJson || '[]');
@@ -742,7 +768,8 @@ function _subirBaseDatos(token, colLlave, filasJson) {
   if (!filas.length) return { ok: false, error: 'No hay renglones que subir.' };
 
   var iLlave = _letraAIndice(colLlave || 'Q');
-  if (iLlave < 0) return { ok: false, error: 'La columna llave no es válida.' };
+  var iCuenta = _letraAIndice(colCuenta || 'O');
+  if (iLlave < 0 || iCuenta < 0) return { ok: false, error: 'La columna llave no es válida.' };
 
   var hoja = SpreadsheetApp.openById(CFG.LIBRO).getSheetByName(DATOS.HOJA_BASE);
   if (!hoja) return { ok: false, error: 'No se encontró la pestaña "' + DATOS.HOJA_BASE + '".' };
@@ -752,43 +779,78 @@ function _subirBaseDatos(token, colLlave, filasJson) {
   for (var i = 0; i < filas.length; i++) {
     if (filas[i].length > ancho) ancho = filas[i].length;
   }
-  if (ancho <= iLlave) {
-    return { ok: false, error: 'El archivo solo trae ' + ancho + ' columna(s) y la llave va en la ' + colLlave + '.' };
+  if (ancho <= iLlave || ancho <= iCuenta) {
+    return { ok: false, error: 'El archivo solo trae ' + ancho + ' columna(s) y la llave va en las columnas ' + (colLlave || 'Q') + ' y ' + (colCuenta || 'O') + '.' };
   }
   if (ancho > hoja.getMaxColumns()) {
     return { ok: false, error: 'El archivo trae ' + ancho + ' columnas y la hoja solo tiene ' + hoja.getMaxColumns() + '.' };
   }
 
-  // 1) llaves del archivo; si viene repetida dentro del mismo archivo se queda la
-  //    primera (la de más arriba) y se ignoran las siguientes
+  // 1) llaves del archivo (oportunidad + cuenta factura). Un renglón al que le falte
+  //    alguna de las dos no se sube: sin llave completa no habría cómo reconocerlo en
+  //    la siguiente carga y se iría duplicando. Si viene repetido dentro del mismo
+  //    archivo se queda el primero (el de más arriba).
   var vistas = {};
   var nuevas = [];
   var repetidasArchivo = 0;
+  var sinLlave = 0;
   for (var f = 0; f < filas.length; f++) {
     var fila = filas[f];
     while (fila.length < ancho) fila.push('');
-    var k = _llaveBase(fila[iLlave]);
-    if (k) {
-      if (vistas[k]) { repetidasArchivo++; continue; }
-      vistas[k] = true;
-    }
+    var op = _llaveParteBase(fila[iLlave]);
+    var cta = _llaveParteBase(fila[iCuenta]);
+    if (!op || !cta) { sinLlave++; continue; }
+    var k = op + '|' + cta;
+    if (vistas[k]) { repetidasArchivo++; continue; }
+    vistas[k] = true;
     nuevas.push(fila);
   }
+  if (!nuevas.length) {
+    return { ok: false, error: 'Ningún renglón del archivo quedó para subir (' + sinLlave +
+      ' sin oportunidad o sin cuenta factura, ' + repetidasArchivo + ' repetido(s)).' };
+  }
 
-  // 2) qué renglones viejos hay que borrar: los que traen una llave del archivo
+  // 2) qué renglones viejos hay que borrar: los que traen la misma oportunidad +
+  //    cuenta factura que un renglón del archivo
   var ultimaFila = hoja.getLastRow();
-  var borrar = [];   // números de renglón en la hoja (base 1)
+  var borrar = [];   // números de renglón en la hoja ANTES de insertar (base 1)
   if (ultimaFila > 1) {
-    var llavesHoja = hoja.getRange(2, iLlave + 1, ultimaFila - 1, 1).getValues();
-    for (var r = 0; r < llavesHoja.length; r++) {
-      var kh = _llaveBase(llavesHoja[r][0]);
-      if (kh && vistas[kh]) borrar.push(r + 2);
+    var opHoja = hoja.getRange(2, iLlave + 1, ultimaFila - 1, 1).getValues();
+    var ctaHoja = hoja.getRange(2, iCuenta + 1, ultimaFila - 1, 1).getValues();
+    for (var r = 0; r < opHoja.length; r++) {
+      var kh = _llaveParteBase(opHoja[r][0]) + '|' + _llaveParteBase(ctaHoja[r][0]);
+      if (vistas[kh]) borrar.push(r + 2);
     }
   }
 
   var sheetId = hoja.getSheetId();
 
-  // 3) borrar de abajo hacia arriba, agrupando renglones contiguos en un solo
+  // 3) PRIMERO se escribe lo nuevo y después se borra lo viejo: si algo falla a la
+  //    mitad, lo peor que queda es un duplicado (que la siguiente carga limpia), nunca
+  //    renglones borrados sin su reemplazo.
+  //    Abrir hueco hasta arriba (justo debajo del encabezado) y escribir lo nuevo
+  Sheets.Spreadsheets.batchUpdate({
+    requests: [{
+      insertDimension: {
+        range: { sheetId: sheetId, dimension: 'ROWS', startIndex: 1, endIndex: 1 + nuevas.length },
+        inheritFromBefore: false
+      }
+    }]
+  }, CFG.LIBRO);
+
+  // USER_ENTERED = se interpreta igual que si lo pegaras a mano (fechas y números
+  // quedan como fechas y números, no como texto)
+  Sheets.Spreadsheets.Values.update(
+    { values: nuevas },
+    CFG.LIBRO,
+    "'" + DATOS.HOJA_BASE + "'!A2",
+    { valueInputOption: 'USER_ENTERED' }
+  );
+
+  // los renglones viejos se recorrieron hacia abajo lo que mide el archivo
+  for (var s = 0; s < borrar.length; s++) borrar[s] += nuevas.length;
+
+  // 4) borrar de abajo hacia arriba, agrupando renglones contiguos en un solo
   //    request; así los índices de los de arriba siguen siendo válidos
   if (borrar.length) {
     var bloques = [];
@@ -821,32 +883,14 @@ function _subirBaseDatos(token, colLlave, filasJson) {
     }
   }
 
-  // 4) abrir hueco hasta arriba (justo debajo del encabezado) y escribir lo nuevo
-  Sheets.Spreadsheets.batchUpdate({
-    requests: [{
-      insertDimension: {
-        range: { sheetId: sheetId, dimension: 'ROWS', startIndex: 1, endIndex: 1 + nuevas.length },
-        inheritFromBefore: false
-      }
-    }]
-  }, CFG.LIBRO);
-
-  // USER_ENTERED = se interpreta igual que si lo pegaras a mano (fechas y números
-  // quedan como fechas y números, no como texto)
-  Sheets.Spreadsheets.Values.update(
-    { values: nuevas },
-    CFG.LIBRO,
-    "'" + DATOS.HOJA_BASE + "'!A2",
-    { valueInputOption: 'USER_ENTERED' }
-  );
-
-  _registrarCarga('baseDatos', v.perfil);
+  _registrarCarga('baseDatos', perfil);
 
   return {
     ok: true,
     agregados: nuevas.length,
     eliminados: borrar.length,
     repetidasArchivo: repetidasArchivo,
+    sinLlave: sinLlave,
     total: Math.max(0, ultimaFila - 1 - borrar.length) + nuevas.length
   };
 }
