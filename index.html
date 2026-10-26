@@ -463,8 +463,8 @@
       <label class="campo" id="cajaPlan">Plan
         <div id="fPlan"></div>
       </label>
-      <label class="campo" id="cajaOS">Número de OS
-        <input type="text" id="osBuscar" placeholder="OS-12345678 y Enter">
+      <label class="campo" id="cajaOS">Número de OS o cuenta
+        <input type="text" id="osBuscar" placeholder="OS-12345678 o cuenta y Enter">
       </label>
       <label class="campo oculto" id="cajaBuscaDup">Número de cuenta u oportunidad
         <input type="text" id="buscaDup" placeholder="Cuenta u oportunidad y Enter">
@@ -5533,18 +5533,47 @@ function tecnicoQueInstalo(fila){
   return cargando ? "Cargando…" : "—";
 }
 
-function seguimientoOsHtml(){
+// lo capturado en Seguimiento OS puede ser la OS o el número de cuenta: primero se busca
+// como OS y, si no aparece, como cuenta. Una cuenta puede traer varias OS; se muestra la
+// de oportunidad más reciente y las demás quedan en "otras" para poder saltar a ellas.
+function filaBuscadaOs(){
   const q = normOS(OS_BUSCADA);
-  if (!q){
+  if (!q) return { fila:null, otras:[], porCuenta:false };
+  const porOs = FILAS.filter(function(f){ return f.osNorm === q && enAlcance(f); })[0];
+  if (porOs) return { fila:porOs, otras:[], porCuenta:false };
+  const cta = clave(OS_BUSCADA);
+  const deCuenta = FILAS.filter(function(f){ return cta && clave(f.cuenta) === cta && enAlcance(f); })
+    .sort(function(a, b){ return (b.fOp || 0) - (a.fOp || 0); });
+  return { fila:deCuenta[0] || null, otras:deCuenta.slice(1), porCuenta:true };
+}
+
+function seguimientoOsHtml(){
+  if (!normOS(OS_BUSCADA)){
     return '<section class="panel"><h2>Seguimiento OS</h2>' +
-      '<div class="aviso">Captura arriba el número de OS y presiona Enter.</div></section>';
+      '<div class="aviso">Captura arriba el número de OS o de cuenta y presiona Enter.</div></section>';
   }
 
-  const fila = FILAS.filter(function(f){ return f.osNorm === q && enAlcance(f); })[0];
+  const busq = filaBuscadaOs();
+  const fila = busq.fila;
   if (!fila){
     return '<section class="panel"><h2>Seguimiento OS</h2>' +
-      '<div class="aviso error">No encontré la OS <b>' + OS_BUSCADA + '</b> en la base de datos.</div></section>';
+      '<div class="aviso error">No encontré la OS o cuenta <b>' + OS_BUSCADA + '</b> en la base de datos.</div></section>';
   }
+  const q = fila.osNorm || normOS(fila.os);
+
+  // cuenta con varias OS: aviso arriba de la ficha con las otras para saltar a ellas
+  const avisoCuenta = busq.otras.length
+    ? '<section class="panel"><div class="aviso">La cuenta <b>' + (fila.cuenta || OS_BUSCADA) + "</b> tiene " +
+      (busq.otras.length + 1) + " OS; se muestra la más reciente (" + fila.os + "). Otras: " +
+      busq.otras.map(function(f){
+        return '<a href="#" data-ir-os="' + String(f.os || "").replace(/"/g, "&quot;") + '">' + f.os + "</a>" +
+          (f.fIns ? " (instalada)" : "");
+      }).join(" · ") + "</div></section>"
+    : "";
+  return avisoCuenta + seguimientoOsFichaHtml(fila, q);
+}
+
+function seguimientoOsFichaHtml(fila, q){
 
   // datos de la venta
   let vendedor = fila.vendedor, coach = fila.coach, lider = fila.lider;
@@ -5574,6 +5603,7 @@ function seguimientoOsHtml(){
   if (fila.fIns){
     const canalTxt = fila.canal + (fila.subcanal && fila.subcanal !== fila.canal ? " · " + fila.subcanal : "");
     const datosIns = [
+      ["Cuenta", fila.cuenta],
       ["OS", fila.os],
       ["Cliente", fila.cliente],
       ["Colonia", fila.colonia],
@@ -5605,8 +5635,8 @@ function seguimientoOsHtml(){
   const bloqueDup = grupoDup ? tablaGrupoDuplicadoHtml(grupoDup) : "";
 
   const datos = [
-    ["Núm. de OS", fila.os],
     ["Cuenta", fila.cuenta || "—"],
+    ["Núm. de OS", fila.os],
     ["Duplicidad", duplicidadTxt],
     ["Fecha de validación", esPerdida(fila) ? (fila.fVal ? fCorta(fila.fVal) + " · PERDIDA" : "PERDIDA") : (fila.fVal ? fCorta(fila.fVal) : "—")],
     ["Última agenda", ultimaAgendaDeOs(fila.os, fila.cuenta)],
@@ -9498,13 +9528,22 @@ function pintar(){
   scrollPegadoPorTitulo("Op Rechazadas");
 
   if (VISTA === "os" && OS_BUSCADA){
-    const q0 = normOS(OS_BUSCADA);
-    const f0 = FILAS.filter(function(f){ return normOS(f.os) === q0; })[0];
+    const f0 = filaBuscadaOs().fila;
     if (f0 && !f0.fIns){
       if (SEG_HIST.os !== f0.os && SEG_HIST.estado !== "cargando" && el("urlSeguimiento").value.trim()) cargarSeguimiento(f0.os);
       activarSeguimiento(f0.os, f0);
     }
   }
+
+  // saltar a otra OS de la misma cuenta (aviso de Seguimiento OS)
+  Array.prototype.forEach.call(document.querySelectorAll("[data-ir-os]"), function(a){
+    a.addEventListener("click", function(ev){
+      ev.preventDefault();
+      OS_BUSCADA = a.getAttribute("data-ir-os");
+      el("osBuscar").value = OS_BUSCADA;
+      pintar();
+    });
+  });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-det]"), function(td){
     td.addEventListener("click", function(){
