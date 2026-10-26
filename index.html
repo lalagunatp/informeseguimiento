@@ -3781,7 +3781,7 @@ function grupoDuplicadoDeFila(fila){
 // misma tabla/columnas que la sección Cuentas duplicadas, pero solo con el grupo de
 // esta OS (se usa en Seguimiento OS cuando Duplicidad = SI)
 function tablaGrupoDuplicadoHtml(grupo){
-  const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
+  const veDireccion = esCobranza() || puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
   const hoySolo = (function(){ const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), h.getDate()); })();
   const ordenado = grupo.slice().sort(function(a, b){ return (a.fOp && b.fOp) ? a.fOp - b.fOp : 0; });
   const chCliente = anchoPromedioCh(grupo.map(function(f){ return f.cliente; }));
@@ -3886,8 +3886,8 @@ function filaEnPeriodoOpRech(f){
 // extensión de domicilio en Cuentas duplicadas
 function opRechazadasHtml(){
   // dirección/núm. ext./núm. int./vendedor/coach: mismo criterio que la extensión de
-  // domicilio en Cuentas duplicadas (Director Distrital y Líder de Ventas)
-  const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
+  // domicilio en Cuentas duplicadas (Director Distrital, Líder de Ventas y cobranza)
+  const veDireccion = esCobranza() || puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
   const filas0 = FILAS.filter(function(f){
     return pasaFiltros(f) && /RECHAZADA/.test(normaliza(f.estatus)) && filaEnPeriodoOpRech(f) &&
            cumple("motivoRechazoOp", f);
@@ -4012,9 +4012,9 @@ function cuentasDuplicadasHtml(){
       (sinDomicilio ? " (" + sinDomicilio + " renglón(es) sin dirección no se pudieron comparar)" : "") + ".</div></section>";
   }
 
-  // dirección y núm. exterior solo para Director y Líder de Ventas; el resto de
-  // los puestos ve todas las cuentas duplicadas pero sin ese dato de domicilio
-  const veDireccion = puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
+  // dirección y núm. exterior solo para Director, Líder de Ventas y cobranza; el resto
+  // de los puestos ve todas las cuentas duplicadas pero sin ese dato de domicilio
+  const veDireccion = esCobranza() || puestoEs("DIRECTOR DISTRITAL", "LIDER VENTAS", "LIDER DE VENTAS");
 
   // una fecha de validación en el futuro es un dato malo de la fuente: se muestra
   // igual que si no hubiera fecha
@@ -10251,7 +10251,8 @@ function puedeEntrarAjustes(){
 }
 
 // Gerente de Servicio y Especialista de Cobranza ("acceso: cobranza", lo calcula el Apps
-// Script al entrar): Cuentas duplicadas, Op Rechazadas y, en Ajustes, solo la descarga
+// Script al entrar): Cuentas duplicadas y Op Rechazadas (con el mismo detalle de
+// domicilio que el Director Distrital), Seguimiento OS y, en Ajustes, solo la descarga
 // de instalaciones de venta técnico
 function esCobranza(){
   return !!PERFIL && PERFIL.acceso === "cobranza";
@@ -10463,7 +10464,7 @@ function abrirApp(){
   let permitidas = null;
   if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos"];
   else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana"];
-  else if (esCobranza()) permitidas = ["dupli", "oprech"];
+  else if (esCobranza()) permitidas = ["dupli", "oprech", "os"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana"];
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
