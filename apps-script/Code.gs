@@ -30,8 +30,8 @@ var CFG = {
   // Puestos que SOLO ven la vista de Seguimiento OS (separados por ;)
   PUESTOS_OS: 'ANALISTA DE ATENCION A CLIENTES; GERENTE DE OPERACIONES; SUPERVISOR DE PLANTA INTERNA; COORDINADOR PE',
 
-  // Puestos que ven Cuentas duplicadas, Op Rechazadas y, en Ajustes, solo la descarga
-  // de instalaciones de venta técnico (separados por ;)
+  // Puestos que ven Cuentas duplicadas, Op Rechazadas, Seguimiento OS y, en Ajustes,
+  // solo la descarga de instalaciones de venta técnico (separados por ;)
   PUESTOS_COBRANZA: 'GERENTE DE SERVICIO; ESPECIALISTA DE COBRANZA'
 };
 
