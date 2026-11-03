@@ -665,12 +665,12 @@
   <section class="panel oculto" id="panelCargaBase">
     <h2>Actualizar datos · Base de datos <span class="sub">sube solo lo nuevo: los renglones del archivo entran hasta arriba y enseguida se borran los viejos que traigan la misma oportunidad + cuenta factura (columnas Q y O) · lo demás de la base no se toca</span></h2>
     <div class="controles">
-      <label class="campo">Archivo .csv (exportado tal cual de BASE DE DATOS, con sus mismas columnas y en el mismo orden)
-        <input type="file" id="archivoBase" accept=".csv,text/csv">
+      <label class="campo">Archivos .csv (exportados tal cual de BASE DE DATOS, con sus mismas columnas y en el mismo orden) · puedes elegir varios a la vez y se suben en una sola carga; si una oportunidad + cuenta factura viene en dos, se queda la del archivo más reciente
+        <input type="file" id="archivoBase" accept=".csv,text/csv" multiple>
       </label>
       <label class="campo" style="flex-direction:row; align-items:center; gap:8px">
         <input type="checkbox" id="csvBaseTieneEncabezado" style="width:auto" checked>
-        <span style="text-transform:none; letter-spacing:0; font-size:12px">El archivo trae encabezado (se ignora el primer renglón)</span>
+        <span style="text-transform:none; letter-spacing:0; font-size:12px">Los archivos traen encabezado (se ignora el primer renglón de cada uno)</span>
       </label>
     </div>
     <div class="acciones">
@@ -1265,127 +1265,175 @@ function llaveParteBase(v){
   return s;
 }
 
-async function subirBaseDatos(){
-  const caja = el("avisoCargaBase");
-  caja.classList.remove("oculto");
-  caja.classList.remove("error");
-  const archivo = el("archivoBase").files[0];
-  if (!archivo){ caja.classList.add("error"); caja.innerHTML = "Elige primero un archivo .csv."; return; }
-
+// lee y revisa un .csv de BASE DE DATOS. Devuelve { filas } o { error } con el motivo
+// por el que ese archivo no se puede subir (los demás archivos siguen su curso)
+async function leerArchivoBase(archivo, conEncabezado, iLlave, iCuenta){
   let texto;
   try{
     texto = await archivo.text();
   }catch(e){
-    caja.classList.add("error"); caja.innerHTML = "No se pudo leer el archivo: " + e.message; return;
+    return { error: "no se pudo leer (" + e.message + ")" };
   }
 
   let renglones = parseCsvSimple(texto);
-  if (el("csvBaseTieneEncabezado").checked) renglones = renglones.slice(1);
+  if (conEncabezado) renglones = renglones.slice(1);
 
   const anchoMax = renglones.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
-  const iLlave = letraAIndice(COL_LLAVE_BASE);
-  if (anchoMax <= iLlave){
-    caja.classList.add("error");
-    caja.innerHTML = "El archivo solo trae " + anchoMax + " columna(s) y la oportunidad va en la columna " +
-      COL_LLAVE_BASE + ". Tiene que ser la exportación de BASE DE DATOS con todas sus columnas, en el mismo orden.";
-    return;
+  if (anchoMax <= Math.max(iLlave, iCuenta)){
+    return { error: "solo trae " + anchoMax + " columna(s) y la oportunidad va en la columna " + COL_LLAVE_BASE +
+      "; tiene que ser la exportación de BASE DE DATOS con todas sus columnas, en el mismo orden" };
   }
 
-  const filas = renglones
-    .map(function(r){
-      const f = r.slice();
-      while (f.length < anchoMax) f.push("");
-      return f;
-    })
-    .filter(function(r){ return r.some(function(v){ return String(v || "").trim() !== ""; }); });
-
-  if (!filas.length){
-    caja.classList.add("error");
-    caja.innerHTML = "El archivo no trae renglones de datos.";
-    return;
-  }
+  const filas = renglones.filter(function(r){ return r.some(function(v){ return String(v || "").trim() !== ""; }); });
+  if (!filas.length) return { error: "no trae renglones de datos" };
 
   // si el .csv se abrió y guardó en Excel, las oportunidades/cuentas largas quedan
   // como 1.23457E+11: ya perdieron dígitos y no hay cómo compararlas con la base
-  const iCuenta = letraAIndice(COL_CUENTA_BASE);
   const notacion = /^\d+(\.\d+)?E\+?\d+$/i;
   const conE = filas.filter(function(f){
     return notacion.test(String(f[iLlave] || "").trim()) || notacion.test(String(f[iCuenta] || "").trim());
   }).length;
   if (conE){
+    return { error: conE + " renglón(es) traen la oportunidad o la cuenta factura como <b>1.23E+11</b> (pasó por Excel y " +
+      "perdió dígitos); vuelve a exportarlo y súbelo sin abrirlo ni guardarlo en Excel" };
+  }
+
+  const conLlave = filas.some(function(f){ return llaveParteBase(f[iLlave]) && llaveParteBase(f[iCuenta]); });
+  if (!conLlave){
+    return { error: "ningún renglón trae oportunidad (columna " + COL_LLAVE_BASE + ") y cuenta factura (columna " +
+      COL_CUENTA_BASE + "); revisa que sea el archivo correcto" };
+  }
+
+  return { filas: filas, anchoMax: anchoMax };
+}
+
+// Se pueden elegir varios archivos: cada uno se revisa por separado (el que no cuadre se
+// brinca y se avisa por qué), los buenos se juntan del más reciente al más viejo y los
+// repetidos (misma oportunidad + cuenta factura) se quitan aquí mismo, quedándose el del
+// archivo más reciente. Todo se manda en una sola carga; si pesa demasiado se parte en
+// varios envíos seguidos, que dan el mismo resultado porque ya no traen repetidos entre sí.
+async function subirBaseDatos(){
+  const caja = el("avisoCargaBase");
+  caja.classList.remove("oculto");
+  caja.classList.remove("error");
+  const archivos = Array.from(el("archivoBase").files || []);
+  if (!archivos.length){ caja.classList.add("error"); caja.innerHTML = "Elige primero uno o más archivos .csv."; return; }
+
+  const iLlave = letraAIndice(COL_LLAVE_BASE);
+  const iCuenta = letraAIndice(COL_CUENTA_BASE);
+  const conEncabezado = el("csvBaseTieneEncabezado").checked;
+
+  // el más reciente primero: así, en un repetido, gana el suyo
+  archivos.sort(function(a, b){ return b.lastModified - a.lastModified; });
+
+  const buenos = [], malos = [];
+  for (const archivo of archivos){
+    const r = await leerArchivoBase(archivo, conEncabezado, iLlave, iCuenta);
+    if (r.error) malos.push({ nombre: archivo.name, error: r.error });
+    else buenos.push({ nombre: archivo.name, filas: r.filas, anchoMax: r.anchoMax });
+  }
+  const listaMalos = malos.map(function(m){ return "<b>" + repEsc(m.nombre) + "</b>: " + m.error; }).join("<br>");
+  if (!buenos.length){
     caja.classList.add("error");
-    caja.innerHTML = conE + " renglón(es) traen la oportunidad o la cuenta factura como <b>1.23E+11</b> (el archivo pasó por Excel y " +
-      "perdió dígitos). Vuelve a exportar el .csv y súbelo sin abrirlo ni guardarlo en Excel.";
+    caja.innerHTML = (archivos.length > 1 ? "Ninguno de los archivos se puede subir:<br>" : "El archivo no se puede subir:<br>") + listaMalos;
     return;
   }
 
-  // llaves del archivo (oportunidad + cuenta factura): sirven para avisar de antemano
-  // cuántos viejos se van a quitar
+  // juntar los buenos, todos al mismo ancho, sin los renglones a los que les falte
+  // oportunidad o cuenta factura y sin repetidos (se queda el primero = el más reciente)
+  const anchoMax = buenos.reduce(function(m, b){ return Math.max(m, b.anchoMax); }, 0);
   const llaves = new Set();
-  let sinLlave = 0;
-  filas.forEach(function(f){
-    const op = llaveParteBase(f[iLlave]), cta = llaveParteBase(f[iCuenta]);
-    if (!op || !cta){ sinLlave++; return; }
-    llaves.add(op + "|" + cta);
+  const filas = [];
+  let sinLlave = 0, repetidas = 0;
+  buenos.forEach(function(b){
+    b.subidos = 0;
+    b.filas.forEach(function(r){
+      const op = llaveParteBase(r[iLlave]), cta = llaveParteBase(r[iCuenta]);
+      if (!op || !cta){ sinLlave++; return; }
+      const k = op + "|" + cta;
+      if (llaves.has(k)){ repetidas++; return; }
+      llaves.add(k);
+      const f = r.slice();
+      while (f.length < anchoMax) f.push("");
+      filas.push(f);
+      b.subidos++;
+    });
   });
-  if (!llaves.size){
-    caja.classList.add("error");
-    caja.innerHTML = "Ningún renglón del archivo trae oportunidad (columna " + COL_LLAVE_BASE + ") y cuenta factura (columna " +
-      COL_CUENTA_BASE + "). Sin esa llave no hay cómo saber qué está duplicado; revisa que sea el archivo correcto.";
-    return;
-  }
+
   const yaEstan = FILAS.filter(function(f){
     return llaves.has(llaveParteBase(f.oportunidad) + "|" + llaveParteBase(f.cuenta));
   }).length;
 
+  const omitidos = [];
+  if (repetidas) omitidos.push(repetidas + " repetido(s) (misma oportunidad + cuenta factura; se quedó el del archivo más reciente)");
+  if (sinLlave) omitidos.push(sinLlave + " sin oportunidad o sin cuenta factura");
+
   const ok = confirm(
-    "Se van a AGREGAR " + llaves.size + " renglón(es) hasta arriba de BASE DE DATOS (uno por cada oportunidad + cuenta factura distinta" +
-    (sinLlave ? "; " + sinLlave + " renglón(es) sin oportunidad o sin cuenta factura NO se suben" : "") + ").\n\n" +
+    "Archivos que se suben (" + buenos.length + "):\n" +
+    buenos.map(function(b){ return "  • " + b.nombre + ": " + b.subidos + " renglón(es)"; }).join("\n") +
+    (malos.length ? "\n\nArchivos que NO se suben porque traen error (" + malos.length + "):\n" +
+      malos.map(function(m){ return "  • " + m.nombre; }).join("\n") : "") +
+    "\n\nSe van a AGREGAR " + filas.length + " renglón(es) hasta arriba de BASE DE DATOS (uno por cada oportunidad + cuenta factura distinta" +
+    (omitidos.length ? "; NO se suben " + omitidos.join(" y ") : "") + ").\n\n" +
     "Enseguida se BORRAN los renglones viejos con esa misma oportunidad + cuenta factura (en la base que tienes cargada son " +
     yaEstan + "). El resto de la base no se toca.\n\nNo se puede deshacer. ¿Continuar?"
   );
   if (!ok) return;
 
-  const cuerpo = JSON.stringify(filas);
-  if (cuerpo.length > 6000000){
-    caja.classList.add("error");
-    caja.innerHTML = "El archivo pesa demasiado para subirlo de un jalón (" +
-      Math.round(cuerpo.length / 1048576) + " MB). Pártelo en dos o tres archivos y súbelos uno tras otro; " +
-      "el resultado es el mismo porque cada carga quita sus propios duplicados viejos.";
-    return;
-  }
+  // partir en envíos de hasta ~5 MB (el proxy no aguanta mucho más de 6 MB por envío)
+  const LIMITE = 5000000;
+  const envios = [];
+  let actual = [], tam = 2;
+  filas.forEach(function(f){
+    const t = JSON.stringify(f).length + 1;
+    if (actual.length && tam + t > LIMITE){ envios.push(actual); actual = []; tam = 2; }
+    actual.push(f); tam += t;
+  });
+  if (actual.length) envios.push(actual);
+  // cada envío entra hasta arriba: el último en llegar queda encima, así que se manda
+  // primero el pedazo más viejo para que lo más reciente quede hasta arriba
+  envios.reverse();
 
   const btn = el("btnSubirBase");
   btn.disabled = true;
-  caja.innerHTML = "Subiendo " + filas.length + " renglón(es)… en una base grande esto puede tardar un poco, no cierres la página.";
+  let agregados = 0, eliminados = 0, total = null, hechos = 0;
   try{
-    const r = await llamarProxyPost({
-      accion: "subirBaseDatos",
-      token: TOKEN,
-      colLlave: COL_LLAVE_BASE,
-      colCuenta: COL_CUENTA_BASE,
-      filas: cuerpo
-    });
-    if (!r || !r.ok){
-      caja.classList.add("error");
-      caja.innerHTML = "No se pudo subir: " + ((r && r.error) || "el proxy no respondió ok");
-      return;
+    for (const envio of envios){
+      caja.innerHTML = "Subiendo " + filas.length + " renglón(es)" +
+        (envios.length > 1 ? " (envío " + (hechos + 1) + " de " + envios.length + ")" : "") +
+        "… en una base grande esto puede tardar un poco, no cierres la página.";
+      const r = await llamarProxyPost({
+        accion: "subirBaseDatos",
+        token: TOKEN,
+        colLlave: COL_LLAVE_BASE,
+        colCuenta: COL_CUENTA_BASE,
+        filas: JSON.stringify(envio)
+      });
+      if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no respondió ok");
+      agregados += r.agregados != null ? r.agregados : envio.length;
+      eliminados += r.eliminados || 0;
+      if (r.total != null) total = r.total;
+      hechos++;
     }
-    const omitidos = [];
-    if (r.repetidasArchivo) omitidos.push(r.repetidasArchivo + " repetido(s) dentro del archivo (misma oportunidad + cuenta factura; se quedó el de más arriba)");
-    if (r.sinLlave) omitidos.push(r.sinLlave + " sin oportunidad o sin cuenta factura");
-    caja.innerHTML = "Listo: entraron " + (r.agregados != null ? r.agregados : filas.length) +
-      " renglón(es) arriba y se quitaron " + (r.eliminados || 0) + " viejo(s) con la misma oportunidad + cuenta factura. " +
-      "La base quedó con " + (r.total != null ? r.total : "?") + " renglón(es)." +
-      (omitidos.length ? "<br>No se subieron: " + omitidos.join(" · ") + "." : "");
+    caja.innerHTML = "Listo: entraron " + agregados + " renglón(es) arriba de " + buenos.length + " archivo(s) y se quitaron " +
+      eliminados + " viejo(s) con la misma oportunidad + cuenta factura. " +
+      "La base quedó con " + (total != null ? total : "?") + " renglón(es)." +
+      (omitidos.length ? "<br>No se subieron: " + omitidos.join(" · ") + "." : "") +
+      (malos.length ? "<br><br>Estos archivos NO se subieron:<br>" + listaMalos : "");
+    if (malos.length) caja.classList.add("error");
     el("archivoBase").value = "";
-    cargarUltimasCargas();
-    await cargar();   // vuelve a leer la base ya actualizada
   }catch(e){
     caja.classList.add("error");
-    caja.innerHTML = "No se pudo subir: " + e.message;
+    caja.innerHTML = "No se pudo subir: " + e.message +
+      (hechos ? "<br>Sí alcanzaron a entrar " + hechos + " de " + envios.length + " envío(s) (" + agregados +
+        " renglón(es)). Puedes volver a subir los mismos archivos: lo que ya entró se reemplaza, no se duplica." : "") +
+      (malos.length ? "<br><br>Estos archivos traían error y no se iban a subir:<br>" + listaMalos : "");
   }finally{
     btn.disabled = false;
+    if (hechos){
+      cargarUltimasCargas();
+      await cargar();   // vuelve a leer la base ya actualizada
+    }
   }
 }
 
