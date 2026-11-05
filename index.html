@@ -404,6 +404,7 @@
     <button type="button" data-vista="sabana">Sábana operaciones</button>
     <button type="button" data-vista="dupli">Cuentas duplicadas</button>
     <button type="button" data-vista="oprech">Op Rechazadas</button>
+    <button type="button" data-vista="buscador">Buscador</button>
     <button type="button" data-vista="equipos">Equipos</button>
     <button type="button" data-vista="ajustes" id="btnVistaAjustes">Ajustes</button>
   </div>
@@ -469,6 +470,24 @@
       <label class="campo oculto" id="cajaBuscaDup">Número de cuenta u oportunidad
         <input type="text" id="buscaDup" placeholder="Cuenta u oportunidad y Enter">
       </label>
+      <label class="campo busdir" style="display:none">Calle
+        <input type="text" id="bCalle" placeholder="Calle y Enter">
+      </label>
+      <label class="campo busdir" style="display:none">Número
+        <input type="text" id="bNumero" placeholder="Núm. exterior (opcional)">
+      </label>
+      <label class="campo busdir" style="display:none">Nombre
+        <input type="text" id="bNombre" placeholder="Nombre(s)">
+      </label>
+      <label class="campo busdir" style="display:none">Apellido paterno
+        <input type="text" id="bPaterno" placeholder="Apellido paterno">
+      </label>
+      <label class="campo busdir" style="display:none">Apellido materno
+        <input type="text" id="bMaterno" placeholder="Apellido materno">
+      </label>
+      <div class="campo busdir" style="display:none; flex-direction:column; justify-content:flex-end; gap:4px">
+        <span><button type="button" id="bBuscar">Buscar</button> <button type="button" id="bLimpiar" class="sec">Limpiar</button></span>
+      </div>
       <label class="campo" id="cajaPeriodo0">Periodo
         <select id="periodo0">
           <option value="sem" selected>Por semana</option>
@@ -3973,6 +3992,124 @@ function opRechazadasHtml(){
     "<th>Colonia</th><th>C.P.</th><th>Ciudad</th><th>Plan</th>" +
     (veDireccion ? "<th>Vendedor</th><th>Coach</th><th>Líder</th>" : "") +
     "</tr></thead><tbody>" + filas + "</tbody></table></div></section>";
+}
+
+/* ---------- Buscador (domicilio y nombre) ----------
+   Busca contra la base completa (igual que Cuentas duplicadas), para todos los perfiles.
+   - Calle: se compara con la misma limpieza de Cuentas duplicadas (sin "Calle", "Av.",
+     acentos, etc.); cada palabra capturada debe aparecer en la dirección, en cualquier orden.
+   - Número: filtra por número exterior exacto (el corregido, "12-A" -> 12, o el original).
+   - Nombre / apellidos: cada palabra capturada debe ser el inicio de alguna palabra del
+     nombre del cliente, sin importar el orden (la base trae el nombre en una sola columna).
+   Si se capturan domicilio y nombre a la vez, deben cumplirse ambos. */
+const BUSCADOR_MAX = 300;
+
+function escBus(s){
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function normalizaNumBus(v){
+  return normaliza(v).replace(/^(NUM\.?|NO\.?|N°|#)\s*/, "").replace(/\s+/g, "");
+}
+
+function buscadorHtml(){
+  if (necesitaBaseCompleta() && !FILAS_COMPLETO.length){
+    return '<section class="panel"><h2>Buscador</h2><div class="aviso' + (CARGANDO_COMPLETO ? "" : " error") + '">' +
+      (CARGANDO_COMPLETO ? "Leyendo la base completa…" : "No se pudo leer la base completa.") + "</div></section>";
+  }
+
+  const calleTxt = el("bCalle").value.trim();
+  const numTxt = el("bNumero").value.trim();
+  const nomTxt = [el("bNombre").value, el("bPaterno").value, el("bMaterno").value].join(" ").trim();
+
+  const qCalle = normalizaDireccion(calleTxt).split(" ").filter(Boolean);
+  const qNum = normalizaNumBus(numTxt);
+  const qNom = normaliza(nomTxt).split(" ").filter(Boolean);
+
+  if (!qCalle.length && !qNom.length){
+    return '<section class="panel"><h2>Buscador</h2><div class="aviso">' +
+      (numTxt ? "Captura también la calle: el número solo filtra las coincidencias de la calle." :
+        "Captura arriba la calle (y si quieres el número), o el nombre y apellidos del cliente, y presiona Enter o Buscar.") +
+      "</div></section>";
+  }
+  if (qCalle.join("").length + qNom.join("").length < 3){
+    return '<section class="panel"><h2>Buscador</h2><div class="aviso">Escribe al menos 3 letras para buscar.</div></section>';
+  }
+
+  const base = baseParaDuplicados();
+  const encontrados = base.filter(function(f){
+    if (qCalle.length){
+      const dir = normalizaDireccion(f.direccion);
+      if (!dir || !qCalle.every(function(p){ return dir.indexOf(p) >= 0; })) return false;
+      if (qNum){
+        const n1 = normalizaNumBus(corrigeNumeros(f).ext);
+        const n2 = normalizaNumBus(f.numExt);
+        if (n1 !== qNum && n2 !== qNum) return false;
+      }
+    }
+    if (qNom.length){
+      const palabras = normaliza(f.cliente).split(" ").filter(Boolean);
+      if (!qNom.every(function(p){ return palabras.some(function(w){ return w.indexOf(p) === 0; }); })) return false;
+    }
+    return true;
+  });
+
+  const criterio = [
+    qCalle.length ? "calle <b>" + escBus(calleTxt) + "</b>" + (qNum ? " núm. <b>" + escBus(numTxt) + "</b>" : "") : "",
+    qNom.length ? "nombre <b>" + escBus(nomTxt) + "</b>" : ""
+  ].filter(Boolean).join(" y ");
+
+  if (!encontrados.length){
+    return '<section class="panel"><h2>Buscador</h2><div class="aviso">No encontré coincidencias con ' + criterio + ".</div></section>";
+  }
+
+  encontrados.sort(function(a, b){
+    const da = normalizaDireccion(a.direccion), db = normalizaDireccion(b.direccion);
+    if (da !== db) return da.localeCompare(db, "es");
+    const na = parseInt(corrigeNumeros(a).ext, 10), nb = parseInt(corrigeNumeros(b).ext, 10);
+    if ((na || 0) !== (nb || 0)) return (isNaN(na) ? Infinity : na) - (isNaN(nb) ? Infinity : nb);
+    return (b.fOp || 0) - (a.fOp || 0);
+  });
+
+  // la liga a Seguimiento OS solo sirve si esa OS está en lo que este perfil puede abrir ahí
+  const abribles = new Set();
+  FILAS.forEach(function(f){ if (f.osNorm && enAlcance(f)) abribles.add(f.osNorm); });
+
+  const mostrar = encontrados.slice(0, BUSCADOR_MAX);
+  let filas = "";
+  mostrar.forEach(function(f){
+    const numeros = corrigeNumeros(f);
+    const situacion = f.fIns ? "Instalada" : (esPerdida(f) ? "Perdida" : (f.fVal ? "Validada, sin instalar" : "Oportunidad"));
+    const osCelda = f.os
+      ? (abribles.has(f.osNorm) ? '<a href="#" data-bus-os="' + escBus(f.os) + '">' + escBus(f.os) + "</a>" : escBus(f.os))
+      : "—";
+    filas += "<tr>" +
+      "<td>" + (f.fOp ? fCorta(f.fOp) : "—") + "</td>" +
+      "<td>" + (f.fIns ? fCorta(f.fIns) : "—") + "</td>" +
+      "<td>" + situacion + "</td>" +
+      '<td class="envuelve">' + escBus(f.cliente || "—") + "</td>" +
+      "<td>" + escBus(f.cuenta || "—") + "</td>" +
+      "<td>" + osCelda + "</td>" +
+      '<td class="envuelve">' + escBus(f.direccion || "—") + "</td>" +
+      "<td>" + escBus(numeros.ext || "—") + "</td>" +
+      "<td>" + escBus(numeros.int || "—") + "</td>" +
+      "<td>" + escBus(f.colonia || "—") + "</td>" +
+      "<td>" + escBus(f.ciudad || "—") + "</td>" +
+      "<td>" + escBus(f.cp || "—") + "</td>" +
+      '<td class="envuelve">' + escBus(f.plan || "—") + "</td>" +
+      "<td>" + escBus(vendedorDeFila(f) || "—") + "</td>" +
+      "<td>" + escBus(coachDeFila(f) || "—") + "</td>" +
+      "<td>" + escBus(liderDeFila(f) || "—") + "</td></tr>";
+  });
+
+  return '<section class="panel"><h2>Buscador <span class="sub">' + encontrados.length + " coincidencia(s)" +
+    (encontrados.length > BUSCADOR_MAX ? " · se muestran las primeras " + BUSCADOR_MAX + ", afina la búsqueda" : "") +
+    "</span></h2>" +
+    '<div class="aviso">Resultados con ' + criterio + ". Da clic en la OS para abrir su Seguimiento.</div>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Fecha oportunidad</th><th>Fecha activación</th><th>Situación</th><th>Cliente</th><th>N° cuenta</th><th>OS</th>" +
+    "<th>Dirección</th><th>Núm. ext.</th><th>Núm. int.</th><th>Colonia</th><th>Ciudad</th><th>C.P.</th><th>Plan</th>" +
+    "<th>Vendedor</th><th>Coach</th><th>Líder</th></tr></thead><tbody>" + filas + "</tbody></table></div></section>";
 }
 
 // promedio de caracteres de una lista de textos, en "ch" (mínimo 8, para no dejar
@@ -9519,6 +9656,9 @@ function pintar(){
     html = sabanaHtml();
   } else if (VISTA === "oprech"){
     html = opRechazadasHtml();
+  } else if (VISTA === "buscador"){
+    if (necesitaBaseCompleta() && !FILAS_COMPLETO.length && !CARGANDO_COMPLETO) cargarBaseCompleta();
+    html = buscadorHtml();
   } else if (VISTA === "equipos"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     html = equiposHtml();
@@ -9574,6 +9714,18 @@ function pintar(){
   scrollPegadoPorTitulo("Cuentas duplicadas");
   scrollPegadoPorTitulo("Validaciones pendientes por instalar");
   scrollPegadoPorTitulo("Op Rechazadas");
+  scrollPegadoPorTitulo("Buscador");
+
+  // Buscador: la OS abre su ficha en Seguimiento OS
+  Array.prototype.forEach.call(document.querySelectorAll("[data-bus-os]"), function(a){
+    a.addEventListener("click", function(ev){
+      ev.preventDefault();
+      OS_BUSCADA = a.getAttribute("data-bus-os");
+      el("osBuscar").value = OS_BUSCADA;
+      const bOs = document.querySelector('[data-vista="os"]');
+      if (bOs) bOs.click();
+    });
+  });
 
   if (VISTA === "os" && OS_BUSCADA){
     const f0 = filaBuscadaOs().fila;
@@ -9633,6 +9785,8 @@ function pintar(){
   }).filter(Boolean).join(" · ");
   const cab = VISTA === "os"
     ? "Seguimiento de OS"
+    : VISTA === "buscador"
+    ? "Buscador por domicilio o nombre"
     : VISTA === "ordenes"
     ? "Atención de órdenes" + (ORD.estado === "ok" ? " · " + num(ORD.filas.length) + " órdenes leídas" : "")
     : VISTA === "sabana"
@@ -9645,7 +9799,7 @@ function pintar(){
     ? "Vista mensual · " + (mesesElegidos().length || 0) + " mes(es) seleccionados"
     : "Semana " + etiquetaSemana(sem) + ": " + fCorta(lunes) + " al " + fCorta(domingo) +
       (enCurso ? " · semana abierta, " + diasCorridos + " día(s) con datos" : " · semana cerrada");
-  el("rango").textContent = cab + (filtros ? " · " + filtros : "");
+  el("rango").textContent = cab + (filtros && VISTA !== "buscador" ? " · " + filtros : "");
 }
 
 function claseSemaforo(v, valores){
@@ -10067,6 +10221,7 @@ function ajustaCajasDia(){
   const esDupli = VISTA === "dupli";
   const esAjustes = VISTA === "ajustes";
   const esOpRech = VISTA === "oprech";
+  const esBuscador = VISTA === "buscador";
   const esOrdenes = esVistaOrdenes();
   // la sábana trae su propia lista de eventos y mide tiempos: ni universo ni hora de corte
   el("cajaOrdUniverso").style.display = VISTA === "sabana" ? "none" : "";
@@ -10075,7 +10230,11 @@ function ajustaCajasDia(){
   el("cajaOrdCanal").style.display = VISTA === "sabana" ? "none" : "";
   el("cajaOrdMunicipio").style.display = VISTA === "sabana" ? "" : "none";
   Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales label.campo"), function(l){
-    l.style.display = (esOS || esDupli || esAjustes || esOrdenes) ? "none" : "";
+    l.style.display = (esOS || esDupli || esAjustes || esOrdenes || esBuscador) ? "none" : "";
+  });
+  // Buscador: solo sus campos (calle, número, nombre y apellidos)
+  Array.prototype.forEach.call(document.querySelectorAll("#controlesGenerales .busdir"), function(l){
+    l.style.display = esBuscador ? (l.tagName === "DIV" ? "flex" : "") : "none";
   });
   // Atención de órdenes no usa nada de los filtros de venta: lleva su propio panel
   el("cajaOrdenesFiltros").classList.toggle("oculto", !esOrdenes);
@@ -10089,7 +10248,7 @@ function ajustaCajasDia(){
   const soloOS0 = soloVistasOs();
   const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
   const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
-  el("btnCsv").style.display = (esOS || esAjustes || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
+  el("btnCsv").style.display = (esOS || esAjustes || esBuscador || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
   // Ajustes de la fuente: pestaña aparte, como Semanal/Mensual/etc. El botón de
   // navegación aparece para Director/65068028 y también para los puestos "os" (ellos
   // solo van a poder subir OS por instalar); el panel "Ajustes de la fuente" en sí
@@ -10107,15 +10266,15 @@ function ajustaCajasDia(){
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
   const soloOS = soloVistasOs();
-  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || esOpRech || soloOS) ? "none" : "";
+  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || esOpRech || esBuscador || soloOS) ? "none" : "";
   // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
   // Mensual y Últimos 30 días
   el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
   el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
   el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0") ? "" : "none";
-  el("cajaMeses").style.display = (esOS || esDupli || esAjustes || esOpRech) ? "none" : "";
-  el("cajaPlanes").style.display = (esOS || esDupli || esAjustes || esOpRech) ? "none" : "";
+  el("cajaMeses").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador) ? "none" : "";
+  el("cajaPlanes").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador) ? "none" : "";
 
   // Op Rechazadas: solo una fecha relevante (oportunidad), sin el gate "Filtrar por" de
   // Cuentas duplicadas; Semana/Mes se ocultan mientras Periodo siga en "Todo el histórico"
@@ -10209,6 +10368,15 @@ el("osBuscar").addEventListener("keydown", function(ev){
 });
 el("osBuscar").addEventListener("change", function(){ OS_BUSCADA = el("osBuscar").value.trim(); pintar(); });
 el("buscaDup").addEventListener("keydown", function(ev){ if (ev.key === "Enter") pintar(); });
+["bCalle","bNumero","bNombre","bPaterno","bMaterno"].forEach(function(id){
+  el(id).addEventListener("keydown", function(ev){ if (ev.key === "Enter" && VISTA === "buscador") pintar(); });
+});
+el("bBuscar").addEventListener("click", function(){ if (VISTA === "buscador") pintar(); });
+el("bLimpiar").addEventListener("click", function(){
+  ["bCalle","bNumero","bNombre","bPaterno","bMaterno"].forEach(function(id){ el(id).value = ""; });
+  if (VISTA === "buscador") pintar();
+  el("bCalle").focus();
+});
 el("buscaDup").addEventListener("change", pintar);
 el("gidOsPorInstalar").addEventListener("change", function(){ OSPI.estado = "sin cargar"; if (VISTA === "os") cargarOsPorInstalar(); });
 el("ordSemana").addEventListener("change", function(){ SEM_ORD_ELEGIDA = true; });
@@ -10549,10 +10717,10 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos"];
-  else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana"];
-  else if (esCobranza()) permitidas = ["dupli", "oprech", "os"];
-  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana"];
+  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos", "buscador"];
+  else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana", "buscador"];
+  else if (esCobranza()) permitidas = ["dupli", "oprech", "os", "buscador"];
+  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana", "buscador"];
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
   // lista fija de "permitidas" (ese mismo botón ya se oculta/muestra en ajustaCajasDia)
