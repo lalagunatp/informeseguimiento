@@ -4097,6 +4097,27 @@ function normalizaNumBus(v){
   return normaliza(v).replace(/^(NUM\.?|NO\.?|N°|#)\s*/, "").replace(/\s+/g, "");
 }
 
+// los nombres de la base vienen "PATERNO MATERNO NOMBRE": el paterno es la primera
+// palabra, junto con sus partículas si es compuesto ("DE LA CRUZ", "DEL RIO", "MC GREGOR")
+const PARTICULAS_APELLIDO = ["DE", "DEL", "LA", "LAS", "LOS", "Y", "SAN", "SANTA", "MC", "MAC", "VAN", "VON"];
+function apellidoPaterno(nombre){
+  const p = String(nombre || "").trim().split(/\s+/).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < p.length; i++){
+    out.push(p[i]);
+    if (PARTICULAS_APELLIDO.indexOf(normaliza(p[i])) < 0) break;
+  }
+  return out.join(" ");
+}
+
+// Buscador: en Cambaceo y Punto de venta (los locales) se agrega el paterno del líder
+function canalBuscador(f){
+  const canal = canalDe(f);
+  if (canal !== "Cambaceo" && canal !== "Punto de venta") return canal;
+  const ap = apellidoPaterno(liderDeFila(f));
+  return ap ? canal + " " + ap : canal;
+}
+
 function buscadorHtml(){
   if (necesitaBaseCompleta() && !FILAS_COMPLETO.length){
     return '<section class="panel"><h2>Buscador</h2><div class="aviso' + (CARGANDO_COMPLETO ? "" : " error") + '">' +
@@ -4182,7 +4203,7 @@ function buscadorHtml(){
       "<td>" + escBus(f.ciudad || "—") + "</td>" +
       "<td>" + escBus(f.cp || "—") + "</td>" +
       '<td class="envuelve">' + escBus(f.plan || "—") + "</td>" +
-      "<td>" + escBus(canalDe(f) || "—") + "</td></tr>";
+      "<td>" + escBus(canalBuscador(f) || "—") + "</td></tr>";
   });
 
   return '<section class="panel"><h2>Buscador <span class="sub">' + encontrados.length + " coincidencia(s)" +
