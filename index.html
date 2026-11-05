@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Reporte de seguimiento · La Laguna</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
@@ -74,11 +74,14 @@
     display:flex; flex-direction:column; justify-content:center; align-items:center; gap:4px; border-radius:8px;
   }
   .hamb span{display:block; width:17px; height:2px; background:var(--azul); border-radius:2px}
-  .vistas{display:flex; gap:6px}
+  .hamb{flex:none}
+  .vistas{display:flex; flex-wrap:wrap; gap:6px; min-width:0}
   .vistas button{
     background:var(--gris); color:var(--azul); border:1px solid transparent;
-    padding:6px 15px; font-size:13px; border-radius:20px;
+    padding:6px 15px; font-size:13px; border-radius:20px; white-space:nowrap; flex:none;
   }
+  /* botón para plegar "Qué quieres ver" y el "Listo" de los filtros múltiples: solo en celular */
+  .plegar, .multi-listo{display:none}
   .vistas button.on{background:var(--azul); color:#fff; border-color:var(--azul)}
   .fondo{position:fixed; inset:0; background:rgba(16,26,38,.35); z-index:39}
   .cajon{
@@ -239,10 +242,76 @@
   }
   .multi-lista label:hover{background:var(--gris)}
   .multi-lista input{margin:0; flex:none}
+  /* app instalada en iPhone (barra de estado translúcida): nada queda debajo del reloj;
+     env() vale 0 en el navegador normal y en Android, así que ahí no cambia nada */
+  header{padding-top:calc(14px + env(safe-area-inset-top))}
+  body::before{
+    content:""; position:fixed; top:0; left:0; right:0; z-index:45;
+    height:env(safe-area-inset-top); background:var(--azul);
+  }
+  .barra{top:env(safe-area-inset-top)}
+  .cajon{padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom)}
+
   @media (max-width:640px){
-    .wrap{padding:10px 8px 50px}
+    .wrap{padding:10px 8px calc(50px + env(safe-area-inset-bottom))}
     th,td{padding:5px 6px}
     th:first-child,td:first-child{max-width:130px}
+
+    /* encabezado compacto; el nombre de quien entró va en su propio renglón, recortado */
+    header{padding:10px 12px 9px; padding-top:calc(10px + env(safe-area-inset-top))}
+    header h1{font-size:15px}
+    header p{font-size:11px}
+    header .quien{
+      float:none; display:inline-block; margin:7px 0 0; max-width:100%;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11.5px;
+    }
+
+    /* las vistas van en una sola tira que se desliza de lado (antes empujaban toda la
+       página a lo ancho y los paneles quedaban cortados a la derecha) */
+    .barra{gap:8px; padding:6px 0 6px 8px}
+    .vistas{
+      flex:1; flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain;
+      -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-right:8px;
+      -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 22px), transparent);
+              mask-image:linear-gradient(to right, #000 calc(100% - 22px), transparent);
+    }
+    .vistas::-webkit-scrollbar{display:none}
+    .vistas button{padding:8px 14px}
+    .hamb{width:40px; height:38px}
+
+    /* dedos en lugar de mouse: botones más altos y menú lateral más holgado */
+    button{min-height:38px}
+    .multi-acc button, .cajon-tit button{min-height:0}
+    #menu button{padding:12px 16px; font-size:14px}
+
+    /* iOS hace zoom solo al tocar un campo con letra menor a 16px */
+    select, input[type=text], input[type=date], input[type=password],
+    .formseg select, .formseg input, .formseg textarea, .multi-busca input, .rep-wa textarea{font-size:16px}
+    .multi-btn{font-size:15px; padding:9px 8px}
+
+    .panel > h2{padding:10px 12px}
+    .controles{grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; padding:10px 12px}
+    .acciones{padding:0 12px 12px}
+    .formseg{grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); padding:10px 12px}
+
+    /* "Qué quieres ver" se puede plegar para que la tabla quede a la vista */
+    .plegar{display:inline-block; min-height:0; padding:5px 11px; font-size:12px; text-transform:none; letter-spacing:0}
+    #panelConsulta.plegado #controlesGenerales, #panelConsulta.plegado #accionesGenerales{display:none}
+    #panelConsulta.plegado > h2{border-bottom:0}
+
+    /* filtros múltiples: se abren como hoja fija a lo ancho de la pantalla, no como
+       menú colgado de la caja (en la columna derecha se salía de la pantalla) */
+    .multi-panel{
+      position:fixed; top:calc(62px + env(safe-area-inset-top)); left:10px; right:10px;
+      min-width:0; max-width:none; max-height:72vh; z-index:50;
+      box-shadow:0 12px 40px rgba(16,26,38,.35);
+    }
+    .multi-panel:not(.oculto){display:flex; flex-direction:column}
+    .multi-lista{max-height:none; flex:1; min-height:0}
+    .multi-lista label{padding:10px 12px; font-size:15px}
+    .multi-acc{align-items:center}
+    .multi-acc button{padding:7px 11px; font-size:13px}
+    .multi-listo{display:inline-block; margin-left:auto; background:var(--azul) !important; color:#fff !important; border-color:var(--azul) !important}
   }
   /* ---------- Reporte comercial ---------- */
   #menuReporte{border-top:1px solid var(--line2); padding:10px 14px 12px}
@@ -309,6 +378,13 @@
     .rep-cuatro{grid-template-columns:1fr 1fr}
   }
   @media (max-width:520px){
+    .rep-kpis{grid-template-columns:repeat(2, 1fr)}
+    .rep-kpis > div, .rep-kpis > div:nth-child(4){border-left:0; border-top:1px solid var(--line)}
+    .rep-kpis > div:nth-child(even){border-left:1px solid var(--line)}
+    .rep-kpis > div:nth-child(-n+2){border-top:0}
+    .rep-kpis b{font-size:19px}
+    .rep-big{gap:16px 22px}
+    .rep-big b{font-size:24px}
     .rep-cuatro{grid-template-columns:1fr}
     .rep-mrow{grid-template-columns:1fr}
     .rep-mv{white-space:normal}
@@ -425,7 +501,7 @@
   <div class="aviso" id="estado">Cargando la base…</div>
 
   <section class="panel" id="panelConsulta">
-    <h2>Qué quieres ver <span class="sub" id="rango"></span></h2>
+    <h2>Qué quieres ver <span class="sub" id="rango"></span><button type="button" id="btnPlegarFiltros" class="plegar sec" aria-expanded="true">Ocultar filtros</button></h2>
     <div class="controles" id="controlesGenerales">
       <label class="campo">Semana
         <select id="semana"></select>
@@ -2172,7 +2248,8 @@ function armarMulti(campo){
     '<div class="multi-panel oculto">' +
       (campo === "vendedor" ? '<label class="multi-extra"><input type="checkbox"> Incluir los que no están en plantilla pero sí generaron oportunidad</label>' : "") +
       '<div class="multi-acc"><button type="button" data-acc="todos">Todos</button>' +
-      '<button type="button" data-acc="solo">Quitar todos</button></div>' +
+      '<button type="button" data-acc="solo">Quitar todos</button>' +
+      '<button type="button" class="multi-listo">Listo</button></div>' +
       '<div class="multi-busca"><input type="text" placeholder="Buscar\u2026"></div>' +
       '<div class="multi-lista"></div>' +
     "</div>";
@@ -2203,10 +2280,14 @@ function armarMulti(campo){
       m.btn.classList.add("activo");
       m.busca.value = "";
       filtrarMulti(campo);
-      try { m.busca.focus(); } catch(e){}
+      // en pantalla táctil no se enfoca la búsqueda: abriría el teclado encima de la lista
+      if (!esTactil()) try { m.busca.focus(); } catch(e){}
     }
   });
   m.panel.addEventListener("click", function(ev){ ev.stopPropagation(); });
+  c.querySelector(".multi-listo").addEventListener("click", function(ev){
+    ev.preventDefault(); cerrarMultis();
+  });
   c.querySelectorAll("[data-acc]").forEach(function(b){
     b.addEventListener("click", function(ev){
       ev.preventDefault();
@@ -2345,6 +2426,10 @@ const VISTAS_MUNICIPIO = ["semana", "mes", "dias30"];
 function cumpleMunicipio(f){
   if (VISTAS_MUNICIPIO.indexOf(VISTA) < 0) return true;
   return cumple("municipio", f);
+}
+
+function esTactil(){
+  return !!(window.matchMedia && window.matchMedia("(pointer:coarse)").matches);
 }
 
 function cerrarMultis(){
@@ -10343,10 +10428,33 @@ Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function
     Array.prototype.forEach.call(document.querySelectorAll("[data-vista]"), function(x){
       x.classList.toggle("on", x === b);
     });
+    centrarVista(true);
     if (window.scrollTo) try { window.scrollTo({ top:0, behavior:"smooth" }); } catch(e){}
     pintar();
   });
 });
+
+// en celular las vistas van en una tira deslizable: la vista activa se deja a la vista
+function centrarVista(suave){
+  const tira = document.querySelector(".vistas");
+  const b = tira && tira.querySelector("button.on");
+  if (!b || tira.scrollWidth <= tira.clientWidth) return;
+  const x = b.offsetLeft - tira.offsetLeft - (tira.clientWidth - b.offsetWidth) / 2;
+  try { tira.scrollTo({ left:Math.max(0, x), behavior: suave ? "smooth" : "auto" }); }
+  catch(e){ tira.scrollLeft = Math.max(0, x); }
+}
+
+// "Qué quieres ver" plegable en celular; se recuerda cómo lo dejó cada quien
+function plegarFiltros(plegado){
+  el("panelConsulta").classList.toggle("plegado", plegado);
+  el("btnPlegarFiltros").textContent = plegado ? "Mostrar filtros" : "Ocultar filtros";
+  el("btnPlegarFiltros").setAttribute("aria-expanded", plegado ? "false" : "true");
+  try { localStorage.setItem("tp_filtros_plegados", plegado ? "1" : "0"); } catch(e){}
+}
+el("btnPlegarFiltros").addEventListener("click", function(){
+  plegarFiltros(!el("panelConsulta").classList.contains("plegado"));
+});
+try { if (localStorage.getItem("tp_filtros_plegados") === "1") plegarFiltros(true); } catch(e){}
 
 document.addEventListener("click", cerrarMultis);
 document.addEventListener("keydown", function(ev){ if (ev.key === "Escape"){ cerrarMultis(); cerrarCajon(); } });
@@ -10751,6 +10859,7 @@ function abrirApp(){
   }
   ajustaAgrupar();
   ajustaCajasDia();
+  centrarVista(false);
   cargar();
 }
 
