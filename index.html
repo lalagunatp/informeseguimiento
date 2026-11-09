@@ -437,12 +437,144 @@
     body.vista-reporte .rep-lst{margin-top:3px}
     body.vista-reporte a{border:0 !important}
   }
+
+  /* ---------- Resumen ejecutivo: gráficas arriba de las tablas ----------
+     Colores validados contra el blanco del panel: una serie principal (el azul de la
+     app), una secundaria (naranja) y una rampa ordinal de 3 azules. Verde/ámbar/rojo
+     siguen siendo solo semáforo y siempre van con su porcentaje o leyenda al lado. */
+  .resumen{
+    --rs-s1:#1d5b8f; --rs-s2:#eb6834; --rs-o1:#94b5d3; --rs-o2:#4f86b8; --rs-o3:#123a5e;
+    --rs-prev:#c3d3e3; --rs-grid:#e9edf2; --rs-eje:#c9d1da; --rs-cero:#c8453c; --rs-am:#c79200;
+  }
+  .resumen > h2 .rs-acc{display:flex; gap:6px; margin-left:auto}
+  .resumen > h2 .rs-acc button{padding:4px 11px; font-size:11.5px; text-transform:none; letter-spacing:0; min-height:0; font-weight:500}
+  .resumen.plegado .rs-cuerpo{display:none}
+  .resumen.plegado > h2{border-bottom:0}
+  .rs-cuerpo{padding:14px; display:flex; flex-direction:column; gap:20px}
+  .rs-impreso{display:none}
+  .rs-tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px}
+  .rs-tile{border:1px solid var(--line); border-radius:9px; padding:12px 14px 10px; display:flex; flex-direction:column; gap:5px; min-width:0}
+  .rs-tile.chico{padding:10px 14px}
+  .rs-lb{font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted)}
+  .rs-val{display:flex; align-items:baseline; gap:4px 10px; flex-wrap:wrap}
+  .rs-val b{font-size:30px; line-height:1.05; font-weight:650; color:var(--ink)}
+  .rs-tile.chico .rs-val b{font-size:26px}
+  .rs-delta{font-size:12px; font-weight:650; color:var(--muted); white-space:nowrap}
+  .rs-delta.v{color:var(--v-tx)} .rs-delta.r{color:var(--r-tx)}
+  .rs-sub{font-size:11.5px; color:var(--muted)}
+  .rs-sub b{color:var(--ink); font-weight:650}
+  .rs-chip{display:inline-block; font-size:11px; font-weight:700; padding:1px 8px; border-radius:20px; white-space:nowrap}
+  .rs-chip.v{background:var(--v-bg); color:var(--v-tx)} .rs-chip.a{background:var(--a-bg); color:var(--a-tx)} .rs-chip.r{background:var(--r-bg); color:var(--r-tx)}
+  .rs-bloque{display:flex; flex-direction:column; gap:8px; min-width:0}
+  .rs-bt{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap}
+  .rs-bt h3{margin:0; font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--azul)}
+  .rs-bt h3 span{font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted); margin-left:6px}
+  .rs-dos{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px 28px}
+  .rs-nota{margin:0; font-size:11.5px; color:var(--muted)}
+  .rs-ley{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:11.5px; color:var(--muted)}
+  .rs-ley i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
+  .rs-ley i.lin{height:2px; width:14px; border-radius:1px; vertical-align:3px}
+  .rs-ley i.trama{background:repeating-linear-gradient(135deg, var(--rs-s1) 0 2px, #fff 2px 4px); opacity:.6}
+  .rs-ley i.meta{width:2px; height:12px; background:var(--ink); border-radius:0}
+  /* selector de métrica (Oportunidad / Validada / Instalaciones) */
+  .rs-seg{display:inline-flex; border:1px solid var(--line); border-radius:20px; padding:2px; gap:2px}
+  .rs-seg button{background:none; border:0; color:var(--muted); padding:3px 11px; font-size:11.5px; border-radius:20px; min-height:0}
+  .rs-seg button.on{background:var(--azul); color:#fff}
+
+  /* columnas: barras de máx. 24 px, punta redondeada, base recta */
+  .rs-col{display:flex; flex-direction:column; gap:4px}
+  .rs-plot{position:relative; display:flex; align-items:flex-end; border-bottom:1px solid var(--rs-eje)}
+  .rs-c{flex:1 1 0; min-width:0; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; position:relative; cursor:default}
+  .rs-c:hover{background:rgba(18,58,94,.045)}
+  .rs-c .b{width:62%; max-width:24px; border-radius:4px 4px 0 0; background:var(--rs-prev)}
+  .rs-c .b.act{background:var(--rs-s1)}
+  .rs-c .b.cero{background:var(--rs-cero)}
+  .rs-c .b.gris{background:#dfe5ec}
+  .rs-c .b.pr{background:repeating-linear-gradient(135deg, var(--rs-s1) 0 2px, transparent 2px 5px); opacity:.55; margin-bottom:2px}
+  .rs-c .b.bajo{border-radius:0}
+  .rs-c .et{font-size:10.5px; color:var(--ink); font-weight:650; margin-bottom:2px; white-space:nowrap; font-variant-numeric:tabular-nums}
+  .rs-c .et.m{color:var(--muted); font-weight:500}
+  .rs-x{display:flex}
+  .rs-x span{flex:1 1 0; min-width:0; text-align:center; font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden}
+  .rs-x span.act{color:var(--ink); font-weight:650}
+  .rs-ref{position:absolute; left:0; right:0; border-top:1px solid var(--ink); pointer-events:none; z-index:1}
+  .rs-ref span{position:absolute; right:0; bottom:1px; font-size:10px; color:var(--ink); background:rgba(255,255,255,.85); padding:0 3px; border-radius:2px}
+  .rs-plot .rs-ref span{right:auto; left:0}
+  .rs-grid{position:absolute; left:0; right:0; border-top:1px solid var(--rs-grid); pointer-events:none}
+  .rs-grid span{position:absolute; left:0; bottom:1px; font-size:9.5px; color:#98a4b1}
+
+  /* ranking por grupo: barra real, proyección rayada y marca de meta */
+  .rs-rank{display:flex; flex-direction:column; gap:3px}
+  .rs-row{display:grid; grid-template-columns:minmax(90px,190px) 1fr minmax(118px,auto); gap:12px; align-items:center; padding:3px 4px; border-radius:5px}
+  .rs-row:hover{background:var(--gris)}
+  .rs-rn{font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .rs-rb{position:relative; height:12px; background:#f0f3f6; border-radius:3px}
+  .rs-rb i{position:absolute; top:0; bottom:0; left:0; border-radius:0 3px 3px 0}
+  .rs-rb i.a{background:var(--rs-s1)}
+  .rs-rb i.a.v{background:var(--v-tx)} .rs-rb i.a.am{background:var(--rs-am)} .rs-rb i.a.r{background:var(--r-tx)}
+  .rs-rb i.p{background:repeating-linear-gradient(135deg, #7d8b99 0 2px, transparent 2px 5px); opacity:.6}
+  .rs-rb i.m{left:auto; width:2px; top:-3px; bottom:-3px; background:var(--ink); border-radius:0; margin-left:-1px}
+  .rs-rb i.sa{left:auto; width:0; top:-3px; bottom:-3px; border-left:2px dotted var(--muted); border-radius:0}
+  .rs-rb.seg{display:flex; gap:2px; background:none}
+  .rs-rb.seg i{position:static; height:100%; border-radius:2px; min-width:2px}
+  .rs-rv{font-size:12px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; text-align:right}
+  .rs-rv b{color:var(--ink); font-size:13px}
+  .rs-mas{font-size:11.5px; color:var(--muted); padding:2px 4px}
+
+  /* embudo de conversión */
+  .rs-emb{display:flex; flex-direction:column; gap:6px}
+  .rs-emb .rs-row{grid-template-columns:minmax(90px,130px) 1fr auto}
+  .rs-emb .rs-rb{height:22px; background:none}
+  .rs-emb .rs-rb i{border-radius:4px}
+
+  /* línea (conversión por mes) */
+  .rs-lin{position:relative; margin-top:12px}
+  .rs-lin svg{position:absolute; inset:0; width:100%; height:100%; overflow:visible}
+  .rs-pt{position:absolute; width:10px; height:10px; margin:-5px 0 0 -5px; border-radius:50%; border:2px solid #fff; z-index:2}
+  .rs-pt::after{content:""; position:absolute; inset:-8px}
+  .rs-pl{position:absolute; font-size:10.5px; font-weight:650; color:var(--ink); transform:translate(8px,-50%); white-space:nowrap; z-index:2}
+
+  /* globo de ayuda al pasar el mouse o tocar */
+  .rs-tip{
+    position:fixed; z-index:80; pointer-events:none; max-width:280px;
+    background:#101a26; color:#fff; font-size:12px; line-height:1.4; padding:7px 10px; border-radius:7px;
+    box-shadow:0 6px 18px rgba(16,26,38,.25); white-space:pre-line;
+  }
+
+  @media (max-width:640px){
+    .rs-cuerpo{padding:12px 10px; gap:18px}
+    .rs-tiles{grid-template-columns:1fr}
+    .rs-dos{grid-template-columns:1fr}
+    .rs-row{grid-template-columns:minmax(80px,38%) 1fr; gap:4px 10px}
+    .rs-rv{grid-column:1 / -1; text-align:left; padding-left:2px; margin-top:-2px}
+    .rs-emb .rs-row{grid-template-columns:minmax(80px,32%) 1fr}
+    .resumen > h2 .rs-acc button{padding:5px 10px}
+  }
+
+  /* impresión del resumen ejecutivo: solo ese panel, carta horizontal */
+  @media print{
+    body.imprime-resumen{background:#fff}
+    body.imprime-resumen > *:not(#app){display:none !important}
+    body.imprime-resumen #app > *:not(#salida){display:none !important}
+    body.imprime-resumen #salida > *:not(.resumen){display:none !important}
+    body.imprime-resumen .wrap{max-width:none; padding:0}
+    body.imprime-resumen *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+    body.imprime-resumen .resumen{border:0; margin:0}
+    body.imprime-resumen .resumen .rs-cuerpo{display:flex !important; padding:6px 0 0; gap:12px}
+    body.imprime-resumen .resumen > h2{font-size:15px; padding:0 0 6px}
+    body.imprime-resumen .rs-acc, body.imprime-resumen .rs-seg{display:none !important}
+    body.imprime-resumen .rs-impreso{display:block; font-size:11px; color:var(--muted); margin:0}
+    body.imprime-resumen .rs-tiles{grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:1fr}
+    body.imprime-resumen .rs-dos{grid-template-columns:1fr 1fr}
+    body.imprime-resumen .rs-tile, body.imprime-resumen .rs-bloque{break-inside:avoid}
+    body.imprime-resumen .rs-tip{display:none}
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 99</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 100</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -1146,7 +1278,9 @@ function indicePorLetras(columnas){
 }
 
 let FILAS = [];        // {cluster,canal,canalBase,subcanal,oportunidad,estatus,...,fOp,fVal,fIns}
-let FILAS_COMPLETO = [];  // solo para Cuentas duplicadas: base sin filtrar por alcance (líderes)
+let FILAS_COMPLETO = [];  // base sin filtrar por alcance (líderes): Cuentas duplicadas, Buscador y las vistas de VISTAS_TODOS_LIDERES
+let FILAS_EQUIPO = [];    // líderes: lo que llegó de "accion:datos" (solo su equipo)
+let FUENTE_FILAS = "equipo";   // a cuál de las dos apunta FILAS en este momento
 let CARGANDO_COMPLETO = false;
 let SEMANAS = [];      // claves ordenadas
 let MESES = [];        // [{clave:"2026-07", etq:"julio 2026"}]
@@ -1953,6 +2087,10 @@ function reclasificarCanal(){
     f.canal = canalDe(f);
     if (sinCruzar(f)) sinCruce++;
   });
+  // líderes: la otra base (equipo o todos los líderes) también se reclasifica
+  [FILAS_EQUIPO, FILAS_COMPLETO].forEach(function(otra){
+    if (otra !== FILAS) otra.forEach(function(f){ f.canal = canalDe(f); });
+  });
   INFO_TECNICO.sinCruce = sinCruce;
   // Atención de órdenes trae el canal de aquí por número de cuenta: el índice caducó
   IDX_CANAL_CTA = null;
@@ -2080,6 +2218,10 @@ async function cargar(){
   INFO_TECNICO.sinCruce = resultado.sinCruce;
 
   FILAS = nuevas;
+  FILAS_EQUIPO = nuevas;
+  FUENTE_FILAS = "equipo";
+  // al recargar, la base de todos los líderes también se vuelve a pedir (si no, quedaría vieja)
+  if (necesitaBaseCompleta()) FILAS_COMPLETO = [];
   IDX_CANAL_CTA = null;   // el cruce de canal por cuenta de Atención de órdenes se rearma
   FECHA_MAX = max;
   marcarFuente("base", "ok", max ? fCorta(max) : "", nuevas.length);
@@ -3763,13 +3905,63 @@ async function cargarBaseCompleta(){
     if (!r || !r.ok) throw new Error((r && r.error) || "el proxy no devolvió la base completa");
     const tabla = comoTabla({ datos: r.datos || [] });
     FILAS_COMPLETO = parsearBaseRows(tabla.rows || []).filas;
+    pegarTecnicos(FILAS_COMPLETO);
     IDX_CANAL_CTA = null;   // ahora hay base completa: el cruce por cuenta mejora
   }catch(e){
     FILAS_COMPLETO = [];
-    avisar("No se pudo leer la base completa para Cuentas duplicadas. <b>" + e.message + "</b>", true);
+    avisar("No se pudo leer la base de todos los líderes. <b>" + e.message + "</b>", true);
   }
   CARGANDO_COMPLETO = false;
   pintar();
+}
+
+// Líderes de ventas: en Semanal, Mensual y Vend X Eventos ven el resultado de TODOS los
+// líderes (la base completa, que el Apps Script ya entrega con completo:"1"); en las
+// demás vistas siguen viendo solo a su equipo. FILAS apunta a una u otra base según la
+// vista, así que el resto de la app no cambia: cada vista lee FILAS como siempre.
+const VISTAS_TODOS_LIDERES = ["semana", "mes", "vend0"];
+function veTodosLosLideres(){
+  return !!(PERFIL && PERFIL.alcance === "lider" && VISTAS_TODOS_LIDERES.indexOf(VISTA) >= 0);
+}
+
+// se llama al inicio de pintar(): si la vista pide otra base, cambia FILAS y rehace lo
+// que se arma a partir de ella (filtros, instalaciones por persona, canal por persona)
+function ajustaFuenteFilas(){
+  if (!PERFIL || PERFIL.alcance !== "lider") return;
+  let quiero = veTodosLosLideres() ? "todos" : "equipo";
+  if (quiero === "todos" && !FILAS_COMPLETO.length){
+    if (!CARGANDO_COMPLETO) cargarBaseCompleta();   // al llegar vuelve a pintar
+    quiero = "equipo";                              // mientras, se ve lo del equipo
+  }
+  if (quiero === FUENTE_FILAS) return;
+  FUENTE_FILAS = quiero;
+  FILAS = quiero === "todos" ? FILAS_COMPLETO : FILAS_EQUIPO;
+  pegarTecnicos(FILAS);
+  IDX_CANAL_CTA = null;
+  armarInstBase();
+  armarCanalPersona();
+  ["director", "lider", "coach", "vendedor", "canal", "plan", "municipio", "motivoRechazoOp"].forEach(llenarMulti);
+}
+
+// el código de venta técnico (y el equipo, si el renglón no lo trae) que ligarTecnicos
+// pegó a la base del equipo: la base completa llega después y también lo necesita
+function pegarTecnicos(filas){
+  if (!TEC_FILAS.length || !filas.length) return;
+  const porOp = {};
+  TEC_FILAS.forEach(function(par){ porOp[llaveDe(par[0])] = normaliza(par[1]); });
+  const campo = el("cruceCampo").value;
+  filas.forEach(function(f){
+    if (f.codTec || normaliza(f.subcanal).indexOf("VENTA TECNICO") < 0) return;
+    const cod = porOp[llaveDe(f[campo])];
+    if (!cod) return;
+    f.codTec = cod;
+    const per = MAPA_TEC_PERSONA.get(cod);
+    if (!per){ if (!f.vendedor) f.vendedor = cod; return; }
+    if (f.lider) return;
+    f.lider = per.lider;
+    f.coach = per.coach;
+    if (!f.vendedor || f.vendedor === "-") f.vendedor = per.nombre;
+  });
 }
 
 // qué base usar para detectar duplicados: la completa (líderes) o la ya cargada
@@ -4724,6 +4916,7 @@ function dias30Html(){
     return t;
   }
 
+  const rsGrupos = [];   // para las gráficas del resumen
   grupos.forEach(function(g){
     let fila = "<tr><td>" + g + "</td>";
     let sumaFalta = 0;
@@ -4738,6 +4931,7 @@ function dias30Html(){
     const t = suma(g);
     granTot.vta += t.vta; granTot.ins += t.ins;
     faltaGran += sumaFalta;
+    rsGrupos.push({ g:g, t:t, falta:sumaFalta });
     // en el total de 30 días, la última columna es la SUMA de lo que faltó cada semana
     fila += bloque30(t, meta, sumaFalta) + "</tr>";
     cuerpo += fila;
@@ -4765,7 +4959,8 @@ function dias30Html(){
     return cols.map(function(x, i){ return "<th" + (i === 0 ? ' class="sem"' : "") + ">" + x + "</th>"; }).join("");
   }).join("") + "</tr>";
 
-  return '<section class="panel"><h2>Últimos 30 días <span class="sub">' +
+  return resumen30Html(a, meta, totCol, bloqueTotSem, granTot, faltaGran, rsGrupos) +
+    '<section class="panel"><h2>Últimos 30 días <span class="sub">' +
     fCorta(a.rango.ini) + " al " + fCorta(a.rango.fin) +
     " · termina en la semana " + etiquetaSemana(el("semana").value || "") +
     " · cada semana es la de la VALIDACIÓN: sus instalaciones cuentan ahí aunque se hayan atendido después" +
@@ -5575,6 +5770,7 @@ function vendedores0Html(){
     const abre = '<div class="scroll"><table class="compacta alineada">' + cols + "<thead>";
 
     return {
+      gran: gran, grupos: grupos, orden: orden,   // para las gráficas del resumen
       conteo: '<section class="panel"><h2>' + titulo + ' <span class="sub">' + nota +
         (fuera ? " · " + fuera + " fuera de HC" : "") + "</span></h2>" +
         abre + encabezado + "</thead><tbody>" + filas + "</tbody></table></div></section>",
@@ -5636,7 +5832,8 @@ function vendedores0Html(){
     tVal.conteo + tVal.pct + (tipoSel === "val" ? detalle : "") +
     tIns.conteo + tIns.pct + (tipoSel === "ins" ? detalle : "");
 
-  return cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas +
+  const resumen = resumenVend0Html({ op:tOp, val:tVal, ins:tIns }, tope, modo, etqPeriodo, rotulo, gente, modoGrupo);
+  return resumen + cab + diagTecnico(clavePeriodo, fn) + cuerpoTablas +
     alcanceRankingHtml(gente, modoGrupo, rotulo) + cumplimientoRankingHtml(gente, modoGrupo, rotulo) +
     detalleCumplimientoHtml();
 }
@@ -9665,7 +9862,555 @@ function activarReporte(){
   });
 }
 
+/* ---------- Resumen ejecutivo: gráficas de Semanal, Mensual, Últimos 30 días y Vend X Eventos ----------
+   Un solo panel arriba de las tablas, con lo que un comité lee de un vistazo: cifra
+   principal contra el periodo anterior, tendencia, meta y quién va arriba o abajo. Las
+   tablas de siempre quedan debajo, intactas (son la "vista de tabla" de cada gráfica).
+   Todo es HTML/CSS (sin librerías): funciona sin internet, se ve nítido en el celular
+   y se imprime. Los números salen de las mismas funciones que llenan las tablas. */
+
+const RS = { met: "ins" };   // métrica del ranking por grupo: op | val | ins
+let RS_PLEGADO = false;
+try { RS_PLEGADO = localStorage.getItem("tp_resumen_plegado") === "1"; } catch(e){}
+const RS_NOMBRE = { op:"Oportunidades", val:"Ventas validadas", ins:"Instalaciones" };
+const RS_CORTO = { op:"Oportunidad", val:"Validada", ins:"Instalación" };
+
+function rsN(n){ return Math.round(n || 0).toLocaleString("es-MX"); }
+function rsPct(x){ return (x === null || x === undefined || !isFinite(x)) ? "—" : Math.round(x * 100) + "%"; }
+// semáforo igual que las tablas: >= 100% verde, >= 90% ámbar, abajo rojo
+function rsCls(x){ return (x === null || x === undefined || !isFinite(x)) ? "" : x >= 1 ? "v" : x >= 0.9 ? "a" : "r"; }
+function rsChip(x, txt){ const c = rsCls(x); return '<span class="rs-chip ' + c + '">' + txt + "</span>"; }
+
+// cambio firmado contra un periodo con nombre; la flecha es el ícono, el color solo acompaña
+function rsDelta(act, base, rotulo){
+  if (!base) return "";
+  const r = Math.round((act - base) / base * 100);
+  const cl = r > 0 ? " v" : r < 0 ? " r" : "";
+  return '<span class="rs-delta' + cl + '">' + (r > 0 ? "▲ " : r < 0 ? "▼ " : "= ") + Math.abs(r) + "% " + rotulo + "</span>";
+}
+
+// tope "redondo" para la escala
+function rsTope(max){
+  if (!(max > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(max)));
+  const m = max / p;
+  const pasos = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+  for (let i = 0; i < pasos.length; i++) if (m <= pasos[i]) return pasos[i] * p;
+  return 10 * p;
+}
+
+// columnas verticales. items: [{etq, v, cls, ext:{v, cls}, et, etM, tip}]
+// ext es lo que va encima de la barra: la proyección (rayada) o la parte apilada
+function rsColumnas(items, o){
+  o = o || {};
+  const alto = o.alto || 96;
+  let max = o.meta || 0;
+  items.forEach(function(it){ max = Math.max(max, (it.v || 0) + (it.ext ? it.ext.v : 0)); });
+  const tope = rsTope(max * 1.2);    // aire arriba para la etiqueta
+  const h = function(v){ return (Math.max(0, v) / tope * 100).toFixed(2); };
+  const cada = o.cada || 1;
+  let col = "";
+  items.forEach(function(it){
+    const ext = it.ext && it.ext.v > 0 ? it.ext : null;
+    col += '<div class="rs-c" data-tip="' + repEsc(it.tip || "") + '">' +
+      (it.et ? '<span class="et' + (it.etM ? " m" : "") + '">' + it.et + "</span>" : "") +
+      (ext ? '<div class="b ' + ext.cls + '" style="height:' + h(ext.v) + '%"></div>' : "") +
+      '<div class="b ' + (it.cls || "") + (ext ? " bajo" : "") + '" style="height:' + h(it.v || 0) + '%"></div></div>';
+  });
+  const xs = items.map(function(it, i){
+    const ver = i % cada === 0 || i === items.length - 1;
+    return "<span" + (it.cls === "act" ? ' class="act"' : "") + ">" + (ver ? repEsc(it.etq) : "") + "</span>";
+  }).join("");
+  return '<div class="rs-col"><div class="rs-plot" style="height:' + alto + 'px">' + col +
+    (o.meta ? '<div class="rs-ref" style="bottom:' + h(o.meta) + '%"><span>' + repEsc(o.metaTxt || "meta " + rsN(o.meta)) + "</span></div>" : "") +
+    '</div><div class="rs-x">' + xs + "</div></div>";
+}
+
+// barras horizontales por grupo: real, proyección rayada, meta (línea) o semana anterior (punteada)
+// filas: [{etq, v, proy, meta, sa, cls, txt, tip}]
+function rsRanking(filas, o){
+  o = o || {};
+  const max0 = o.escala || filas.reduce(function(m, f){ return Math.max(m, f.v || 0, f.proy || 0, f.meta || 0, f.sa || 0); }, 0) || 1;
+  const w = function(x){ return Math.min(100, Math.max(0, x) / max0 * 100).toFixed(2); };
+  const vis = filas.slice(0, o.max || 15);
+  let html = vis.map(function(f){
+    const pr = f.proy && f.proy > f.v ? f.proy : 0;
+    const cl = f.cls === "a" ? "am" : (f.cls || "");
+    return '<div class="rs-row" data-tip="' + repEsc(f.tip || "") + '"><span class="rs-rn">' + repEsc(f.etq) + "</span>" +
+      '<span class="rs-rb">' +
+      (pr ? '<i class="p" style="width:' + w(pr) + '%"></i>' : "") +
+      '<i class="a ' + cl + '" style="width:' + w(f.v) + '%"></i>' +
+      (f.sa ? '<i class="sa" style="left:' + w(f.sa) + '%"></i>' : "") +
+      (f.meta ? '<i class="m" style="left:' + w(f.meta) + '%"></i>' : "") +
+      '</span><span class="rs-rv">' + f.txt + "</span></div>";
+  }).join("");
+  if (filas.length > vis.length) html += '<div class="rs-mas">y ' + (filas.length - vis.length) + " más en las tablas de abajo</div>";
+  return '<div class="rs-rank">' + html + "</div>";
+}
+
+// barra segmentada (una fila = 100% de los vendedores del grupo)
+function rsSegmentos(filas, colores, o){
+  o = o || {};
+  const vis = filas.slice(0, o.max || 15);
+  let html = vis.map(function(f){
+    const tot = f.partes.reduce(function(s, x){ return s + x; }, 0) || 1;
+    return '<div class="rs-row" data-tip="' + repEsc(f.tip || "") + '"><span class="rs-rn">' + repEsc(f.etq) + "</span>" +
+      '<span class="rs-rb seg">' + f.partes.map(function(x, i){
+        return x ? '<i style="flex:' + (x / tot).toFixed(4) + ' 1 0px;background:' + colores[i] + '"></i>' : "";
+      }).join("") + '</span><span class="rs-rv">' + f.txt + "</span></div>";
+  }).join("");
+  if (filas.length > vis.length) html += '<div class="rs-mas">y ' + (filas.length - vis.length) + " más en las tablas de abajo</div>";
+  return '<div class="rs-rank">' + html + "</div>";
+}
+
+// embudo: cada etapa con su ancho proporcional y su conversión contra la anterior
+function rsEmbudo(pasos){
+  const max = Math.max.apply(null, pasos.map(function(p){ return p.v || 0; })) || 1;
+  const col = ["var(--rs-o1)", "var(--rs-o2)", "var(--rs-o3)"];
+  return '<div class="rs-emb">' + pasos.map(function(p, i){
+    return '<div class="rs-row" data-tip="' + repEsc(p.tip || "") + '"><span class="rs-rn">' + p.etq + "</span>" +
+      '<span class="rs-rb"><i style="width:' + ((p.v || 0) / max * 100).toFixed(2) + "%;background:" + col[i] + '"></i></span>' +
+      '<span class="rs-rv">' + p.txt + "</span></div>";
+  }).join("") + "</div>";
+}
+
+// línea de porcentajes. series: [{nom, color, vals:[x|null], tips:[]}]
+function rsLinea(series, etqs, o){
+  o = o || {};
+  const alto = o.alto || 150;
+  let lo = Infinity, hi = -Infinity;
+  series.forEach(function(s){ s.vals.forEach(function(v){ if (v !== null && isFinite(v)){ lo = Math.min(lo, v); hi = Math.max(hi, v); } }); });
+  if (!isFinite(lo)) return '<p class="rs-nota">Sin datos para graficar.</p>';
+  if (o.meta){ lo = Math.min(lo, o.meta); hi = Math.max(hi, o.meta); }
+  lo = Math.max(0, Math.floor(lo * 10 - 0.5) / 10);
+  hi = Math.ceil(hi * 10 + 0.3) / 10;
+  if (hi - lo < 0.2) lo = Math.max(0, hi - 0.2);
+  const n = etqs.length;
+  const X = function(i){ return n === 1 ? 50 : 9 + i * 77 / (n - 1); };
+  const Y = function(v){ return (1 - (v - lo) / (hi - lo)) * 100; };
+  let grid = "", svg = "", pts = "", lbl = "";
+  [lo, (lo + hi) / 2, hi].forEach(function(v){
+    grid += '<div class="rs-grid" style="top:' + Y(v).toFixed(2) + '%"><span>' + Math.round(v * 100) + "%</span></div>";
+  });
+  const finales = [];
+  series.forEach(function(s){
+    let d = "", ult = -1;
+    s.vals.forEach(function(v, i){
+      if (v === null || !isFinite(v)) return;
+      d += (d ? " L" : "M") + X(i).toFixed(2) + " " + Y(v).toFixed(2);
+      ult = i;
+      pts += '<span class="rs-pt" style="left:' + X(i).toFixed(2) + "%;top:" + Y(v).toFixed(2) + "%;background:" + s.color +
+        '" data-tip="' + repEsc(s.tips[i] || "") + '"></span>';
+    });
+    svg += '<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
+    if (ult >= 0) finales.push({ x: X(ult), y: Y(s.vals[ult]), txt: Math.round(s.vals[ult] * 100) + "%" });
+  });
+  // si las dos puntas quedan encimadas no se rotulan: lo dicen la leyenda y el globo
+  const choca = finales.length === 2 && Math.abs(finales[0].y - finales[1].y) * alto / 100 < 14;
+  if (!choca) finales.forEach(function(f){ lbl += '<span class="rs-pl" style="left:' + f.x.toFixed(2) + "%;top:" + f.y.toFixed(2) + '%">' + f.txt + "</span>"; });
+  const meta = o.meta ? '<div class="rs-ref" style="top:' + Y(o.meta).toFixed(2) + '%"><span>' + repEsc(o.metaTxt || "") + "</span></div>" : "";
+  const xs = etqs.map(function(e, i){
+    return '<span style="position:absolute;left:' + X(i).toFixed(2) + '%;transform:translateX(-50%)">' + repEsc(e) + "</span>";
+  }).join("");
+  return '<div class="rs-col"><div class="rs-lin" style="height:' + alto + 'px">' + grid + meta +
+    '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' + svg + "</svg>" + pts + lbl + "</div>" +
+    '<div class="rs-x" style="position:relative;height:14px">' + xs + "</div></div>";
+}
+
+function rsLeyenda(items){
+  return '<div class="rs-ley">' + items.map(function(x){
+    return "<span><i" + (x[1].charAt(0) === "." ? ' class="' + x[1].slice(1) + '"' : ' style="background:' + x[1] + '"') + "></i>" + x[0] + "</span>";
+  }).join("") + "</div>";
+}
+
+function rsSelMetrica(){
+  return '<span class="rs-seg">' + BLOQUES.map(function(b){
+    return '<button type="button" data-rs-met="' + b.tipo + '"' + (RS.met === b.tipo ? ' class="on"' : "") + ">" + RS_CORTO[b.tipo] + "</button>";
+  }).join("") + "</span>";
+}
+
+function rsBloque(titulo, sub, derecha, cuerpo){
+  return '<div class="rs-bloque"><div class="rs-bt"><h3>' + titulo + (sub ? "<span>" + sub + "</span>" : "") + "</h3>" + (derecha || "") + "</div>" + cuerpo + "</div>";
+}
+
+function rsPanel(sub, cuerpo){
+  return '<section class="panel resumen' + (RS_PLEGADO ? " plegado" : "") + '" id="resumenEj"><h2>Resumen ejecutivo <span class="sub">' + sub + "</span>" +
+    '<span class="rs-acc"><button type="button" class="sec" data-rs-imprimir>Imprimir</button>' +
+    '<button type="button" class="sec" data-rs-plegar>' + (RS_PLEGADO ? "Mostrar gráficas" : "Ocultar") + "</button></span></h2>" +
+    '<div class="rs-cuerpo"><p class="rs-impreso"></p>' + cuerpo + "</div></section>";
+}
+
+// ¿el "Agrupar por" es un eje de días? entonces el ranking respeta el orden natural
+function rsOrdenNatural(){ const c = el("agrupar").value; return c === "diasem" || c === "diames"; }
+
+// ranking de grupos contra meta (o contra el periodo anterior si no hay meta)
+// lista: [{g, v, sa, proy, meta}]; enCurso: muestra proyección; rotAnt: "S44" / "oct 26"
+function rsRankingGrupos(lista, tipo, enCurso, rotAnt){
+  const hayMeta = lista.some(function(x){ return x.meta; });
+  const filas = lista.filter(function(x){ return x.v || x.sa || x.meta || x.proy; }).map(function(x){
+    const av = x.meta ? x.v / x.meta : null;
+    const pr = x.meta ? x.proy / x.meta : null;
+    const tip = x.g + "\n" + RS_NOMBRE[tipo] + ": " + rsN(x.v) +
+      (enCurso ? "\nProyección: " + rsN(x.proy) : "") +
+      "\nPeriodo anterior (" + rotAnt + "): " + rsN(x.sa) +
+      (x.meta ? "\nMeta: " + rsN(x.meta) + " · avance " + rsPct(av) + (enCurso ? " · proyección " + rsPct(pr) : "") : "");
+    let txt;
+    if (x.meta){
+      txt = "<b>" + rsPct(enCurso ? pr : av) + "</b> " + (enCurso ? "proy. · " : "· ") + rsN(x.v) + " de " + rsN(x.meta);
+    } else {
+      txt = "<b>" + rsN(x.v) + "</b> " + rsDelta(enCurso ? x.proy : x.v, x.sa, (enCurso ? "proy. " : "") + "vs " + rotAnt);
+    }
+    return { etq:x.g, v:x.v, proy: enCurso ? x.proy : 0, meta:x.meta || 0, sa: hayMeta ? 0 : x.sa,
+             cls: x.meta ? rsCls(pr) : "", txt:txt, tip:tip, orden: x.meta ? pr : -1, peso: enCurso ? x.proy : x.v };
+  });
+  if (!rsOrdenNatural()){
+    filas.sort(function(a, b){ return (b.orden - a.orden) || (b.peso - a.peso) || a.etq.localeCompare(b.etq, "es"); });
+  }
+  const ley = [["Real", "var(--rs-s1)"]];
+  if (hayMeta){ ley[0] = ["Real (color = avance vs meta)", "var(--v-tx)"]; }
+  if (enCurso) ley.push(["Proyección", ".trama"]);
+  if (hayMeta) ley.push(["Meta", ".meta"]);
+  else ley.push(["Periodo anterior (" + rotAnt + ")", ".meta"]);
+  return { html: filas.length ? rsRanking(filas) : '<p class="rs-nota">Sin datos con los filtros actuales.</p>', ley: rsLeyenda(ley), hayMeta: hayMeta };
+}
+
+/* --- Semanal --- */
+function resumenSemanalHtml(){
+  const U = ULTIMO;
+  if (!U || !U.sem) return "";
+  const sem = U.sem, act = U.act, ant = U.ant, enCurso = U.enCurso;
+  const dias = enCurso ? U.diasCorridos : 7;
+  const etqS = function(k){ return "S" + Number(k.split("-")[1]); };
+  const l = lunesDe(sem);
+  const previas = [];
+  for (let i = 7; i >= 1; i--) previas.push(isoSemana(new Date(l.getFullYear(), l.getMonth(), l.getDate() - 7 * i)));
+  const hist = agregaSemanas(previas, isoSemana);
+  const rotAnt = etqS(U.semAnt);
+
+  const datos = {};
+  BLOQUES.forEach(function(b){
+    const t = b.tipo;
+    const pesos = pesosSemana(sem, t);
+    const TC = sumar(act, t), TA = sumar(ant, t);
+    const info = enCurso && dias > 0 ? proyectarSemana(TC.d, pesos, "\u0000total", dias) : null;
+    let meta = 0;
+    const porGrupo = U.grupos.map(function(g){
+      const C = (act[g] || vacio())[t], A = (ant[g] || vacio())[t];
+      const ig = enCurso && dias > 0 ? proyectarSemana(C.d, pesos, g, dias) : null;
+      const m = metaDeGrupo(g, t);
+      if (m) meta += m;
+      return { g:g, v:C.t, sa:A.t, proy: ig ? ig.valor : C.t, meta:m };
+    });
+    datos[t] = {
+      v:TC.t, sa:TA.t, proy: info ? info.valor : TC.t, meta:meta, porGrupo:porGrupo,
+      hist: previas.map(function(k){ return Object.keys(hist).reduce(function(s, g){ return s + (hist[g][t][k] || 0); }, 0); })
+    };
+  });
+
+  const tiles = BLOQUES.map(function(b){
+    const d = datos[b.tipo];
+    const items = previas.map(function(k, i){
+      return { etq: etqS(k), v: d.hist[i], tip: RS_NOMBRE[b.tipo] + " · semana " + etiquetaSemana(k) + "\n" + rsN(d.hist[i]) +
+        (d.meta ? " · " + rsPct(d.hist[i] / d.meta) + " de la meta actual" : "") };
+    });
+    items.push({
+      etq: etqS(sem), v: d.v, cls:"act",
+      ext: enCurso && d.proy > d.v ? { v: d.proy - d.v, cls:"pr" } : null,
+      et: enCurso ? "≈" + rsN(d.proy) : rsN(d.v), etM: enCurso,
+      tip: RS_NOMBRE[b.tipo] + " · semana " + etiquetaSemana(sem) + (enCurso ? " (abierta)" : "") + "\nAcumulado: " + rsN(d.v) +
+        (enCurso ? "\nProyección al domingo: " + rsN(d.proy) : "") + (d.meta ? "\nMeta: " + rsN(d.meta) : "")
+    });
+    const base = enCurso ? d.proy : d.v;
+    const sub = enCurso
+      ? "Proyección al domingo <b>" + rsN(d.proy) + "</b>" + (d.meta ? " · meta <b>" + rsN(d.meta) + "</b> " + rsChip(d.proy / d.meta, rsPct(d.proy / d.meta) + " proy.") : "")
+      : (d.meta ? "Meta <b>" + rsN(d.meta) + "</b> " + rsChip(d.v / d.meta, rsPct(d.v / d.meta) + " de avance") : "Semana cerrada");
+    return '<div class="rs-tile"><span class="rs-lb">' + RS_NOMBRE[b.tipo] + "</span>" +
+      '<div class="rs-val"><b>' + rsN(d.v) + "</b>" + rsDelta(base, d.sa, (enCurso ? "proy. " : "") + "vs " + rotAnt) + "</div>" +
+      '<div class="rs-sub">' + sub + "</div>" +
+      rsColumnas(items, { alto:84, meta:d.meta, metaTxt: d.meta ? "meta " + rsN(d.meta) : "" }) + "</div>";
+  }).join("");
+
+  const o = datos.op, v = datos.val, n = datos.ins;
+  const emb = rsEmbudo([
+    { etq:"Oportunidades", v:o.v, txt:"<b>" + rsN(o.v) + "</b>", tip:"Oportunidades creadas en la semana: " + rsN(o.v) + "\nSemana anterior: " + rsN(o.sa) },
+    { etq:"Validadas", v:v.v, txt:"<b>" + rsN(v.v) + "</b> · " + rsPct(o.v ? v.v / o.v : null) + " de oport.",
+      tip:"Validadas en la semana: " + rsN(v.v) + "\nValidadas ÷ oportunidades: " + rsPct(o.v ? v.v / o.v : null) + "\nSemana anterior: " + rsPct(o.sa ? v.sa / o.sa : null) },
+    { etq:"Instalaciones", v:n.v, txt:"<b>" + rsN(n.v) + "</b> · " + rsPct(v.v ? n.v / v.v : null) + " de validadas",
+      tip:"Instaladas en la semana: " + rsN(n.v) + "\nInstalaciones ÷ validadas: " + rsPct(v.v ? n.v / v.v : null) + "\nSemana anterior: " + rsPct(v.sa ? n.sa / v.sa : null) }
+  ]);
+  const conv = rsBloque("Conversión de la semana", "cada etapa cuenta por su propia fecha, igual que las tablas", "", emb +
+    '<p class="rs-nota">Semana anterior (' + rotAnt + "): " + rsPct(o.sa ? v.sa / o.sa : null) + " de oportunidad a validada · " +
+    rsPct(v.sa ? n.sa / v.sa : null) + " de validada a instalación.</p>");
+
+  const rk = rsRankingGrupos(datos[RS.met].porGrupo, RS.met, enCurso, rotAnt);
+  const rank = rsBloque(RS_NOMBRE[RS.met] + " por " + tituloGrupo().toLowerCase(), rk.hayMeta ? "contra la meta semanal" : "", rsSelMetrica(), rk.html + rk.ley);
+
+  return rsPanel("semana " + etiquetaSemana(sem) + (enCurso ? " · abierta, con proyección al domingo" : " · cerrada") + " · tendencia de las últimas 8 semanas",
+    '<div class="rs-tiles">' + tiles + "</div>" + '<div class="rs-dos">' + conv + rank + "</div>");
+}
+
+/* --- Mensual --- */
+function resumenMensualHtml(){
+  const claves = mesesElegidos();
+  if (!claves.length) return "";
+  const mp = claves[claves.length - 1];
+  const y = Number(mp.slice(0, 4)), mm = Number(mp.slice(5)) - 1;
+  const mesAnt = claveMes(new Date(y, mm - 1, 1));
+  const hoy = new Date();
+  const enCurso = y === hoy.getFullYear() && mm === hoy.getMonth();
+  const vis = claves.slice(-12);
+  const todas = claves.indexOf(mesAnt) >= 0 ? claves : claves.concat([mesAnt]);
+  const acc = agregaSemanas(todas, claveMes);
+  // mismos grupos que las tablas: los que tienen algo en los meses elegidos
+  const grupos = Object.keys(acc).filter(function(g){
+    return claves.some(function(k){ return acc[g].op[k] || acc[g].val[k] || acc[g].ins[k]; });
+  });
+  const semMes = Number(el("semanasMes").value) || 4.33;
+  const semAncla = el("semana").value || (FECHA_MAX ? isoSemana(FECHA_MAX) : "");
+  const rotAnt = etqMes(mesAnt);
+  const tot = function(t, k){ return Object.keys(acc).reduce(function(s, g){ return s + (acc[g][t][k] || 0); }, 0); };
+
+  const datos = {};
+  BLOQUES.forEach(function(b){
+    const t = b.tipo;
+    const pesos = semAncla ? pesosSemana(semAncla, t) : null;
+    let ultimoDia = 0;
+    if (enCurso){
+      FILAS.forEach(function(f){
+        if (!pasaFiltros(f)) return;
+        let fecha = null;
+        if (t === "op") fecha = f.fOp;
+        else if (t === "val"){ if (!esValidada(f)) return; fecha = f.fVal; }
+        else { if (!esInstalada(f)) return; fecha = f.fIns; }
+        if (!fecha || claveMes(fecha) !== mp) return;
+        if (fecha.getDate() > ultimoDia) ultimoDia = fecha.getDate();
+      });
+    }
+    let meta = 0, proyT = 0;
+    const porGrupo = grupos.map(function(g){
+      const v = acc[g][t][mp] || 0;
+      const p = enCurso && pesos ? proyeccionMes(mp, v, pesos, g, ultimoDia) : v;
+      const base = metaDeGrupo(g, t);
+      const m = base === null ? null : Math.round(base * semMes);
+      if (m) meta += m;
+      proyT += p;
+      return { g:g, v:v, sa: acc[g][t][mesAnt] || 0, proy:p, meta:m };
+    });
+    datos[t] = { v: tot(t, mp), sa: tot(t, mesAnt), proy: proyT, meta: meta, porGrupo: porGrupo };
+  });
+
+  const tiles = BLOQUES.map(function(b){
+    const d = datos[b.tipo];
+    const items = vis.map(function(k){
+      const v = tot(b.tipo, k), es = k === mp;
+      return {
+        etq: etqMes(k), v: v, cls: es ? "act" : "",
+        ext: es && enCurso && d.proy > v ? { v: d.proy - v, cls:"pr" } : null,
+        et: es ? (enCurso ? "≈" + rsN(d.proy) : rsN(v)) : "", etM: es && enCurso,
+        tip: RS_NOMBRE[b.tipo] + " · " + etqMes(k) + (es && enCurso ? " (en curso)" : "") + "\n" + rsN(v) +
+          (es && enCurso ? "\nCierre estimado: " + rsN(d.proy) : "") + (es && d.meta ? "\nMeta: " + rsN(d.meta) : "")
+      };
+    });
+    const base = enCurso ? d.proy : d.v;
+    const sub = enCurso
+      ? "Cierre estimado <b>" + rsN(d.proy) + "</b>" + (d.meta ? " · meta <b>" + rsN(d.meta) + "</b> " + rsChip(d.proy / d.meta, rsPct(d.proy / d.meta) + " proy.") : "")
+      : (d.meta ? "Meta <b>" + rsN(d.meta) + "</b> " + rsChip(d.v / d.meta, rsPct(d.v / d.meta) + " de avance") : "Mes cerrado");
+    return '<div class="rs-tile"><span class="rs-lb">' + RS_NOMBRE[b.tipo] + " · " + etqMes(mp) + "</span>" +
+      '<div class="rs-val"><b>' + rsN(d.v) + "</b>" + rsDelta(base, d.sa, (enCurso ? "proy. " : "") + "vs " + rotAnt) + "</div>" +
+      '<div class="rs-sub">' + sub + "</div>" +
+      rsColumnas(items, { alto:84, meta:d.meta, cada: vis.length > 8 ? 2 : 1 }) + "</div>";
+  }).join("");
+
+  // conversión mes a mes (las mismas dos razones que las tablas) y ARPU
+  const etqs = vis.map(etqMes);
+  const meta = (Number(el("metaConversion").value) || 88) / 100;
+  const r = function(a, b2, k){ const d = tot(b2, k); return d ? tot(a, k) / d : null; };
+  const sVal = vis.map(function(k){ return r("val", "op", k); });
+  const sIns = vis.map(function(k){ return r("ins", "val", k); });
+  const linea = rsLinea([
+    { nom:"Validadas ÷ oportunidades", color:"var(--rs-s1)", vals:sVal,
+      tips: vis.map(function(k, i){ return "Validadas ÷ oportunidades · " + etqMes(k) + "\n" + rsPct(sVal[i]) + " (" + rsN(tot("val", k)) + " de " + rsN(tot("op", k)) + ")"; }) },
+    { nom:"Instalaciones ÷ validadas", color:"var(--rs-s2)", vals:sIns,
+      tips: vis.map(function(k, i){ return "Instalaciones ÷ validadas · " + etqMes(k) + "\n" + rsPct(sIns[i]) + " (" + rsN(tot("ins", k)) + " de " + rsN(tot("val", k)) + ")"; }) }
+  ], etqs, { alto:150, meta:meta, metaTxt:"meta conversión " + Math.round(meta * 100) + "%" });
+  const conv = rsBloque("Conversión por mes", "", "", linea +
+    rsLeyenda([["Validadas ÷ oportunidades", "var(--rs-s1)"], ["Instalaciones ÷ validadas", "var(--rs-s2)"], ["Meta de conversión", ".meta"]]));
+
+  const arpuItems = vis.map(function(k){
+    const ins = tot("ins", k), imp = tot("imp", k), a = ins ? imp / ins : 0, es = k === mp;
+    return { etq: etqMes(k), v: a, cls: es ? "act" : "", et: es && a ? "$" + rsN(a) : "",
+      tip: "ARPU · " + etqMes(k) + "\n" + (a ? "$" + rsN(a) : "—") + " promedio de " + rsN(ins) + " instalaciones" };
+  });
+  const arpu = rsBloque("ARPU de lo instalado", "precio lista sin IVA", "", rsColumnas(arpuItems, { alto:150, cada: vis.length > 8 ? 2 : 1 }));
+
+  const rk = rsRankingGrupos(datos[RS.met].porGrupo, RS.met, enCurso, rotAnt);
+  const rank = rsBloque(RS_NOMBRE[RS.met] + " por " + tituloGrupo().toLowerCase() + " · " + etqMes(mp),
+    rk.hayMeta ? "contra la meta mensual (semanal × " + semMes + ")" : "", rsSelMetrica(), rk.html + rk.ley);
+
+  return rsPanel(etqMes(mp) + (enCurso ? " · en curso, con cierre estimado" : "") + " · tendencia de " + vis.length + " mes(es)",
+    '<div class="rs-tiles">' + tiles + "</div>" + '<div class="rs-dos">' + conv + arpu + "</div>" + rank);
+}
+
+/* --- Últimos 30 días (lo arma dias30Html con sus propios totales) --- */
+function resumen30Html(a, meta, totCol, faltaSem, granTot, faltaGran, porGrupo){
+  const conv = granTot.vta ? granTot.ins / granTot.vta : null;
+  const m = meta / 100;
+  // mismo semáforo que la tabla: en meta verde, hasta 5 puntos abajo ámbar, más abajo rojo
+  const clConv = function(x){ return x === null ? "" : x * 100 >= meta ? "v" : x * 100 >= meta - 5 ? "a" : "r"; };
+  const chip = function(x){ return '<span class="rs-chip ' + clConv(x) + '">' + rsPct(x) + "</span>"; };
+  const rango = fCorta(a.rango.ini) + " al " + fCorta(a.rango.fin);
+  const tiles =
+    '<div class="rs-tile chico"><span class="rs-lb">Ventas validadas</span><div class="rs-val"><b>' + rsN(granTot.vta) + "</b></div>" +
+      '<div class="rs-sub">validadas del ' + rango + "</div></div>" +
+    '<div class="rs-tile chico"><span class="rs-lb">Instaladas</span><div class="rs-val"><b>' + rsN(granTot.ins) + "</b>" + chip(conv) + "</div>" +
+      '<div class="rs-sub">conversión de la camada · meta <b>' + meta + "%</b></div></div>" +
+    '<div class="rs-tile chico"><span class="rs-lb">Por instalar</span><div class="rs-val"><b>' + rsN(granTot.vta - granTot.ins) + "</b></div>" +
+      '<div class="rs-sub">validadas que todavía no se instalan</div></div>' +
+    '<div class="rs-tile chico"><span class="rs-lb">Faltan para la meta</span><div class="rs-val"><b>' + rsN(faltaGran) + "</b></div>" +
+      '<div class="rs-sub">instalaciones para llegar al ' + meta + "% en cada semana y coach</div></div>";
+
+  const items = a.claves.map(function(k){
+    const d = totCol[k], c = d.vta ? d.ins / d.vta : null;
+    const lu = lunesDe(k), dom = new Date(lu.getFullYear(), lu.getMonth(), lu.getDate() + 6);
+    const parcial = lu < a.rango.ini || dom > a.rango.fin;
+    return {
+      etq: "Sem " + Number(k.split("-")[1]) + (parcial ? "*" : ""), v: d.ins, cls:"act",
+      ext: { v: d.vta - d.ins, cls:"gris" }, et: rsPct(c),
+      tip: "Semana " + Number(k.split("-")[1]) + (parcial ? " (parcial)" : "") + "\nValidadas: " + rsN(d.vta) + " · instaladas: " + rsN(d.ins) +
+        " · por instalar: " + rsN(d.vta - d.ins) + "\nConversión: " + rsPct(c) + " · faltan " + rsN(faltaSem[k]) + " para " + meta + "%"
+    };
+  });
+  const camadas = rsBloque("Camadas por semana de validación", "la etiqueta es la conversión de cada camada · * semana parcial", "",
+    rsColumnas(items, { alto:150 }) + rsLeyenda([["Instaladas", "var(--rs-s1)"], ["Por instalar", "#dfe5ec"]]));
+
+  const filas = porGrupo.filter(function(x){ return x.t.vta; }).map(function(x){
+    const c = x.t.ins / x.t.vta;
+    return { etq:x.g, v: c * 100, meta: meta, cls: clConv(c),
+      txt: "<b>" + rsPct(c) + "</b> · " + rsN(x.t.ins) + " de " + rsN(x.t.vta) + (x.falta ? " · faltan " + rsN(x.falta) : ""),
+      tip: x.g + "\nValidadas: " + rsN(x.t.vta) + " · instaladas: " + rsN(x.t.ins) + "\nConversión: " + rsPct(c) + " (meta " + meta + "%)\nFaltan " + rsN(x.falta) + " instalaciones", c: c };
+  });
+  if (!rsOrdenNatural()) filas.sort(function(p, q){ return q.c - p.c || p.etq.localeCompare(q.etq, "es"); });
+  const rank = rsBloque("Conversión por " + tituloGrupo().toLowerCase(), "instaladas ÷ validadas de la camada", "",
+    (filas.length ? rsRanking(filas, { escala:100 }) : '<p class="rs-nota">Sin datos con los filtros actuales.</p>') +
+    rsLeyenda([["Conversión (color = contra la meta)", "var(--v-tx)"], ["Meta " + meta + "%", ".meta"]]));
+
+  return rsPanel(rango + " · camadas por semana de validación",
+    '<div class="rs-tiles">' + tiles + "</div>" + '<div class="rs-dos">' + camadas + rank + "</div>");
+}
+
+/* --- Vend X Eventos (lo arma vendedores0Html con sus tablas) --- */
+function resumenVend0Html(t, tope, modo, etqPeriodo, rotulo, gente, modoGrupo){
+  const tiles = BLOQUES.map(function(b){
+    const g = t[b.tipo].gran;
+    if (!g.vend) return "";
+    const cero = g.cub[0];
+    const items = g.cub.map(function(nv, i){
+      const etq = i === tope ? i + "+" : String(i);
+      return { etq: etq, v: nv, cls: i === 0 ? "cero" : "act",
+        et: (i === 0 || g.cub.length <= 11) && nv ? rsN(nv) : "", etM: i !== 0,
+        tip: etq + " " + RS_NOMBRE[b.tipo].toLowerCase() + ": " + rsN(nv) + " vendedor(es) · " + rsPct(nv / g.vend) };
+    });
+    return '<div class="rs-tile"><span class="rs-lb">' + RS_NOMBRE[b.tipo] + " · vendedores en cero</span>" +
+      '<div class="rs-val"><b>' + rsN(cero) + "</b>" + '<span class="rs-delta">' + rsPct(cero / g.vend) + " de " + rsN(g.vend) + "</span></div>" +
+      '<div class="rs-sub">promedio <b>' + (g.tot / g.vend).toFixed(1) + "</b> por vendedor · reparto por cantidad</div>" +
+      rsColumnas(items, { alto:84, cada: g.cub.length > 13 ? 2 : 1 }) + "</div>";
+  }).join("");
+
+  // cumplimiento de la meta individual (semana elegida arriba, igual que su tabla)
+  let cumple = "";
+  const dS = datosInstalacionesSemana(gente, modoGrupo);
+  if (dS){
+    let med = 0, ok = 0;
+    Object.keys(dS.grupoDePersona).forEach(function(id){
+      const m = metaDe(dS.metalDePersona[id]);
+      if (!m) return;
+      med++;
+      if ((dS.insPorPersona[id] || 0) >= m) ok++;
+    });
+    if (med) cumple = '<div class="rs-tile"><span class="rs-lb">Cumplieron su meta individual</span>' +
+      '<div class="rs-val"><b>' + rsN(ok) + "</b>" + '<span class="rs-delta">de ' + rsN(med) + "</span>" +
+      rsChip(ok / med, rsPct(ok / med)) + "</div>" +
+      '<div class="rs-sub">vendedores con meta en su ranking · instalaciones de la semana ' + etiquetaSemana(dS.sem) + "</div>" +
+      '<div class="rs-row" style="grid-template-columns:1fr;padding:6px 0 0" data-tip="' +
+      repEsc("Cumplieron su meta individual: " + rsN(ok) + " de " + rsN(med) + " (" + rsPct(ok / med) + ")") + '">' +
+      '<span class="rs-rb"><i class="a ' + (rsCls(ok / med) === "a" ? "am" : rsCls(ok / med)) + '" style="width:' + (ok / med * 100).toFixed(2) + '%"></i></span></div></div>';
+  }
+
+  // actividad por grupo: qué parte de su gente está en 0, 1, 2–3, 4+ (semana) o 0, 1–4, 5–12, 13+ (mes)
+  const cortes = modo === "mes" ? [[0, 0, "0"], [1, 4, "1–4"], [5, 12, "5–12"], [13, Infinity, "13+"]]
+                                : [[0, 0, "0"], [1, 1, "1"], [2, 3, "2–3"], [4, Infinity, "4+"]];
+  const colores = ["var(--rs-cero)", "var(--rs-o1)", "var(--rs-o2)", "var(--rs-o3)"];
+  const T = t[RS.met];
+  const nomMin = RS_NOMBRE[RS.met].toLowerCase();
+  const filas = T.orden.map(function(k){
+    const o = T.grupos[k];
+    const partes = cortes.map(function(c){
+      let s = 0;
+      for (let i = c[0]; i <= Math.min(c[1], tope); i++) s += o.cub[i] || 0;
+      return s;
+    });
+    const pc = o.vend ? partes[0] / o.vend : 0;
+    return { etq:k, partes:partes, pc:pc,
+      txt: "<b>" + rsPct(pc) + "</b> en cero · " + rsN(o.vend) + " vend.",
+      tip: k + " · " + rsN(o.vend) + " vendedor(es), " + rsN(o.tot) + " " + nomMin + "\n" +
+        cortes.map(function(c, i){ return c[2] + ": " + rsN(partes[i]) + " (" + rsPct(o.vend ? partes[i] / o.vend : 0) + ")"; }).join("\n") };
+  });
+  if (modoGrupo !== "ranking") filas.sort(function(p, q){ return p.pc - q.pc || p.etq.localeCompare(q.etq, "es"); });
+  const rank = rsBloque("Actividad por " + rotulo.toLowerCase(), nomMin + " por vendedor · cada barra es el 100% de su gente", rsSelMetrica(),
+    (filas.length ? rsSegmentos(filas, colores) : '<p class="rs-nota">Sin datos.</p>') +
+    rsLeyenda(cortes.map(function(c, i){ return [c[2] === "0" ? "en cero" : c[2], colores[i]]; })));
+
+  return rsPanel(etqPeriodo + " · " + rsN(gente.length) + " personas en plantilla",
+    '<div class="rs-tiles">' + tiles + cumple + "</div>" + rank);
+}
+
+/* --- globo de ayuda y botones del panel --- */
+let RS_TIP = null;
+function rsTipMostrar(elm){
+  const txt = elm.getAttribute("data-tip");
+  if (!txt){ rsTipOcultar(); return; }
+  if (!RS_TIP){ RS_TIP = document.createElement("div"); RS_TIP.className = "rs-tip"; document.body.appendChild(RS_TIP); }
+  RS_TIP.textContent = txt;
+  RS_TIP.style.display = "block";
+  const r = elm.getBoundingClientRect(), t = RS_TIP.getBoundingClientRect();
+  const x = Math.max(8, Math.min(window.innerWidth - t.width - 8, r.left + r.width / 2 - t.width / 2));
+  let y = r.top - t.height - 8;
+  if (y < 8) y = r.bottom + 8;
+  RS_TIP.style.left = x + "px";
+  RS_TIP.style.top = y + "px";
+}
+function rsTipOcultar(){ if (RS_TIP) RS_TIP.style.display = "none"; }
+function rsTipDe(e){ return e.target && e.target.closest ? e.target.closest(".resumen [data-tip]") : null; }
+document.addEventListener("mouseover", function(e){ const t = rsTipDe(e); if (t) rsTipMostrar(t); else rsTipOcultar(); });
+document.addEventListener("click", function(e){ const t = rsTipDe(e); if (t) rsTipMostrar(t); });   // en el celular, al tocar
+window.addEventListener("scroll", rsTipOcultar, { passive:true });
+
+function rsActivar(){
+  rsTipOcultar();
+  const sec = el("resumenEj");
+  if (!sec) return;
+  const bp = sec.querySelector("[data-rs-plegar]");
+  bp.addEventListener("click", function(){
+    RS_PLEGADO = !sec.classList.contains("plegado");
+    sec.classList.toggle("plegado", RS_PLEGADO);
+    bp.textContent = RS_PLEGADO ? "Mostrar gráficas" : "Ocultar";
+    try { localStorage.setItem("tp_resumen_plegado", RS_PLEGADO ? "1" : "0"); } catch(e){}
+  });
+  sec.querySelector("[data-rs-imprimir]").addEventListener("click", function(){
+    const p = sec.querySelector(".rs-impreso");
+    if (p) p.textContent = el("rango").textContent;
+    document.body.classList.add("imprime-resumen");
+    const quitar = function(){ document.body.classList.remove("imprime-resumen"); window.removeEventListener("afterprint", quitar); };
+    window.addEventListener("afterprint", quitar);
+    window.print();
+  });
+  Array.prototype.forEach.call(sec.querySelectorAll("[data-rs-met]"), function(b){
+    b.addEventListener("click", function(){ RS.met = b.getAttribute("data-rs-met"); pintar(); });
+  });
+}
+
 function pintar(){
+  ajustaFuenteFilas();
   if (!FILAS.length){ el("salida").innerHTML = ""; return; }
   DET_RECH = {};
   DET_RECH_N = 0;
@@ -9779,7 +10524,7 @@ function pintar(){
     pintarDescargaTec();
     html = esCobranza() ? "" : sabanaNotaHtml();
   } else if (VISTA === "mes"){
-    html = mensualHtml();
+    html = resumenMensualHtml() + mensualHtml();
     const meses = mesesElegidos();
     if (meses.length){
       const mp = meses[meses.length - 1];
@@ -9791,6 +10536,7 @@ function pintar(){
       html += matrizHtml(mp, claveMes, etq(mp));
     }
   } else {
+    html = resumenSemanalHtml();
     BLOQUES.forEach(function(b){
       html += bloqueHtml(b, grupos, act, ant, sem, semAnt, enCurso, diasCorridos);
       if (b.tipo === "op") html += detalleRechazadasHtml("semanal");
@@ -9801,6 +10547,11 @@ function pintar(){
     const cl = semanasCerradas();
     html += planesPeriodoHtml(cl, cl.map(function(k){ return "S" + Number(k.split("-")[1]); }), isoSemana, "por semana");
     html += matrizHtml(sem);
+  }
+
+  // líder en Semanal / Mensual / Vend X Eventos mientras llega la base de todos los líderes
+  if (veTodosLosLideres() && FUENTE_FILAS !== "todos"){
+    html = '<section class="panel"><div class="aviso">Leyendo los resultados de todos los líderes… mientras tanto se muestra solo tu equipo.</div></section>' + html;
   }
 
   const items = [];
@@ -9814,6 +10565,7 @@ function pintar(){
   });
 
   el("salida").innerHTML = html;
+  rsActivar();
   if (VISTA === "reporte") activarReporte();
   scrollPegadoPorTitulo("Cuentas duplicadas");
   scrollPegadoPorTitulo("Validaciones pendientes por instalar");
@@ -9903,7 +10655,8 @@ function pintar(){
     ? "Vista mensual · " + (mesesElegidos().length || 0) + " mes(es) seleccionados"
     : "Semana " + etiquetaSemana(sem) + ": " + fCorta(lunes) + " al " + fCorta(domingo) +
       (enCurso ? " · semana abierta, " + diasCorridos + " día(s) con datos" : " · semana cerrada");
-  el("rango").textContent = cab + (filtros && VISTA !== "buscador" ? " · " + filtros : "");
+  el("rango").textContent = cab + (FUENTE_FILAS === "todos" && veTodosLosLideres() ? " · todos los líderes" : "") +
+    (filtros && VISTA !== "buscador" ? " · " + filtros : "");
 }
 
 function claseSemaforo(v, valores){
@@ -10584,6 +11337,7 @@ function alcanceDe(puesto){
 function enAlcance(f){
   if (!PERFIL || PERFIL.alcance === "todo") return true;
   if (PERFIL.alcance === "tecnico") return normaliza(f.subcanal).indexOf("VENTA TECNICO") >= 0;
+  if (veTodosLosLideres()) return true;   // Semanal, Mensual y Vend X Eventos: todos los líderes
   const n = normaliza(PERFIL.nombre);
   return normaliza(f.lider) === n || normaliza(f.director) === n || normaliza(f.coach) === n;
 }
@@ -10600,6 +11354,7 @@ function personaEnAlcance(p){
     return false;
   }
 
+  if (veTodosLosLideres()) return true;   // Semanal, Mensual y Vend X Eventos: todos los líderes
   const n = normaliza(PERFIL.nombre);
   return normaliza(p.lider) === n || normaliza(p.coach) === n || normaliza(p.nombre) === n;
 }
