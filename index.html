@@ -3079,7 +3079,7 @@ function detalleMatrizHtml(){
   const nombre = el("matrizMetrica").options[el("matrizMetrica").selectedIndex].text;
   const lista = fichasPorVendedor(DET_MTZ[DET_SEL]);
   return '<section class="panel detalle"><h2>Detalle \u00b7 ' + nombre + ' <span class="sub">' + lista.length +
-    " vendedor(es) \u00b7 toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    " vendedor(es)" + notaMiEquipo() + " \u00b7 toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Vendedor</th><th>Coach</th><th>L\u00edder</th><th>Canal</th><th>Oportunidad</th><th>Planes</th>" +
     '<th class="tot">Operaciones</th></tr></thead><tbody>' +
@@ -3101,6 +3101,7 @@ function matrizHtml(sem, fn, etqPeriodo){
   DET_MTZ = {};
   let detN = 0;
   function regDet(lista){
+    lista = soloMiEquipo(lista);
     if (!lista || !lista.length) return "";
     const id = "mtz" + (detN++);
     DET_MTZ[id] = lista;
@@ -3923,6 +3924,21 @@ const VISTAS_TODOS_LIDERES = ["semana", "mes", "vend0"];
 function veTodosLosLideres(){
   return !!(PERFIL && PERFIL.alcance === "lider" && VISTAS_TODOS_LIDERES.indexOf(VISTA) >= 0);
 }
+
+// En esas vistas el líder ve los NÚMEROS de todos, pero el detalle que se abre al tocar
+// una celda (personas, oportunidades, planes) solo trae a su propio equipo. Sirve para
+// renglones de la base (lider/coach/director) y para fichas de persona (lider/coach/nombre).
+function esDeMiEquipo(x){
+  if (!veTodosLosLideres()) return true;
+  const n = normaliza(PERFIL.nombre);
+  const campos = [x.lider, x.coach, x.director, x.nombre];
+  if (x.fOp !== undefined) campos.push(liderDeFila(x), coachDeFila(x));   // renglón de la base
+  return campos.some(function(v){ return v && normaliza(v) === n; });
+}
+function soloMiEquipo(lista){
+  return (lista && veTodosLosLideres()) ? lista.filter(esDeMiEquipo) : lista;
+}
+function notaMiEquipo(){ return veTodosLosLideres() ? " · el detalle muestra solo a tu equipo" : ""; }
 
 // se llama al inicio de pintar(): si la vista pide otra base, cambia FILAS y rehace lo
 // que se arma a partir de ella (filtros, instalaciones por persona, canal por persona)
@@ -5596,6 +5612,8 @@ function vendedores0Html(){
     const todasFichas = [];        // para el Total general (renglón Total, columna TOT)
     const porBucketGeneral = {};   // i (0..tope) -> fichas, para el renglón Total por cantidad
     function guardar(k, i, dato){
+      // líder viendo a todos los líderes: el conteo es general, el detalle solo su equipo
+      if (!esDeMiEquipo(dato)) return;
       const id = tipo + "|" + k + "|" + i;
       if (!DET_V0[id]) DET_V0[id] = [];
       DET_V0[id].push(dato);
@@ -5708,13 +5726,15 @@ function vendedores0Html(){
 
     function renglon(etq, o, clase, k, idTotal){
       const idT = idTotal || (k === undefined ? "" : tipo + "|" + k + "|TOT");
-      const celdaTot = idT && DET_V0[idT]
+      const celdaTot = idT && DET_V0[idT] && DET_V0[idT].length
         ? '<td class="tot clicable" data-det="' + idT + '">' + num(o.tot) + "</td>"
         : celdaNum(o.tot, "tot");
       return "<tr" + (clase ? ' class="' + clase + '"' : "") + "><td>" + etq + "</td>" +
         celdaNum(o.vend, "sem") + celdaTot +
         o.cub.map(function(n, i){
-          const id = k === undefined ? "" : tipo + "|" + k + "|" + i;
+          // sin nadie del equipo en esa celda (líder viendo a todos) no se abre detalle
+          const id0 = k === undefined ? "" : tipo + "|" + k + "|" + i;
+          const id = id0 && DET_V0[id0] && DET_V0[id0].length ? id0 : "";
           const cl = (i === 0 && n ? "dif r" : "") + (n && id ? " clicable" : "");
           return "<td" + (cl ? ' class="' + cl.trim() + '"' : "") +
                  (n && id ? ' data-det="' + id + '"' : "") + ">" +
@@ -5797,7 +5817,7 @@ function vendedores0Html(){
   const tIns = tabla("ins", "INSTALACIONES", "por fecha de activación", "INS");
 
   let detalle = "";
-  if (DET_SEL && DET_V0[DET_SEL]){
+  if (DET_SEL && DET_V0[DET_SEL] && DET_V0[DET_SEL].length){
     const p2 = DET_SEL.split("|");
     const nomTipo = p2[0] === "op" ? "oportunidades" : (p2[0] === "val" ? "validadas" : "instalaciones");
     const esTotal = p2[2] === "TOT";
@@ -5811,7 +5831,7 @@ function vendedores0Html(){
     });
     detalle = '<section class="panel detalle"><h2>Detalle · ' + etiquetaGrupo + " · " +
       (esTotal ? "todas las " + nomTipo : p2[2] + (Number(p2[2]) >= tope ? " o más" : "") + " " + nomTipo) +
-      ' <span class="sub">' + lista.length + " persona(s) · toca otra celda para cambiar</span></h2>" +
+      ' <span class="sub">' + lista.length + " persona(s)" + notaMiEquipo() + " · toca otra celda para cambiar</span></h2>" +
       '<div class="scroll"><table class="compacta"><thead><tr>' +
       "<th>Vendedor</th><th>Ranking</th><th>Coach</th><th>Líder</th><th>Canal</th>" +
       '<th class="tot">' + nomTipo.toUpperCase() + "</th><th>Oportunidades</th><th>Planes</th></tr></thead><tbody>" +
@@ -8927,6 +8947,7 @@ const BLOQUES = [
 // el detalle de las oportunidades rechazadas que caen en ella; sin lista, es una celda
 // normal
 function celdaRech(n, lista, etiqueta, extra, titulo, contexto){
+  lista = soloMiEquipo(lista);
   if (!lista || !lista.length) return celdaNum(n, extra, titulo);
   const id = "rech" + (DET_RECH_N++);
   DET_RECH[id] = { lista: lista, n: n, etiqueta: etiqueta, contexto: contexto };
@@ -8950,7 +8971,7 @@ function detalleRechazadasHtml(contexto){
   });
   return '<section class="panel detalle"><h2>Oportunidades rechazadas <span class="sub">' +
     (info.etiqueta ? info.etiqueta + " · " : "") + lista.length + " de " + info.n +
-    " oportunidad(es) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    " oportunidad(es)" + notaMiEquipo() + " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Vendedor</th><th>Coach</th><th>Líder</th><th>Canal</th><th>N° oportunidad</th><th>Motivo del rechazo</th><th>Plan</th>" +
     "</tr></thead><tbody>" +
@@ -8966,6 +8987,7 @@ function detalleRechazadasHtml(contexto){
 // celda que abre/cierra el detalle de personas del panel "cumplieron su objetivo
 // individual" (misma cubeta DET_SEL); sin lista, es una celda normal
 function celdaCumpl(n, lista, extra){
+  lista = soloMiEquipo(lista);
   if (!lista || !lista.length) return celdaNum(n, extra);
   const id = "cump" + (DET_CUMPL_N++);
   DET_CUMPL[id] = lista;
@@ -8985,7 +9007,7 @@ function detalleCumplimientoHtml(){
            b.instalaciones - a.instalaciones || a.nombre.localeCompare(b.nombre, "es");
   });
   return '<section class="panel detalle"><h2>Detalle · cumplimiento individual <span class="sub">' + lista.length +
-    " persona(s) · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    " persona(s)" + notaMiEquipo() + " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
     '<div class="scroll"><table class="compacta"><thead><tr>' +
     "<th>Nombre</th><th>Canal</th><th>Coach</th><th>Líder</th><th>Ranking</th><th>Instalaciones</th><th>N° de oportunidad</th><th>Plan</th>" +
     "</tr></thead><tbody>" +
