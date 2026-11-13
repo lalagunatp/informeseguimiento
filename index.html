@@ -569,6 +569,12 @@
     body.imprime-resumen .rs-tile, body.imprime-resumen .rs-bloque{break-inside:avoid}
     body.imprime-resumen .rs-tip{display:none}
   }
+
+  /* firma del diseñador: pie de la app y de la pantalla de acceso */
+  .firma{margin:22px auto 0; padding:10px 4px 0; border-top:1px solid var(--line2); text-align:center; font-size:11px; color:var(--muted); letter-spacing:.2px}
+  .firma b{font-weight:600; color:var(--ink)}
+  .firma a{color:inherit; text-decoration:none; border-bottom:1px dotted var(--muted)}
+  .acceso-caja .firma{margin-top:18px}
 </style>
 </head>
 <body>
@@ -597,6 +603,7 @@
       <div id="pinAviso" class="acceso-aviso"></div>
       <ul class="reglas" id="pinReglas"></ul>
     </div>
+    <div class="firma">Designed by <b>Lone Wolf</b> · <a href="mailto:lone.wolf.verified@gmail.com">lone.wolf.verified@gmail.com</a></div>
   </div>
 </div>
 
@@ -1073,6 +1080,8 @@
   </section>
 
   <div id="salida"></div>
+
+  <footer class="firma">Designed by <b>Lone Wolf</b> · <a href="mailto:lone.wolf.verified@gmail.com">lone.wolf.verified@gmail.com</a></footer>
 
 </div>
 
