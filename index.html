@@ -781,10 +781,10 @@
           <input type="text" id="gidEntrena" value="1643927631">
         </label>
         <label class="campo">Puestos con acceso total (;)
-          <input type="text" id="puestosTotal" value="DIRECTOR DISTRITAL; COACH DE VENTAS TECNICO; LIDER VENTAS; LIDER DE VENTAS">
+          <input type="text" id="puestosTotal" value="DIRECTOR DISTRITAL; COACH DE VENTAS TECNICO; COACH DE CANALES ALTERNOS; LIDER VENTAS; LIDER DE VENTAS">
         </label>
         <label class="campo">Puestos que solo ven Seguimiento OS (;)
-          <input type="text" id="puestosOS" value="ANALISTA DE ATENCION A CLIENTES; GERENTE DE OPERACIONES; SUPERVISOR DE PLANTA INTERNA; COORDINADOR PE">
+          <input type="text" id="puestosOS" value="ANALISTA DE ATENCION A CLIENTES; GERENTE DE OPERACIONES; GERENTE DE SERVICIO A DOMICILIO; SUPERVISOR DE PLANTA INTERNA; COORDINADOR PE">
         </label>
         <label class="campo">gid de SEGUIMIENTO VENTAS
           <input type="text" id="gidSeguimiento" value="780022190" placeholder="pega el gid de esa pestaña">
@@ -3523,10 +3523,10 @@ async function cargarEquipos(){
     });
     COACHES_TEC = new Set();
     PLANTILLA.forEach(function(p){
-      if (normaliza(p.puesto).indexOf("TECNICO") >= 0) COACHES_TEC.add(normaliza(p.nombre));
+      if (esCoachTecnico(p.puesto)) COACHES_TEC.add(normaliza(p.nombre));
     });
     crudos.forEach(function(p){
-      if (normaliza(p.puesto).indexOf("TECNICO") >= 0) COACHES_TEC.add(normaliza(p.nombre));
+      if (esCoachTecnico(p.puesto)) COACHES_TEC.add(normaliza(p.nombre));
     });
     INFO_EQ.plantilla = PLANTILLA.length;
     INFO_EQ.estado = PLANTILLA.length ? "ok" : "plantilla vacía";
@@ -6535,7 +6535,7 @@ function areaDePuesto(puesto){
   if (!p) return "";
   if (p.indexOf("DIRECTOR DISTRITAL") >= 0) return "Dirección";
   if (p.indexOf("LIDER VENTAS") >= 0 || p.indexOf("LIDER DE VENTAS") >= 0) return "Comercial";
-  const ops = ["GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA", "COORDINADOR PE", "ANALISTA DE ATENCION A CLIENTES"];
+  const ops = ["GERENTE DE OPERACIONES", "GERENTE DE SERVICIO A DOMICILIO", "SUPERVISOR DE PLANTA INTERNA", "COORDINADOR PE", "ANALISTA DE ATENCION A CLIENTES"];
   if (ops.some(function(o){ return p.indexOf(o) >= 0; })) return "Operaciones";
   return "";
 }
@@ -10908,7 +10908,7 @@ function descargarCsv(){
 
 /* ---------- Ajustes · descargar instalaciones de venta técnico ---------- */
 
-// Gerente de Servicio, Especialista de Cobranza y el número 65068028. Las instalaciones
+// Gerente de Satisfacción y Cuidado del Cliente, Especialista de Cobranza y el número 65068028. Las instalaciones
 // son las mismas que cuenta el reporte (esInstalada), del subcanal VENTA TECNICO.
 let DT_CANAL = "TODAS";
 
@@ -11135,7 +11135,7 @@ function ajustaCajasDia(){
   if (acc) acc.style.display = "";
   const soloOS0 = soloVistasOs();
   const esAnalistaAC = puestoEs("ANALISTA DE ATENCION A CLIENTES");
-  const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "SUPERVISOR DE PLANTA INTERNA");
+  const puedeCsvDupli = puestoEs("GERENTE DE OPERACIONES", "GERENTE DE SERVICIO A DOMICILIO", "SUPERVISOR DE PLANTA INTERNA");
   el("btnCsv").style.display = (esOS || esAjustes || esBuscador || (soloOS0 && !(esDupli && puedeCsvDupli))) ? "none" : "";
   // Ajustes de la fuente: pestaña aparte, como Semanal/Mensual/etc. El botón de
   // navegación aparece para Director/65068028 y también para los puestos "os" (ellos
@@ -11356,10 +11356,16 @@ function listaPuestos(id){
   return el(id).value.split(";").map(function(x){ return normaliza(x); }).filter(Boolean);
 }
 
+// coach de venta técnico o de canales alternos: ve todo el canal, no solo a su gente
+function esCoachTecnico(puesto){
+  const p = normaliza(puesto);
+  return p.indexOf("TECNICO") >= 0 || p.indexOf("CANALES ALTERNOS") >= 0;
+}
+
 function alcanceDe(puesto){
   const p = normaliza(puesto);
   if (p.indexOf("DIRECTOR") >= 0) return "todo";
-  if (p.indexOf("COACH") >= 0 && p.indexOf("TECNICO") >= 0) return "tecnico";
+  if (p.indexOf("COACH") >= 0 && (p.indexOf("TECNICO") >= 0 || p.indexOf("CANALES ALTERNOS") >= 0)) return "tecnico";
   if (p.indexOf("LIDER") >= 0) return "lider";
   return "todo";
 }
@@ -11379,7 +11385,7 @@ function personaEnAlcance(p){
 
   // coach de venta técnico: ve todo el canal, no solo a su gente
   if (PERFIL.alcance === "tecnico"){
-    if (normaliza(p.puesto).indexOf("TECNICO") >= 0) return true;
+    if (normaliza(p.puesto).indexOf("TECNICO") >= 0 || normaliza(p.puesto).indexOf("CANALES ALTERNOS") >= 0) return true;
     if (COACHES_TEC.has(normaliza(p.coach))) return true;
     if (p.numero && MAPA_TEC_PERSONA.has(normaliza(p.numero))) return true;
     return false;
@@ -11418,7 +11424,7 @@ function puedeEntrarAjustes(){
   return !!PERFIL && PERFIL.acceso === "os";
 }
 
-// Gerente de Servicio y Especialista de Cobranza ("acceso: cobranza", lo calcula el Apps
+// Gerente de Satisfacción y Cuidado del Cliente y Especialista de Cobranza ("acceso: cobranza", lo calcula el Apps
 // Script al entrar): Cuentas duplicadas y Op Rechazadas (con el mismo detalle de
 // domicilio que el Director Distrital), Seguimiento OS y, en Ajustes, solo la descarga
 // de instalaciones de venta técnico
@@ -11441,16 +11447,16 @@ function puedeCargarDatos(){
   return !!PERFIL && String(PERFIL.numero || "").trim() === "65068028";
 }
 
-// El Gerente de Operaciones entra por la lista de puestos "os" (por eso puede subir
+// El Gerente de Operaciones (y el Gerente de Servicio a Domicilio) entra por la lista de puestos "os" (por eso puede subir
 // OS por instalar y Atención de órdenes), pero además ve el reporte de ventas completo:
 // todas las vistas menos Vend X Eventos, y en "Qué quieres ver" los mismos filtros que
 // un Director. Los demás puestos "os" siguen igual que antes.
 function esGerenteOperaciones(){
-  return !!PERFIL && PERFIL.acceso === "os" && puestoEs("GERENTE DE OPERACIONES");
+  return !!PERFIL && PERFIL.acceso === "os" && puestoEs("GERENTE DE OPERACIONES", "GERENTE DE SERVICIO A DOMICILIO");
 }
 
 // ¿este perfil queda restringido a las vistas de operación (solo pendientes, sin los
-// filtros de venta)? Es "acceso os" salvo el Gerente de Operaciones.
+// filtros de venta)? Es "acceso os" salvo el Gerente de Operaciones y el Gerente de Servicio a Domicilio.
 function soloVistasOs(){
   return !!PERFIL && PERFIL.acceso === "os" && !esGerenteOperaciones();
 }
