@@ -395,7 +395,9 @@
   @media print{
     body.vista-reporte{background:#fff; font-size:10px}
     body.vista-reporte > *:not(#app){display:none !important}
-    body.vista-reporte #app > *:not(#salida){display:none !important}
+    body.vista-reporte #app > *:not(#layout), body.vista-reporte .lateral,
+    body.vista-reporte .principal > *:not(#salida){display:none !important}
+    body.vista-reporte .layout{display:block}
     body.vista-reporte .wrap{max-width:none; padding:0}
     body.vista-reporte *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
     body.vista-reporte .rep-controles, body.vista-reporte .rep-wa{display:none !important}
@@ -555,7 +557,9 @@
   @media print{
     body.imprime-resumen{background:#fff}
     body.imprime-resumen > *:not(#app){display:none !important}
-    body.imprime-resumen #app > *:not(#salida){display:none !important}
+    body.imprime-resumen #app > *:not(#layout), body.imprime-resumen .lateral,
+    body.imprime-resumen .principal > *:not(#salida){display:none !important}
+    body.imprime-resumen .layout{display:block}
     body.imprime-resumen #salida > *:not(.resumen){display:none !important}
     body.imprime-resumen .wrap{max-width:none; padding:0}
     body.imprime-resumen *{-webkit-print-color-adjust:exact; print-color-adjust:exact}
@@ -575,6 +579,47 @@
   .firma b{font-weight:600; color:var(--ink)}
   .firma a{color:inherit; text-decoration:none; border-bottom:1px dotted var(--muted)}
   .acceso-caja .firma{margin-top:18px}
+
+  /* ---------- PC / laptop: filtros en columna lateral a la izquierda ----------
+     En celular y tablet todo sigue apilado (filtros arriba, resultados abajo). */
+  .lateral-btn{display:none}
+  @media (min-width:1100px){
+    .wrap{max-width:1720px}
+    .layout{display:grid; grid-template-columns:288px minmax(0,1fr); gap:14px; align-items:start}
+    .layout.sin-lateral{grid-template-columns:minmax(0,1fr)}
+    .layout.sin-lateral > .lateral{display:none}
+    .principal{min-width:0}
+    /* la columna se queda fija al bajar; si los filtros no caben, tiene su propio scroll */
+    .lateral{
+      position:sticky; top:calc(var(--barra-alto, 50px) + 10px);
+      max-height:calc(100vh - var(--barra-alto, 50px) - 20px);
+      overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain;
+      scrollbar-width:thin; padding-bottom:2px;
+    }
+    .lateral > .panel:last-of-type{margin-bottom:0}
+    .lateral .panel > h2 .sub{display:block; width:100%; line-height:1.35}
+    .lateral .controles{grid-template-columns:minmax(0,1fr); gap:9px}
+    .lateral .acciones{flex-direction:column}
+    .lateral .acciones button{width:100%}
+    /* los filtros múltiples se abren dentro de la columna, a todo su ancho */
+    .lateral .multi-panel{min-width:0; width:100%; max-width:none}
+    .lateral #panelConsulta .plegar{display:none}
+
+    .lateral-btn{
+      display:flex; align-items:center; gap:8px; width:100%; margin-bottom:10px;
+      padding:7px 12px; font-size:12px; justify-content:flex-start;
+    }
+    .lateral-btn .lb-ico{font-size:10px}
+    /* plegada: queda una tira delgada con el botón para volver a abrirla */
+    .layout.plegado{grid-template-columns:38px minmax(0,1fr)}
+    .layout.plegado > .lateral{overflow:visible}
+    .layout.plegado > .lateral > .panel{display:none}
+    .layout.plegado .lateral-btn{
+      flex-direction:column; justify-content:flex-start; gap:10px;
+      width:38px; padding:12px 0; margin:0;
+    }
+    .layout.plegado .lateral-btn .lb-txt{writing-mode:vertical-rl; transform:rotate(180deg); white-space:nowrap}
+  }
 </style>
 </head>
 <body>
@@ -638,6 +683,10 @@
 <div class="wrap oculto" id="app">
 
   <div class="aviso" id="estado">Cargando la base…</div>
+
+  <div class="layout" id="layout">
+  <aside class="lateral" id="lateral">
+    <button type="button" id="btnLateral" class="lateral-btn sec" aria-expanded="true" title="Ocultar filtros"><span class="lb-ico">&#9664;</span><span class="lb-txt">Ocultar filtros</span></button>
 
   <section class="panel" id="panelConsulta">
     <h2>Qué quieres ver <span class="sub" id="rango"></span><button type="button" id="btnPlegarFiltros" class="plegar sec" aria-expanded="true">Ocultar filtros</button></h2>
@@ -741,6 +790,101 @@
       <button id="btnCsv" class="sec">Descargar CSV</button>
     </div>
   </section>
+
+  <section class="panel oculto" id="cajaDupliFiltros">
+    <h2>Periodo de venta o validación <span class="sub">elige Vendido o Validado para poder acotar por semana o mes</span></h2>
+    <div class="controles">
+      <label class="campo">Filtrar por
+        <select id="dupliTipo">
+          <option value="">Todo el histórico</option>
+          <option value="vendido" selected>Vendido (fecha de oportunidad)</option>
+          <option value="validado">Validado (fecha de validación)</option>
+        </select>
+      </label>
+      <label class="campo" id="cajaDupliPeriodo">Periodo
+        <select id="dupliPeriodo">
+          <option value="semana" selected>Semana</option>
+          <option value="mes">Mes</option>
+        </select>
+      </label>
+      <label class="campo" id="cajaDupliSemana">Semana
+        <select id="dupliSemana"></select>
+      </label>
+      <label class="campo oculto" id="cajaDupliMes">Mes
+        <select id="dupliMes"></select>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel oculto" id="cajaOpRechFiltros">
+    <h2>Periodo de oportunidad</h2>
+    <div class="controles">
+      <label class="campo">Periodo
+        <select id="opRechPeriodo">
+          <option value="" selected>Todo el histórico</option>
+          <option value="semana">Semana</option>
+          <option value="mes">Mes</option>
+        </select>
+      </label>
+      <label class="campo oculto" id="cajaOpRechSemana">Semana
+        <select id="opRechSemana"></select>
+      </label>
+      <label class="campo oculto" id="cajaOpRechMes">Mes
+        <select id="opRechMes"></select>
+      </label>
+      <label class="campo">Motivo de rechazo
+        <div id="fMotivoRechazoOp"></div>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel oculto" id="cajaOrdenesFiltros">
+    <h2>Atención de órdenes <span class="sub">un evento cuenta en el día en que se cerró (fecha de término) · la cuadrilla es cada usuario instalador distinto con eventos ese día · los días que elijas se usan igual en la semana en curso y en el acumulado de la anterior, para que la comparación sea pareja</span></h2>
+    <div class="controles">
+      <label class="campo">Semana
+        <select id="ordSemana"></select>
+      </label>
+      <label class="campo">Día de la semana
+        <div id="fOrdDiaSem"></div>
+      </label>
+      <label class="campo" id="cajaOrdHora">Hora de corte
+        <select id="ordHora"><option value="">Todo el día</option></select>
+      </label>
+      <label class="campo">Geocerca
+        <select id="ordGeocerca"><option value="">Todas</option></select>
+      </label>
+      <label class="campo" id="cajaOrdUniverso">Universo de eventos
+        <select id="ordUniverso">
+          <option value="cliente" selected>Eventos de cliente</option>
+          <option value="otros">Planta externa y mantenimiento</option>
+          <option value="todos">Todos los tipos</option>
+        </select>
+      </label>
+      <label class="campo">Proveedor
+        <select id="ordProveedor"><option value="">Todos</option></select>
+      </label>
+      <label class="campo">Tipo de cuadrilla
+        <select id="ordCuadrilla"><option value="">Todas</option></select>
+      </label>
+      <label class="campo" id="cajaOrdCanal">Canal de venta
+        <select id="ordCanal"><option value="">Todos</option></select>
+      </label>
+      <label class="campo" id="cajaOrdMunicipio" style="display:none">Municipio
+        <select id="ordMunicipio"><option value="">Todos</option></select>
+      </label>
+      <label class="campo">Cluster
+        <select id="ordCluster"><option value="">Todos</option></select>
+      </label>
+    </div>
+    <div class="acciones">
+      <button id="btnRecargarOrdenes" class="sec">Releer ATENCION ORDENES</button>
+      <button id="btnCsvOrdenes" class="sec">Descargar CSV del reporte</button>
+    </div>
+  </section>
+
+  </aside>
+
+  <main class="principal" id="principal">
 
   <section class="panel oculto" id="panelAjustes">
     <h2>Ajustes de la fuente</h2>
@@ -988,98 +1132,10 @@
     <div id="avisoCargaOrdenes" class="aviso oculto"></div>
   </section>
 
-  <section class="panel oculto" id="cajaDupliFiltros">
-    <h2>Periodo de venta o validación <span class="sub">elige Vendido o Validado para poder acotar por semana o mes</span></h2>
-    <div class="controles">
-      <label class="campo">Filtrar por
-        <select id="dupliTipo">
-          <option value="">Todo el histórico</option>
-          <option value="vendido" selected>Vendido (fecha de oportunidad)</option>
-          <option value="validado">Validado (fecha de validación)</option>
-        </select>
-      </label>
-      <label class="campo" id="cajaDupliPeriodo">Periodo
-        <select id="dupliPeriodo">
-          <option value="semana" selected>Semana</option>
-          <option value="mes">Mes</option>
-        </select>
-      </label>
-      <label class="campo" id="cajaDupliSemana">Semana
-        <select id="dupliSemana"></select>
-      </label>
-      <label class="campo oculto" id="cajaDupliMes">Mes
-        <select id="dupliMes"></select>
-      </label>
-    </div>
-  </section>
-
-  <section class="panel oculto" id="cajaOpRechFiltros">
-    <h2>Periodo de oportunidad</h2>
-    <div class="controles">
-      <label class="campo">Periodo
-        <select id="opRechPeriodo">
-          <option value="" selected>Todo el histórico</option>
-          <option value="semana">Semana</option>
-          <option value="mes">Mes</option>
-        </select>
-      </label>
-      <label class="campo oculto" id="cajaOpRechSemana">Semana
-        <select id="opRechSemana"></select>
-      </label>
-      <label class="campo oculto" id="cajaOpRechMes">Mes
-        <select id="opRechMes"></select>
-      </label>
-      <label class="campo">Motivo de rechazo
-        <div id="fMotivoRechazoOp"></div>
-      </label>
-    </div>
-  </section>
-
-  <section class="panel oculto" id="cajaOrdenesFiltros">
-    <h2>Atención de órdenes <span class="sub">un evento cuenta en el día en que se cerró (fecha de término) · la cuadrilla es cada usuario instalador distinto con eventos ese día · los días que elijas se usan igual en la semana en curso y en el acumulado de la anterior, para que la comparación sea pareja</span></h2>
-    <div class="controles">
-      <label class="campo">Semana
-        <select id="ordSemana"></select>
-      </label>
-      <label class="campo">Día de la semana
-        <div id="fOrdDiaSem"></div>
-      </label>
-      <label class="campo" id="cajaOrdHora">Hora de corte
-        <select id="ordHora"><option value="">Todo el día</option></select>
-      </label>
-      <label class="campo">Geocerca
-        <select id="ordGeocerca"><option value="">Todas</option></select>
-      </label>
-      <label class="campo" id="cajaOrdUniverso">Universo de eventos
-        <select id="ordUniverso">
-          <option value="cliente" selected>Eventos de cliente</option>
-          <option value="otros">Planta externa y mantenimiento</option>
-          <option value="todos">Todos los tipos</option>
-        </select>
-      </label>
-      <label class="campo">Proveedor
-        <select id="ordProveedor"><option value="">Todos</option></select>
-      </label>
-      <label class="campo">Tipo de cuadrilla
-        <select id="ordCuadrilla"><option value="">Todas</option></select>
-      </label>
-      <label class="campo" id="cajaOrdCanal">Canal de venta
-        <select id="ordCanal"><option value="">Todos</option></select>
-      </label>
-      <label class="campo" id="cajaOrdMunicipio" style="display:none">Municipio
-        <select id="ordMunicipio"><option value="">Todos</option></select>
-      </label>
-      <label class="campo">Cluster
-        <select id="ordCluster"><option value="">Todos</option></select>
-      </label>
-    </div>
-    <div class="acciones">
-      <button id="btnRecargarOrdenes" class="sec">Releer ATENCION ORDENES</button>
-      <button id="btnCsvOrdenes" class="sec">Descargar CSV del reporte</button>
-    </div>
-  </section>
-
   <div id="salida"></div>
+
+  </main>
+  </div>
 
   <footer class="firma">Designed by <b>Lone Wolf</b> · <a href="mailto:lone.wolf.verified@gmail.com">lone.wolf.verified@gmail.com</a></footer>
 
@@ -11195,6 +11251,13 @@ function ajustaCajasDia(){
       if (e2) e2.style.display = "none";
     });
   }
+
+  // PC/laptop: si la vista no trae ningún panel de filtros (Reporte comercial), la
+  // columna lateral desaparece y los resultados usan todo el ancho
+  const hayFiltros = ["panelConsulta", "cajaDupliFiltros", "cajaOpRechFiltros", "cajaOrdenesFiltros"].some(function(id){
+    return !el(id).classList.contains("oculto");
+  });
+  el("layout").classList.toggle("sin-lateral", !hayFiltros);
 }
 
 function ajustaAgrupar(){
@@ -11247,17 +11310,40 @@ function centrarVista(suave){
   catch(e){ tira.scrollLeft = Math.max(0, x); }
 }
 
-// "Qué quieres ver" plegable en celular; se recuerda cómo lo dejó cada quien
+// "Qué quieres ver" plegable: en celular se encoge el panel; en PC/laptop la columna
+// lateral queda como una tira delgada. Se recuerda cómo lo dejó cada quien.
 function plegarFiltros(plegado){
   el("panelConsulta").classList.toggle("plegado", plegado);
-  el("btnPlegarFiltros").textContent = plegado ? "Mostrar filtros" : "Ocultar filtros";
+  el("layout").classList.toggle("plegado", plegado);
+  const txt = plegado ? "Mostrar filtros" : "Ocultar filtros";
+  el("btnPlegarFiltros").textContent = txt;
   el("btnPlegarFiltros").setAttribute("aria-expanded", plegado ? "false" : "true");
+  const bl = el("btnLateral");
+  bl.querySelector(".lb-txt").textContent = txt;
+  bl.querySelector(".lb-ico").innerHTML = plegado ? "&#9654;" : "&#9664;";
+  bl.title = txt;
+  bl.setAttribute("aria-expanded", plegado ? "false" : "true");
   try { localStorage.setItem("tp_filtros_plegados", plegado ? "1" : "0"); } catch(e){}
 }
 el("btnPlegarFiltros").addEventListener("click", function(){
   plegarFiltros(!el("panelConsulta").classList.contains("plegado"));
 });
+el("btnLateral").addEventListener("click", function(ev){
+  ev.stopPropagation();
+  cerrarMultis();
+  plegarFiltros(!el("layout").classList.contains("plegado"));
+});
 try { if (localStorage.getItem("tp_filtros_plegados") === "1") plegarFiltros(true); } catch(e){}
+
+// la columna lateral se pega justo debajo de la barra de secciones, que en laptop
+// puede ocupar uno o dos renglones según el ancho
+function medirBarra(){
+  const b = el("barra");
+  if (b && b.offsetHeight) document.documentElement.style.setProperty("--barra-alto", b.offsetHeight + "px");
+}
+if (window.ResizeObserver) try { new ResizeObserver(medirBarra).observe(el("barra")); } catch(e){}
+window.addEventListener("resize", medirBarra);
+medirBarra();
 
 document.addEventListener("click", cerrarMultis);
 document.addEventListener("keydown", function(ev){ if (ev.key === "Escape"){ cerrarMultis(); cerrarCajon(); } });
