@@ -586,7 +586,7 @@
   @media (min-width:1100px){
     .wrap{max-width:1720px}
     .layout{display:grid; grid-template-columns:288px minmax(0,1fr); gap:14px; align-items:start}
-    .layout.sin-lateral{grid-template-columns:minmax(0,1fr)}
+    .layout.sin-lateral, .layout.sin-lateral.plegado{grid-template-columns:minmax(0,1fr)}
     .layout.sin-lateral > .lateral{display:none}
     .principal{min-width:0}
     /* la columna se queda fija al bajar; si los filtros no caben, tiene su propio scroll */
@@ -608,6 +608,8 @@
     .lateral-btn{
       display:flex; align-items:center; gap:8px; width:100%; margin-bottom:10px;
       padding:7px 12px; font-size:12px; justify-content:flex-start;
+      /* siempre a la vista: al bajar los filtros, el botón se queda arriba */
+      position:sticky; top:0; z-index:5; box-shadow:0 6px 6px -6px rgba(16,26,38,.25);
     }
     .lateral-btn .lb-ico{font-size:10px}
     /* plegada: queda una tira delgada con el botón para volver a abrirla */
@@ -625,7 +627,7 @@
 <body>
 <header>
   <h1>Reporte de seguimiento · La Laguna</h1>
-  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 100</span></p>
+  <p>Oportunidad · Venta validada · Instalaciones — semana en curso contra semana anterior <span class="ver">versión 101</span></p>
 </header>
 
 <div id="acceso" class="acceso">
@@ -2694,7 +2696,8 @@ function pasaDia(fecha){
   // ningún selector de día en pantalla: si se dejara caer al "else" de abajo, un filtro
   // de día de la semana elegido antes en Semanal se quedaría pegado en memoria (no se
   // resetea al cambiar de pestaña) y recortaría en silencio los datos de esas vistas
-  if (VISTA !== "semana" && VISTA !== "dias30" && VISTA !== "mes") return true;
+  // Últimos 30 días siempre usa todos los días: el filtro no aplica ahí
+  if (VISTA !== "semana" && VISTA !== "mes") return true;
   const m = VISTA === "mes" ? MULTI.diames : MULTI.diasem;
   if (!m || !m.sel.size) return true;
   if (m.sel.has("\u0000")) return false;
@@ -11214,7 +11217,7 @@ function ajustaCajasDia(){
   // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
   // Mensual y Últimos 30 días
   el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
-  el("cajaDiaSem").style.display = (VISTA === "semana" || VISTA === "dias30") ? "" : "none";
+  el("cajaDiaSem").style.display = VISTA === "semana" ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
   el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0") ? "" : "none";
   el("cajaMeses").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador) ? "none" : "";
