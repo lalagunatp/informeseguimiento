@@ -10258,15 +10258,25 @@ function nppfHtml(){
     return '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filas + "</tbody></table></div>";
   }
 
+  // en este panel los totales de trimestre llevan solo "1er trim", sin la palabra Total
+  const encPct = "<thead><tr><th>" + tituloGrupo() + "</th>" + cols.map(function(c){
+    return "<th" + (c.tipo === "trim" ? ' class="tot"' : "") + ">" + c.etq.replace(/^Total\s+/, "") + "</th>";
+  }).join("") + "</tr></thead>";
+  // semáforo (mismos colores que Últimos 30 días): verde hasta 3.5%, amarillo hasta 5%, rojo arriba de 5%
+  function celdaPct(np, ins, esTrim){
+    if (!ins) return '<td class="' + (esTrim ? "tot " : "") + 'cero">—</td>';
+    const p = Number((np / ins * 100).toFixed(1));
+    const cl = p <= 3.5 ? "v" : (p <= 5 ? "a" : "r");
+    return '<td class="dif ' + cl + '">' + p.toFixed(1) + "%</td>";
+  }
   let filasPct = "";
   grupos.forEach(function(g){
     filasPct += "<tr><td>" + g + "</td>" + cols.map(function(c){
-      const d = valor(g, "ins", c);
-      return '<td class="' + (c.tipo === "trim" ? "tot" : "") + (d ? "" : " cero") + '">' + pct1(valor(g, "np", c), d) + "</td>";
+      return celdaPct(valor(g, "np", c), valor(g, "ins", c), c.tipo === "trim");
     }).join("") + "</tr>";
   });
   filasPct += '<tr class="total"><td>Total</td>' + cols.map(function(c){
-    return '<td class="' + (c.tipo === "trim" ? "tot" : "") + '">' + pct1(valorTotal("np", c), valorTotal("ins", c)) + "</td>";
+    return celdaPct(valorTotal("np", c), valorTotal("ins", c), c.tipo === "trim");
   }).join("") + "</tr>";
 
   const totNp = cols.filter(function(c){ return c.tipo === "mes"; }).reduce(function(s, c){ return s + valorTotal("np", c); }, 0);
@@ -10284,8 +10294,8 @@ function nppfHtml(){
       tablaConteo("ins") + "</section>" +
     '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas que trae la pestaña NPPF (columna TIPO = NPPF)</span></h2>' +
       tablaConteo("np") + "</section>" +
-    '<section class="panel"><h2>NPPF · % NO PAGADO <span class="sub">no pagadas sobre lo instalado</span></h2>' +
-      '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filasPct + "</tbody></table></div>" + nota + "</section>";
+    '<section class="panel"><h2>NPPF · % NO PAGADO <span class="sub">no pagadas sobre lo instalado · verde hasta 3.5%, amarillo hasta 5%, rojo arriba de 5%</span></h2>' +
+      '<div class="scroll"><table class="compacta">' + encPct + "<tbody>" + filasPct + "</tbody></table></div>" + nota + "</section>";
 }
 
 /* ---------- Resumen ejecutivo: gráficas de Semanal, Mensual, Últimos 30 días y Vend X Eventos ----------
