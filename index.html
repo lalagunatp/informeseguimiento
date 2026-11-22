@@ -10149,6 +10149,8 @@ async function cargarNppf(){
       // la columna E ahora se llama TIPO y trae NPPF en cada cuenta que no pagó (antes se llamaba PAGO)
       let iPago = enc.findIndex(function(h){ return normaliza(h) === "TIPO" || normaliza(h) === "PAGO"; });
       if (iPago < 0) iPago = buscaCol(enc, ["PAGO"], ["FECHA"]);
+      let iMonto = buscaCol(enc, ["MONTO"]);
+      if (iMonto < 0) iMonto = 3;   // columna D (MONTO_FACTURA)
       if (iCta < 0) iCta = 0;     // columna A
       if (iPago < 0) iPago = 4;   // columna E
       const mapa = new Map();
@@ -10164,7 +10166,10 @@ async function cargarNppf(){
         // ignora (no borra la marca de una cuenta que ya salió NPPF en otro renglón)
         if (!noPaga) continue;
         filas++;
-        mapa.set(k, true);
+        if (mapa.has(k)) continue;   // si la cuenta sale en dos renglones NPPF, vale el primero (el de arriba)
+        const mv = c[iMonto] && c[iMonto].v != null ? c[iMonto].v : "";
+        const monto = typeof mv === "number" ? mv : parseFloat(String(mv).replace(/[^0-9.\-]/g, ""));
+        mapa.set(k, { monto: isFinite(monto) ? monto : null });
       }
       let noPagadas = 0;
       mapa.forEach(function(v){ if (v) noPagadas++; });
@@ -10177,7 +10182,10 @@ async function cargarNppf(){
   if (VISTA === "nppf") pintar();
 }
 
+let DET_NPPF = {};   // id de celda -> { lista, etiqueta }
+
 function nppfHtml(){
+  DET_NPPF = {};
   const titulo = "NPPF";
   if (NPPF.estado === "cargando" || CARGANDO_NPPF || NPPF.estado === "sin cargar"){
     return '<section class="panel"><h2>' + titulo + '</h2><div class="aviso">Leyendo la pestaña NPPF…</div></section>';
@@ -10223,7 +10231,13 @@ function nppfHtml(){
     const llave = llaveCuentaNppf(f.cuenta);
     const est = llave ? NPPF.mapa.get(llave) : undefined;
     if (est === undefined) sinCruce++;
-    else if (est === true) acc[g].np[k] = (acc[g].np[k] || 0) + 1;
+    else if (est){
+      acc[g].np[k] = (acc[g].np[k] || 0) + 1;
+      // para el detalle al tocar una celda: renglón de la base + monto de la factura (NPPF)
+      if (!acc[g].fl) acc[g].fl = {};
+      if (!acc[g].fl[k]) acc[g].fl[k] = [];
+      acc[g].fl[k].push({ f:f, monto:est.monto });
+    }
   }
   const grupos = ordenaGrupos(Object.keys(acc), function(g){
     return meses.reduce(function(s, k){ return s + (acc[g].ins[k] || 0); }, 0);
@@ -10245,15 +10259,34 @@ function nppfHtml(){
     return "<th" + (c.tipo === "trim" ? ' class="tot"' : "") + ">" + c.etq + "</th>";
   }).join("") + "</tr></thead>";
 
+  // renglones (con su monto) de un grupo y una columna; g === null es el total
+  function listaNp(g, c){
+    const ks = c.tipo === "mes" ? [c.k] : c.ks;
+    const gs = g === null ? grupos : [g];
+    let l = [];
+    gs.forEach(function(x){ ks.forEach(function(k){ l = l.concat((acc[x].fl && acc[x].fl[k]) || []); }); });
+    return l;
+  }
+  // celda del panel 2: al tocarla abre/cierra el detalle de esas cuentas (misma cubeta DET_SEL)
+  function celdaNp(g, c, ci){
+    const n = g === null ? valorTotal("np", c) : valor(g, "np", c);
+    const extra = c.tipo === "trim" ? "tot" : "";
+    const lista = soloMiEquipo(listaNp(g, c).map(function(x){ x.f.__monto = x.monto; return x.f; }));
+    if (!lista || !lista.length) return celdaNum(n, extra);
+    const id = "nppf|" + (g === null ? "__total__" : g) + "|" + ci;
+    DET_NPPF[id] = { lista:lista, n:n, etiqueta:(g === null ? "Total" : g) + " · " + c.etq };
+    return '<td class="' + (extra + " clicable").trim() + '" data-det="' + repEsc(id) + '">' + num(n) + "</td>";
+  }
+
   function tablaConteo(tipo){
     let filas = "";
     grupos.forEach(function(g){
-      filas += "<tr><td>" + g + "</td>" + cols.map(function(c){
-        return celdaNum(valor(g, tipo, c), c.tipo === "trim" ? "tot" : "");
+      filas += "<tr><td>" + g + "</td>" + cols.map(function(c, ci){
+        return tipo === "np" ? celdaNp(g, c, ci) : celdaNum(valor(g, tipo, c), c.tipo === "trim" ? "tot" : "");
       }).join("") + "</tr>";
     });
-    filas += '<tr class="total"><td>Total</td>' + cols.map(function(c){
-      return celdaNum(valorTotal(tipo, c), c.tipo === "trim" ? "tot" : "");
+    filas += '<tr class="total"><td>Total</td>' + cols.map(function(c, ci){
+      return tipo === "np" ? celdaNp(null, c, ci) : celdaNum(valorTotal(tipo, c), c.tipo === "trim" ? "tot" : "");
     }).join("") + "</tr>";
     return '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filas + "</tbody></table></div>";
   }
@@ -10293,9 +10326,35 @@ function nppfHtml(){
   return '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
       tablaConteo("ins") + "</section>" +
     '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas que trae la pestaña NPPF (columna TIPO = NPPF)</span></h2>' +
-      tablaConteo("np") + "</section>" +
+      tablaConteo("np") + "</section>" + detalleNppfHtml() +
     '<section class="panel"><h2>NPPF · % NO PAGADO <span class="sub">no pagadas sobre lo instalado · verde hasta 3.5%, amarillo hasta 5%, rojo arriba de 5%</span></h2>' +
       '<div class="scroll"><table class="compacta">' + encPct + "<tbody>" + filasPct + "</tbody></table></div>" + nota + "</section>";
+}
+
+// detalle de la celda tocada en "No pagó primer factura": cuenta, oportunidad, cliente, monto de la
+// factura (columna D de NPPF), canal, vendedor, coach y líder
+function detalleNppfHtml(){
+  if (!DET_SEL || !DET_NPPF[DET_SEL]) return "";
+  const info = DET_NPPF[DET_SEL];
+  const lista = info.lista.slice().sort(function(a, b){
+    return String(liderDeFila(a) || "").localeCompare(String(liderDeFila(b) || ""), "es") ||
+           String(coachDeFila(a) || "").localeCompare(String(coachDeFila(b) || ""), "es") ||
+           String(nombreVendedorDeFila(a) || "").localeCompare(String(nombreVendedorDeFila(b) || ""), "es");
+  });
+  const dinero = function(m){ return m == null ? "—" : "$" + m.toLocaleString("es-MX", { minimumFractionDigits:2, maximumFractionDigits:2 }); };
+  const suma = lista.reduce(function(t, f){ return t + (f.__monto || 0); }, 0);
+  return '<section class="panel detalle"><h2>Detalle · NPPF <span class="sub">' + repEsc(info.etiqueta) + " · " +
+    lista.length + " de " + info.n + " cuenta(s)" + notaMiEquipo() + " · monto de facturas " + dinero(suma) +
+    " · toca otra celda para cambiar, o la misma para cerrar</span></h2>" +
+    '<div class="scroll"><table class="compacta"><thead><tr>' +
+    "<th>Cuenta</th><th>Oportunidad</th><th>Cliente</th><th>Monto factura</th><th>Canal de venta</th><th>Vendedor</th><th>Coach</th><th>Líder</th>" +
+    "</tr></thead><tbody>" +
+    lista.map(function(f){
+      return "<tr><td>" + repEsc(clave(f.cuenta) || "—") + "</td><td>" + repEsc(clave(f.oportunidad) || "—") + "</td>" +
+        '<td class="envuelve">' + repEsc(f.cliente || "—") + "</td><td>" + dinero(f.__monto) + "</td>" +
+        "<td>" + repEsc(f.canal || "—") + "</td><td>" + repEsc(nombreVendedorDeFila(f) || "—") + "</td>" +
+        "<td>" + repEsc(coachDeFila(f) || "—") + "</td><td>" + repEsc(liderDeFila(f) || "—") + "</td></tr>";
+    }).join("") + "</tbody></table></div></section>";
 }
 
 /* ---------- Resumen ejecutivo: gráficas de Semanal, Mensual, Últimos 30 días y Vend X Eventos ----------
