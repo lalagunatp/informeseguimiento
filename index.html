@@ -492,6 +492,8 @@
   .rs-c .b.act{background:var(--rs-s1)}
   .rs-c .b.cero{background:var(--rs-cero)}
   .rs-c .b.gris{background:#dfe5ec}
+  .rs-c .b.v{background:var(--v-tx)} .rs-c .b.a{background:var(--rs-am)} .rs-c .b.r{background:var(--r-tx)}
+  .rs-c .b.nar{background:var(--rs-s2)}
   .rs-c .b.pr{background:repeating-linear-gradient(135deg, var(--rs-s1) 0 2px, transparent 2px 5px); opacity:.55; margin-bottom:2px}
   .rs-c .b.bajo{border-radius:0}
   .rs-c .et{font-size:10.5px; color:var(--ink); font-weight:650; margin-bottom:2px; white-space:nowrap; font-variant-numeric:tabular-nums}
@@ -10184,6 +10186,101 @@ async function cargarNppf(){
 
 let DET_NPPF = {};   // id de celda -> { lista, etiqueta }
 
+// semáforo del % no pagado (el mismo del panel de abajo): verde hasta 3.5%, amarillo hasta 5%, rojo arriba
+function nppfCls(p){ return p <= 3.5 ? "v" : (p <= 5 ? "a" : "r"); }
+
+// Resumen ejecutivo de NPPF (para presentar a dirección): cifras del periodo, % por mes y por
+// trimestre contra el 3.5% y ranking de grupos. Usa los mismos números que las tablas de abajo.
+function resumenNppfHtml(cols, meses, grupos, valor, valorTotal){
+  const mCols = cols.filter(function(c){ return c.tipo === "mes"; });
+  const tCols = cols.filter(function(c){ return c.tipo === "trim"; });
+  const pc = function(np, ins){ return ins ? Number((np / ins * 100).toFixed(1)) : null; };
+  const fp = function(p){ return p === null ? "\u2014" : p.toFixed(1) + "%"; };
+  const sinTotal = function(e){ return e.replace(/^Total\s+/, ""); };
+
+  const porMes = mCols.map(function(c){
+    const ins = valorTotal("ins", c), np = valorTotal("np", c);
+    return { c:c, ins:ins, np:np, p:pc(np, ins) };
+  });
+  const porTrim = tCols.map(function(c){
+    const ins = valorTotal("ins", c), np = valorTotal("np", c);
+    return { c:c, ins:ins, np:np, p:pc(np, ins) };
+  });
+  const totIns = porMes.reduce(function(t, x){ return t + x.ins; }, 0);
+  const totNp = porMes.reduce(function(t, x){ return t + x.np; }, 0);
+  const pTot = pc(totNp, totIns);
+
+  // el último trimestre con datos contra el anterior (en puntos porcentuales)
+  const conDatos = porTrim.filter(function(x){ return x.ins > 0; });
+  let delta = "";
+  if (conDatos.length >= 2){
+    const a = conDatos[conDatos.length - 1], b = conDatos[conDatos.length - 2];
+    const d = Number((a.p - b.p).toFixed(1));
+    const cl = d > 0 ? " r" : (d < 0 ? " v" : "");   // más no pagado es peor
+    delta = '<span class="rs-delta' + cl + '">' + (d > 0 ? "\u25b2 " : d < 0 ? "\u25bc " : "= ") + Math.abs(d).toFixed(1) +
+      " pts " + repEsc(sinTotal(a.c.etq)) + " vs " + repEsc(sinTotal(b.c.etq)) + "</span>";
+  }
+
+  const rango = etqMes(meses[0]) + (meses.length > 1 ? " a " + etqMes(meses[meses.length - 1]) : "");
+  const cada = mCols.length > 8 ? 2 : 1;
+  const tipMes = function(x){
+    return x.c.etq + "\nInstalado: " + rsN(x.ins) + "\nNo pag\u00f3 primer factura: " + rsN(x.np) + "\n% no pagado: " + fp(x.p);
+  };
+  const ley = rsLeyenda([["3.5% o menos", "var(--v-tx)"], ["hasta 5%", "var(--rs-am)"], ["arriba de 5%", "var(--r-tx)"], ["Meta 3.5%", ".meta"]]);
+
+  const tiles =
+    '<div class="rs-tile"><span class="rs-lb">Instalado \u00b7 ' + rango + "</span>" +
+      '<div class="rs-val"><b>' + rsN(totIns) + "</b></div>" +
+      '<div class="rs-sub">instalaciones en ' + mCols.length + " mes(es) \u00b7 promedio <b>" + rsN(mCols.length ? totIns / mCols.length : 0) + "</b> al mes</div>" +
+      rsColumnas(porMes.map(function(x){ return { etq:x.c.etq, v:x.ins, cls:"act", tip:tipMes(x) }; }), { alto:84, cada:cada }) + "</div>" +
+    '<div class="rs-tile"><span class="rs-lb">No pag\u00f3 primer factura \u00b7 ' + rango + "</span>" +
+      '<div class="rs-val"><b>' + rsN(totNp) + "</b></div>" +
+      '<div class="rs-sub">cuentas con la primer factura sin pagar (NPPF o reverso)</div>' +
+      rsColumnas(porMes.map(function(x){ return { etq:x.c.etq, v:x.np, cls:"nar", tip:tipMes(x) }; }), { alto:84, cada:cada }) + "</div>" +
+    '<div class="rs-tile"><span class="rs-lb">% no pagado \u00b7 ' + rango + "</span>" +
+      '<div class="rs-val"><b>' + fp(pTot) + "</b>" + delta + "</div>" +
+      '<div class="rs-sub">' + (pTot === null ? "" : rsChip(pTot <= 3.5 ? 1 : (pTot <= 5 ? 0.95 : 0), pTot <= 3.5 ? "dentro de la meta" : (pTot <= 5 ? "cerca de la meta" : "arriba de la meta"))) +
+        " meta <b>3.5%</b> o menos</div>" +
+      rsColumnas(porMes.map(function(x){
+        return { etq:x.c.etq, v:x.p || 0, cls: x.p === null ? "gris" : nppfCls(x.p), tip:tipMes(x) };
+      }), { alto:84, cada:cada, meta:3.5, metaTxt:"3.5%" }) + "</div>";
+
+  const colsMes = rsColumnas(porMes.map(function(x){
+    return { etq:x.c.etq, v:x.p || 0, cls: x.p === null ? "gris" : nppfCls(x.p),
+             et: x.p === null ? "" : x.p.toFixed(1), tip:tipMes(x) };
+  }), { alto:150, cada:cada, meta:3.5, metaTxt:"meta 3.5%" });
+  const bloqueMes = rsBloque("% no pagado por mes", "no pagadas \u00f7 instaladas", "", colsMes + ley);
+
+  const colsTrim = rsColumnas(porTrim.map(function(x){
+    const e = sinTotal(x.c.etq);
+    return { etq:e, v:x.p || 0, cls: x.p === null ? "gris" : nppfCls(x.p), et: x.p === null ? "" : x.p.toFixed(1) + "%",
+             tip: e + "\nInstalado: " + rsN(x.ins) + "\nNo pag\u00f3 primer factura: " + rsN(x.np) + "\n% no pagado: " + fp(x.p) };
+  }), { alto:150, meta:3.5, metaTxt:"meta 3.5%" });
+  const bloqueTrim = rsBloque("% no pagado por trimestre", "con el total de cada trimestre", "", colsTrim +
+    '<p class="rs-nota">Los meses m\u00e1s recientes pueden estar incompletos mientras sus cuentas llegan a su primer vencimiento.</p>');
+
+  // ranking de grupos (los de muy pocas instalaciones se dejan fuera: un 100% con 2 cuentas no dice nada)
+  const MIN_INS = 10;
+  const todos = grupos.map(function(g){
+    const ins = mCols.reduce(function(t, c){ return t + valor(g, "ins", c); }, 0);
+    const np = mCols.reduce(function(t, c){ return t + valor(g, "np", c); }, 0);
+    return { g:g, ins:ins, np:np, p:pc(np, ins) };
+  }).filter(function(x){ return x.ins > 0; });
+  const vis = todos.filter(function(x){ return x.ins >= MIN_INS; }).sort(function(a, b){ return (b.p - a.p) || (b.ins - a.ins); });
+  const fuera = todos.length - vis.length;
+  const filasRk = vis.map(function(x){
+    return { etq:x.g, v:x.p, meta:3.5, cls:nppfCls(x.p), txt:"<b>" + fp(x.p) + "</b> \u00b7 " + rsN(x.np) + " de " + rsN(x.ins),
+             tip:x.g + "\nInstalado: " + rsN(x.ins) + "\nNo pag\u00f3 primer factura: " + rsN(x.np) + "\n% no pagado: " + fp(x.p) };
+  });
+  const rank = rsBloque("% no pagado por " + tituloGrupo().toLowerCase(), "de mayor a menor \u00b7 " + rango, "",
+    (filasRk.length ? rsRanking(filasRk, { max:15 }) : '<p class="rs-nota">Ning\u00fan grupo llega a ' + MIN_INS + " instalaciones en el periodo.</p>") +
+    (fuera ? '<p class="rs-nota">' + fuera + " grupo(s) con menos de " + MIN_INS + " instalaciones no se grafican (est\u00e1n en las tablas de abajo).</p>" : "") +
+    ley);
+
+  return rsPanel(rango + " \u00b7 instalaciones cuya primer factura no se pag\u00f3",
+    '<div class="rs-tiles">' + tiles + "</div>" + '<div class="rs-dos">' + bloqueMes + bloqueTrim + "</div>" + rank);
+}
+
 function nppfHtml(){
   DET_NPPF = {};
   const titulo = "NPPF";
@@ -10323,7 +10420,8 @@ function nppfHtml(){
     " · la pestaña NPPF trae " + num(NPPF.mapa.size) + " cuentas NPPF/REVERSO, " + num(nppfEnBase) +
     " de ellas están en la base; lo instalado que no está ahí cuenta como pagado.</div>";
 
-  return '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
+  return resumenNppfHtml(cols, meses, grupos, valor, valorTotal) +
+    '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
       tablaConteo("ins") + "</section>" +
     '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas que trae la pestaña NPPF (columna TIPO = NPPF)</span></h2>' +
       tablaConteo("np") + "</section>" + detalleNppfHtml() +
