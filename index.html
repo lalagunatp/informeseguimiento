@@ -9958,8 +9958,8 @@ function activarReporte(){
    1) lo instalado (BASE DE DATOS, mes de la fecha de instalación y con los mismos filtros de siempre),
    2) de esas instalaciones, las cuentas que la pestaña NPPF marca como NO PAGADA,
    3) el % que 2 representa sobre 1.
-   La pestaña NPPF solo aporta el estado de pago: columna CUENTA (A) cruzada contra la cuenta
-   factura de la base y columna PAGO (E) con PAGADA / NO PAGADA. */
+   La pestaña NPPF solo aporta las cuentas que no pagaron: columna CUENTA (A) cruzada contra la
+   cuenta factura de la base; la columna E (TIPO) dice NPPF en cada una. */
 let NPPF = { estado:"sin cargar", mapa:new Map(), filas:0, noPagadas:0 };
 let CARGANDO_NPPF = false;
 
@@ -9984,7 +9984,8 @@ async function cargarNppf(){
       const enc = celdasTexto(rows[iEnc]);
       let iCta = enc.findIndex(function(h){ return normaliza(h) === "CUENTA"; });
       if (iCta < 0) iCta = buscaCol(enc, ["CUENTA"]);
-      let iPago = enc.findIndex(function(h){ return normaliza(h) === "PAGO"; });
+      // la columna E ahora se llama TIPO y trae NPPF en cada cuenta que no pagó (antes se llamaba PAGO)
+      let iPago = enc.findIndex(function(h){ return normaliza(h) === "TIPO" || normaliza(h) === "PAGO"; });
       if (iPago < 0) iPago = buscaCol(enc, ["PAGO"], ["FECHA"]);
       if (iCta < 0) iCta = 0;     // columna A
       if (iPago < 0) iPago = 4;   // columna E
@@ -9996,14 +9997,14 @@ async function cargarNppf(){
         const pago = normaliza(c[iPago] && c[iPago].v != null ? c[iPago].v : "");
         if (!k || !pago) continue;
         filas++;
-        // REVERSO (pago revertido) también cuenta como no pagada
-        const noPaga = /^NO\s*PAG/.test(pago) || pago.indexOf("REVERS") >= 0;
+        // lo que diga NPPF es no pagado; se siguen aceptando NO PAGADA y REVERSO de la versión anterior
+        const noPaga = pago.indexOf("NPPF") >= 0 || /^NO\s*PAG/.test(pago) || pago.indexOf("REVERS") >= 0;
         // si la cuenta sale en dos renglones, PAGADA gana: un pago ya hecho no se deshace
         mapa.set(k, (mapa.has(k) ? mapa.get(k) : true) && noPaga);
       }
       let noPagadas = 0;
       mapa.forEach(function(v){ if (v) noPagadas++; });
-      NPPF = { estado: filas ? "ok" : "la pestaña NPPF no trae cuentas con PAGO (columnas CUENTA y PAGO)", mapa:mapa, filas:filas, noPagadas:noPagadas };
+      NPPF = { estado: filas ? "ok" : "la pestaña NPPF no trae cuentas (columnas CUENTA y TIPO)", mapa:mapa, filas:filas, noPagadas:noPagadas };
     }
   }catch(e){
     NPPF = { estado:"no se pudo leer la pestaña NPPF: " + e.message, mapa:new Map(), filas:0, noPagadas:0 };
@@ -10107,12 +10108,11 @@ function nppfHtml(){
   const totNp = cols.filter(function(c){ return c.tipo === "mes"; }).reduce(function(s, c){ return s + valorTotal("np", c); }, 0);
   const nota = '<div class="leyenda">' + num(totalIns) + " instalaciones en los meses elegidos, " + num(totNp) +
     " con primer factura no pagada" +
-    (sinCruce ? " · " + num(sinCruce) + " instalación(es) no aparecen en la pestaña NPPF y se cuentan como pagadas" : "") +
-    " · la pestaña NPPF trae " + num(NPPF.filas) + " cuentas.</div>";
+    " · la pestaña NPPF trae " + num(NPPF.filas) + " cuentas; lo instalado que no está ahí cuenta como pagado.</div>";
 
   return '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
       tablaConteo("ins") + "</section>" +
-    '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas marcadas NO PAGADA o REVERSO</span></h2>' +
+    '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas que trae la pestaña NPPF (columna TIPO = NPPF)</span></h2>' +
       tablaConteo("np") + "</section>" +
     '<section class="panel"><h2>NPPF · % NO PAGADO <span class="sub">no pagadas sobre lo instalado</span></h2>' +
       '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filasPct + "</tbody></table></div>" + nota + "</section>";
