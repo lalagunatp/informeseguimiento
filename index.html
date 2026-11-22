@@ -9996,7 +9996,8 @@ async function cargarNppf(){
         const pago = normaliza(c[iPago] && c[iPago].v != null ? c[iPago].v : "");
         if (!k || !pago) continue;
         filas++;
-        const noPaga = /^NO\s*PAG/.test(pago);
+        // REVERSO (pago revertido) también cuenta como no pagada
+        const noPaga = /^NO\s*PAG/.test(pago) || pago.indexOf("REVERS") >= 0;
         // si la cuenta sale en dos renglones, PAGADA gana: un pago ya hecho no se deshace
         mapa.set(k, (mapa.has(k) ? mapa.get(k) : true) && noPaga);
       }
@@ -10111,7 +10112,7 @@ function nppfHtml(){
 
   return '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
       tablaConteo("ins") + "</section>" +
-    '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas marcadas NO PAGADA</span></h2>' +
+    '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas marcadas NO PAGADA o REVERSO</span></h2>' +
       tablaConteo("np") + "</section>" +
     '<section class="panel"><h2>NPPF · % NO PAGADO <span class="sub">no pagadas sobre lo instalado</span></h2>' +
       '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filasPct + "</tbody></table></div>" + nota + "</section>";
