@@ -661,6 +661,7 @@
     <button type="button" data-vista="mes">Mensual</button>
     <button type="button" data-vista="dias30">Últimos 30 días</button>
     <button type="button" data-vista="vend0">Vend X Eventos</button>
+    <button type="button" data-vista="nppf" title="No pagó primer factura">NPPF</button>
     <button type="button" data-vista="os">Seguimiento OS</button>
     <button type="button" data-vista="ordenes">Atención de órdenes</button>
     <button type="button" data-vista="sabana">Sábana operaciones</button>
@@ -3988,7 +3989,7 @@ async function cargarBaseCompleta(){
 // líderes (la base completa, que el Apps Script ya entrega con completo:"1"); en las
 // demás vistas siguen viendo solo a su equipo. FILAS apunta a una u otra base según la
 // vista, así que el resto de la app no cambia: cada vista lee FILAS como siempre.
-const VISTAS_TODOS_LIDERES = ["semana", "mes", "vend0"];
+const VISTAS_TODOS_LIDERES = ["semana", "mes", "vend0", "nppf"];
 function veTodosLosLideres(){
   return !!(PERFIL && PERFIL.alcance === "lider" && VISTAS_TODOS_LIDERES.indexOf(VISTA) >= 0);
 }
@@ -9952,6 +9953,170 @@ function activarReporte(){
   });
 }
 
+/* ---------- NPPF · No pagó primer factura ----------
+   Tres paneles, por mes y con total por trimestre (ene feb mar · Total 1er trim · abr may jun · ...):
+   1) lo instalado (BASE DE DATOS, mes de la fecha de instalación y con los mismos filtros de siempre),
+   2) de esas instalaciones, las cuentas que la pestaña NPPF marca como NO PAGADA,
+   3) el % que 2 representa sobre 1.
+   La pestaña NPPF solo aporta el estado de pago: columna CUENTA (A) cruzada contra la cuenta
+   factura de la base y columna PAGO (E) con PAGADA / NO PAGADA. */
+let NPPF = { estado:"sin cargar", mapa:new Map(), filas:0, noPagadas:0 };
+let CARGANDO_NPPF = false;
+
+// misma cuenta aunque una venga como número, con ".0" o con ceros a la izquierda
+function llaveCuentaNppf(v){
+  let s = String(v === null || v === undefined ? "" : v).trim();
+  if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, "");
+  return s.replace(/\D/g, "").replace(/^0+/, "");
+}
+
+async function cargarNppf(){
+  if (CARGANDO_NPPF) return;
+  CARGANDO_NPPF = true;
+  NPPF = { estado:"cargando", mapa:new Map(), filas:0, noPagadas:0 };
+  try{
+    const t = await traerHoja("NPPF");
+    const rows = t.rows || [];
+    if (!rows.length){
+      NPPF.estado = "la pestaña llegó vacía";
+    } else {
+      const iEnc = filaEncabezado(rows, ["CUENTA", "PAGO"]);
+      const enc = celdasTexto(rows[iEnc]);
+      let iCta = enc.findIndex(function(h){ return normaliza(h) === "CUENTA"; });
+      if (iCta < 0) iCta = buscaCol(enc, ["CUENTA"]);
+      let iPago = enc.findIndex(function(h){ return normaliza(h) === "PAGO"; });
+      if (iPago < 0) iPago = buscaCol(enc, ["PAGO"], ["FECHA"]);
+      if (iCta < 0) iCta = 0;     // columna A
+      if (iPago < 0) iPago = 4;   // columna E
+      const mapa = new Map();
+      let filas = 0;
+      for (let i = iEnc + 1; i < rows.length; i++){
+        const c = rows[i].c || [];
+        const k = llaveCuentaNppf(c[iCta] && c[iCta].v != null ? c[iCta].v : "");
+        const pago = normaliza(c[iPago] && c[iPago].v != null ? c[iPago].v : "");
+        if (!k || !pago) continue;
+        filas++;
+        const noPaga = /^NO\s*PAG/.test(pago);
+        // si la cuenta sale en dos renglones, PAGADA gana: un pago ya hecho no se deshace
+        mapa.set(k, (mapa.has(k) ? mapa.get(k) : true) && noPaga);
+      }
+      let noPagadas = 0;
+      mapa.forEach(function(v){ if (v) noPagadas++; });
+      NPPF = { estado: filas ? "ok" : "la pestaña NPPF no trae cuentas con PAGO (columnas CUENTA y PAGO)", mapa:mapa, filas:filas, noPagadas:noPagadas };
+    }
+  }catch(e){
+    NPPF = { estado:"no se pudo leer la pestaña NPPF: " + e.message, mapa:new Map(), filas:0, noPagadas:0 };
+  }
+  CARGANDO_NPPF = false;
+  if (VISTA === "nppf") pintar();
+}
+
+function nppfHtml(){
+  const titulo = "NPPF";
+  if (NPPF.estado === "cargando" || CARGANDO_NPPF || NPPF.estado === "sin cargar"){
+    return '<section class="panel"><h2>' + titulo + '</h2><div class="aviso">Leyendo la pestaña NPPF…</div></section>';
+  }
+  if (NPPF.estado !== "ok"){
+    return '<section class="panel"><h2>' + titulo + '</h2><div class="aviso error">No se pudo armar NPPF: ' + NPPF.estado + ".</div></section>";
+  }
+  const meses = mesesElegidos().slice().sort();
+  if (!meses.length){
+    return '<section class="panel"><h2>' + titulo + '</h2><div class="aviso">Elige al menos un mes en “Meses del histórico”.</div></section>';
+  }
+
+  // columnas: cada mes y, al cerrar cada trimestre, su total
+  const variosAnios = meses[0].slice(0, 4) !== meses[meses.length - 1].slice(0, 4);
+  const ORD_TRIM = ["1er", "2do", "3er", "4to"];
+  const cols = [];
+  let tr = null;
+  function cierraTrim(){
+    if (!tr) return;
+    cols.push({ tipo:"trim", etq:"Total " + ORD_TRIM[tr.q - 1] + " trim" + (variosAnios ? " " + tr.y.slice(2) : ""), ks:tr.ks });
+    tr = null;
+  }
+  meses.forEach(function(k){
+    const id = k.slice(0, 4) + "-" + Math.floor((Number(k.slice(5)) - 1) / 3);
+    if (tr && tr.id !== id) cierraTrim();
+    if (!tr) tr = { id:id, y:k.slice(0, 4), q:Math.floor((Number(k.slice(5)) - 1) / 3) + 1, ks:[] };
+    tr.ks.push(k);
+    cols.push({ tipo:"mes", k:k, etq:etqMes(k) });
+  });
+  cierraTrim();
+
+  const set = new Set(meses);
+  const acc = {};            // grupo -> { ins:{mes:n}, np:{mes:n} }
+  let sinCruce = 0, totalIns = 0;
+  for (const f of FILAS){
+    if (!pasaFiltros(f) || !esInstalada(f)) continue;
+    const k = claveMes(f.fIns);
+    if (!set.has(k)) continue;
+    const g = grupoDe(f, f.fIns);
+    if (!acc[g]) acc[g] = { ins:{}, np:{} };
+    acc[g].ins[k] = (acc[g].ins[k] || 0) + 1;
+    totalIns++;
+    const llave = llaveCuentaNppf(f.cuenta);
+    const est = llave ? NPPF.mapa.get(llave) : undefined;
+    if (est === undefined) sinCruce++;
+    else if (est === true) acc[g].np[k] = (acc[g].np[k] || 0) + 1;
+  }
+  const grupos = ordenaGrupos(Object.keys(acc), function(g){
+    return meses.reduce(function(s, k){ return s + (acc[g].ins[k] || 0); }, 0);
+  });
+  if (!grupos.length){
+    return '<section class="panel"><h2>' + titulo + '</h2><div class="aviso">No hay instalaciones en los meses y filtros elegidos.</div></section>';
+  }
+
+  function valor(g, tipo, col){
+    const ks = col.tipo === "mes" ? [col.k] : col.ks;
+    return ks.reduce(function(s, k){ return s + (acc[g][tipo][k] || 0); }, 0);
+  }
+  function valorTotal(tipo, col){
+    return grupos.reduce(function(s, g){ return s + valor(g, tipo, col); }, 0);
+  }
+  function pct1(a, b){ return b ? (a / b * 100).toFixed(1) + "%" : "—"; }
+
+  const enc = "<thead><tr><th>" + tituloGrupo() + "</th>" + cols.map(function(c){
+    return "<th" + (c.tipo === "trim" ? ' class="tot"' : "") + ">" + c.etq + "</th>";
+  }).join("") + "</tr></thead>";
+
+  function tablaConteo(tipo){
+    let filas = "";
+    grupos.forEach(function(g){
+      filas += "<tr><td>" + g + "</td>" + cols.map(function(c){
+        return celdaNum(valor(g, tipo, c), c.tipo === "trim" ? "tot" : "");
+      }).join("") + "</tr>";
+    });
+    filas += '<tr class="total"><td>Total</td>' + cols.map(function(c){
+      return celdaNum(valorTotal(tipo, c), c.tipo === "trim" ? "tot" : "");
+    }).join("") + "</tr>";
+    return '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filas + "</tbody></table></div>";
+  }
+
+  let filasPct = "";
+  grupos.forEach(function(g){
+    filasPct += "<tr><td>" + g + "</td>" + cols.map(function(c){
+      const d = valor(g, "ins", c);
+      return '<td class="' + (c.tipo === "trim" ? "tot" : "") + (d ? "" : " cero") + '">' + pct1(valor(g, "np", c), d) + "</td>";
+    }).join("") + "</tr>";
+  });
+  filasPct += '<tr class="total"><td>Total</td>' + cols.map(function(c){
+    return '<td class="' + (c.tipo === "trim" ? "tot" : "") + '">' + pct1(valorTotal("np", c), valorTotal("ins", c)) + "</td>";
+  }).join("") + "</tr>";
+
+  const totNp = cols.filter(function(c){ return c.tipo === "mes"; }).reduce(function(s, c){ return s + valorTotal("np", c); }, 0);
+  const nota = '<div class="leyenda">' + num(totalIns) + " instalaciones en los meses elegidos, " + num(totNp) +
+    " con primer factura no pagada" +
+    (sinCruce ? " · " + num(sinCruce) + " instalación(es) no aparecen en la pestaña NPPF y se cuentan como pagadas" : "") +
+    " · la pestaña NPPF trae " + num(NPPF.filas) + " cuentas.</div>";
+
+  return '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
+      tablaConteo("ins") + "</section>" +
+    '<section class="panel"><h2>NPPF · NO PAGÓ PRIMER FACTURA <span class="sub">de lo instalado en cada mes, cuentas marcadas NO PAGADA</span></h2>' +
+      tablaConteo("np") + "</section>" +
+    '<section class="panel"><h2>NPPF · % NO PAGADO <span class="sub">no pagadas sobre lo instalado</span></h2>' +
+      '<div class="scroll"><table class="compacta">' + enc + "<tbody>" + filasPct + "</tbody></table></div>" + nota + "</section>";
+}
+
 /* ---------- Resumen ejecutivo: gráficas de Semanal, Mensual, Últimos 30 días y Vend X Eventos ----------
    Un solo panel arriba de las tablas, con lo que un comité lee de un vistazo: cifra
    principal contra el periodo anterior, tendencia, meta y quién va arriba o abajo. Las
@@ -10571,6 +10736,9 @@ function pintar(){
   } else if (VISTA === "vend0"){
     if (INFO_EQ.estado === "sin cargar" && !CARGANDO_EQ) cargarEquipos();
     html = vendedores0Html();
+  } else if (VISTA === "nppf"){
+    if (NPPF.estado === "sin cargar" && !CARGANDO_NPPF) cargarNppf();
+    html = nppfHtml();
   } else if (VISTA === "dias30"){
     if (OSPI.estado === "sin cargar" && !CARGANDO_OSPI) cargarOsPorInstalar();
     if (SEG_TODOS.estado === "sin cargar") cargarSeguimientoTodos();
@@ -10722,6 +10890,8 @@ function pintar(){
   });
   const campos = esVistaOrdenes()
     ? ["orddiasem"]
+    : VISTA === "nppf"
+    ? ["director","lider","coach","canal","plan","mes"]
     : ["director","lider","coach","canal","plan","mes", VISTA === "mes" ? "diames" : "diasem"];
   const filtros = campos.map(function(c){
     const t = seleccionTexto(c);
@@ -10739,6 +10909,8 @@ function pintar(){
     ? "Sábana operaciones" + (ORD.estado === "ok" ? " · " + num(ORD.filas.length) + " órdenes leídas" : "")
     : VISTA === "vend0"
     ? "Vend X Eventos"
+    : VISTA === "nppf"
+    ? "NPPF · No pagó primer factura"
     : VISTA === "dias30"
     ? "Últimos 30 días"
     : VISTA === "mes"
@@ -10953,7 +11125,7 @@ function descargarCsv(){
   });
 
   if (!filas.length) return;   // nada que exportar
-  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos", ordenes:"atencion_ordenes", sabana:"sabana_operaciones" };
+  const nombres = { semana:"semanal", mes:"mensual", dias30:"ultimos30dias", vend0:"vend_x_eventos", os:"seguimiento_os", dupli:"cuentas_duplicadas", oprech:"op_rechazadas", equipos:"equipos", ordenes:"atencion_ordenes", sabana:"sabana_operaciones", nppf:"nppf" };
   const csv = "\ufeff" + filas.map(function(f){
     return f.map(function(x){ return '"' + String(x === undefined || x === null ? "" : x).replace(/"/g, '""') + '"'; }).join(",");
   }).join("\n");
@@ -11213,15 +11385,18 @@ function ajustaCajasDia(){
   el("cajaBuscaDup").style.display = esDupli ? "" : "none";
   el("cajaPeriodo0").style.display = VISTA === "vend0" ? "" : "none";
   const soloOS = soloVistasOs();
-  el("cajaMetrica").style.display = (VISTA === "vend0" || esOS || esDupli || esAjustes || esOpRech || esBuscador || soloOS) ? "none" : "";
+  // NPPF: sin "Semana", sin detalle por plan ni planes (solo agrupar y filtrar)
+  const lblSemana = el("semana").closest("label");
+  if (lblSemana && VISTA === "nppf") lblSemana.style.display = "none";
+  el("cajaMetrica").style.display = (VISTA === "vend0" || VISTA === "nppf" || esOS || esDupli || esAjustes || esOpRech || esBuscador || soloOS) ? "none" : "";
   // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
   // Mensual y Últimos 30 días
   el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
   el("cajaDiaSem").style.display = VISTA === "semana" ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
-  el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0") ? "" : "none";
+  el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0" || VISTA === "nppf") ? "" : "none";
   el("cajaMeses").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador) ? "none" : "";
-  el("cajaPlanes").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador) ? "none" : "";
+  el("cajaPlanes").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador || VISTA === "nppf") ? "none" : "";
 
   // Op Rechazadas: solo una fecha relevante (oportunidad), sin el gate "Filtrar por" de
   // Cuentas duplicadas; Semana/Mes se ocultan mientras Periodo siga en "Todo el histórico"
@@ -11357,6 +11532,7 @@ el("btnRecargar").addEventListener("click", function(){
   SEG_TODOS = { estado:"sin cargar", porOS:{} };   // seguimiento de ventas
   SEG_HIST = { os:"", estado:"sin cargar", registros:[] };
   ORD.estado = "sin cargar";          // atención de órdenes
+  NPPF.estado = "sin cargar";         // no pagó primer factura
   PLANES_APP.estado = "sin cargar";   // compromisos del Plan semanal (Reporte comercial)
   cargar();
 });
@@ -11519,6 +11695,13 @@ function puedeEntrarAjustes(){
 // de instalaciones de venta técnico
 function esCobranza(){
   return !!PERFIL && PERFIL.acceso === "cobranza";
+}
+
+// NPPF (No pagó primer factura): líderes de ventas, cualquier gerente (incluye Satisfacción y
+// Cuidado del Cliente), cobranza y, como ven todo el reporte, el Director Distrital
+function puedeVerNppf(){
+  if (!PERFIL) return false;
+  return PERFIL.alcance === "lider" || esCobranza() || puestoEs("GERENTE", "DIRECTOR DISTRITAL");
 }
 
 // subir información nueva a BASE DE DATOS: Director Distrital o el número 65068028
@@ -11725,10 +11908,16 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos", "buscador"];
+  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "nppf", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos", "buscador"];
   else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana", "buscador"];
-  else if (esCobranza()) permitidas = ["dupli", "oprech", "os", "buscador"];
+  else if (esCobranza()) permitidas = ["dupli", "oprech", "os", "nppf", "buscador"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana", "buscador"];
+
+  // NPPF: solo líderes de ventas, gerentes, cobranza y dirección
+  if (!puedeVerNppf()){
+    const bNppf = document.querySelector('[data-vista="nppf"]');
+    if (bNppf){ bNppf.style.display = "none"; bNppf.classList.remove("on"); }
+  }
 
   // el botón/vista "ajustes" se maneja aparte con puedeEntrarAjustes(), no con la
   // lista fija de "permitidas" (ese mismo botón ya se oculta/muestra en ajustaCajasDia)
