@@ -9996,11 +9996,13 @@ async function cargarNppf(){
         const k = llaveCuentaNppf(c[iCta] && c[iCta].v != null ? c[iCta].v : "");
         const pago = normaliza(c[iPago] && c[iPago].v != null ? c[iPago].v : "");
         if (!k || !pago) continue;
-        filas++;
         // lo que diga NPPF es no pagado; se siguen aceptando NO PAGADA y REVERSO de la versión anterior
         const noPaga = pago.indexOf("NPPF") >= 0 || /^NO\s*PAG/.test(pago) || pago.indexOf("REVERS") >= 0;
-        // si la cuenta sale en dos renglones, PAGADA gana: un pago ya hecho no se deshace
-        mapa.set(k, (mapa.has(k) ? mapa.get(k) : true) && noPaga);
+        // solo cuentan los renglones NPPF / REVERSO; cualquier otro valor en la columna E se
+        // ignora (no borra la marca de una cuenta que ya salió NPPF en otro renglón)
+        if (!noPaga) continue;
+        filas++;
+        mapa.set(k, true);
       }
       let noPagadas = 0;
       mapa.forEach(function(v){ if (v) noPagadas++; });
@@ -10106,9 +10108,15 @@ function nppfHtml(){
   }).join("") + "</tr>";
 
   const totNp = cols.filter(function(c){ return c.tipo === "mes"; }).reduce(function(s, c){ return s + valorTotal("np", c); }, 0);
+  // diagnóstico del cruce: de las cuentas NPPF, cuántas existen en la base (en cualquier mes)
+  const enBase = new Set();
+  FILAS.forEach(function(f){ const q = llaveCuentaNppf(f.cuenta); if (q) enBase.add(q); });
+  let nppfEnBase = 0;
+  NPPF.mapa.forEach(function(v, q){ if (enBase.has(q)) nppfEnBase++; });
   const nota = '<div class="leyenda">' + num(totalIns) + " instalaciones en los meses elegidos, " + num(totNp) +
     " con primer factura no pagada" +
-    " · la pestaña NPPF trae " + num(NPPF.filas) + " cuentas; lo instalado que no está ahí cuenta como pagado.</div>";
+    " · la pestaña NPPF trae " + num(NPPF.mapa.size) + " cuentas NPPF/REVERSO, " + num(nppfEnBase) +
+    " de ellas están en la base; lo instalado que no está ahí cuenta como pagado.</div>";
 
   return '<section class="panel"><h2>NPPF · INSTALADO <span class="sub">instalaciones por mes de instalación, con total por trimestre</span></h2>' +
       tablaConteo("ins") + "</section>" +
