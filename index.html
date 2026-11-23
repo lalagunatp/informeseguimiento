@@ -12046,6 +12046,7 @@ function esCobranza(){
 // Cuidado del Cliente), cobranza y el Director Distrital
 function puedeVerNppf(){
   if (!PERFIL) return false;
+  if (esGerenteOperaciones()) return false;   // Gerente de Operaciones y de Servicio a Domicilio: sin NPPF
   return PERFIL.alcance === "lider" || PERFIL.alcance === "tecnico" || esCobranza() || puestoEs("GERENTE", "DIRECTOR DISTRITAL");
 }
 
@@ -12253,7 +12254,7 @@ function abrirApp(){
   h.appendChild(q);
 
   let permitidas = null;
-  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "nppf", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos", "buscador"];
+  if (esGerenteOperaciones()) permitidas = ["semana", "mes", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos", "buscador"];
   else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana", "buscador"];
   else if (esCobranza()) permitidas = ["dupli", "oprech", "os", "nppf", "buscador"];
   else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "nppf", "os", "ordenes", "sabana", "buscador"];
