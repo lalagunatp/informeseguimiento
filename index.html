@@ -724,6 +724,9 @@
       <label class="campo" id="cajaVendedor">Vendedor
         <div id="fVendedor"></div>
       </label>
+      <label class="campo" id="cajaRanking">Ranking
+        <div id="fRanking"></div>
+      </label>
       <label class="campo">Canal
         <div id="fCanal"></div>
       </label>
@@ -2577,6 +2580,7 @@ function llenarSelectores(){
   llenarMulti("lider");
   llenarMulti("coach");
   llenarMulti("vendedor");
+  llenarMulti("ranking");
   llenarMulti("canal");
   llenarMulti("plan");
   llenarMulti("municipio");
@@ -2594,8 +2598,10 @@ const MULTI = {
   lider:    { contId:"fLider",    sel:new Set(), valores:[] },
   coach:    { contId:"fCoach",    sel:new Set(), valores:[] },
   vendedor: { contId:"fVendedor", sel:new Set(), valores:[], soloPlantilla:true },
+  // ranking (metal) de la persona según PLANTILLA + RANKING; solo Semanal y Mensual
+  ranking:  { contId:"fRanking",  sel:new Set(), valores:[], manual:true },
   canal:    { contId:"fCanal",    sel:new Set(), valores:[] },
-  plan:     { contId:"fPlan",     sel:new Set(), valores:[] },
+  plan:    { contId:"fPlan",     sel:new Set(), valores:[] },
   // el municipio no viene en la base: sale del cluster del renglón cruzado contra la
   // hoja Clusters Colonias, la misma que ya usa Atención de órdenes. Solo se muestra
   // y solo filtra en Últimos 30 días.
@@ -2703,7 +2709,8 @@ function llenarMulti(campo){
         return a.localeCompare(b, "es");
       });
   } else if (m.manual){
-    if (campo === "diasem" || campo === "orddiasem") m.valores = DIAS_LARGOS.slice();
+    if (campo === "ranking") m.valores = ORDEN_METAL.slice();
+    else if (campo === "diasem" || campo === "orddiasem") m.valores = DIAS_LARGOS.slice();
     else if (campo === "diames") m.valores = Array.from({length:31}, function(_, i){ return String(i + 1); });
     else m.valores = MESES.map(function(x){ return x.etq; });
   } else {
@@ -2798,6 +2805,30 @@ function cumpleMunicipio(f){
   return cumple("municipio", f);
 }
 
+// Ranking: solo filtra en Semanal y Mensual (mismo cuidado que municipio y día)
+const VISTAS_RANKING = ["semana", "mes"];
+let CACHE_METAL = { plant:null, rank:null, mapa:null };
+
+function metalDeFila(f){
+  if (CACHE_METAL.plant !== PLANTILLA || CACHE_METAL.rank !== RANKINGS){
+    const mapa = new Map();
+    PLANTILLA.forEach(function(p){
+      const k = normaliza(p.nombre);
+      if (k && !mapa.has(k)) mapa.set(k, metalDe(p));
+    });
+    CACHE_METAL = { plant:PLANTILLA, rank:RANKINGS, mapa:mapa };
+  }
+  return CACHE_METAL.mapa.get(normaliza(nombreVendedorDeFila(f))) || "Sin ranking";
+}
+
+function cumpleRanking(f){
+  if (VISTAS_RANKING.indexOf(VISTA) < 0) return true;
+  const m = MULTI.ranking;
+  if (!m || m.sel.size === 0) return true;
+  if (m.sel.has("\u0000")) return false;
+  return m.sel.has(metalDeFila(f));
+}
+
 function esTactil(){
   return !!(window.matchMedia && window.matchMedia("(pointer:coarse)").matches);
 }
@@ -2847,7 +2878,7 @@ function esInstalada(f){
 
 function pasaFiltros(f){
   return enAlcance(f) && cumple("director", f) && cumple("lider", f) && cumple("coach", f) &&
-         cumple("vendedor", f) && cumple("canal", f) && cumple("plan", f) && cumpleMunicipio(f);
+         cumple("vendedor", f) && cumple("canal", f) && cumple("plan", f) && cumpleMunicipio(f) && cumpleRanking(f);
 }
 
 // filtro por día: en la vista semanal por día de la semana, en la mensual por número de día
@@ -11736,6 +11767,7 @@ function ajustaCajasDia(){
   // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
   // Mensual y Últimos 30 días
   el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
+  el("cajaRanking").style.display = VISTAS_RANKING.indexOf(VISTA) >= 0 ? "" : "none";
   el("cajaDiaSem").style.display = VISTA === "semana" ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
   el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0" || VISTA === "nppf") ? "" : "none";
