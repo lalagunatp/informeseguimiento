@@ -4162,16 +4162,21 @@ function veTodosLosLideres(){
 // una celda (personas, oportunidades, planes) solo trae a su propio equipo. Sirve para
 // renglones de la base (lider/coach/director) y para fichas de persona (lider/coach/nombre).
 function esDeMiEquipo(x){
-  if (!veTodosLosLideres()) return true;
+  if (!veTodosLosLideres() && !coachTecnicoEnNppf()) return true;
   const n = normaliza(PERFIL.nombre);
   const campos = [x.lider, x.coach, x.director, x.nombre];
   if (x.fOp !== undefined) campos.push(liderDeFila(x), coachDeFila(x));   // renglón de la base
   return campos.some(function(v){ return v && normaliza(v) === n; });
 }
-function soloMiEquipo(lista){
-  return (lista && veTodosLosLideres()) ? lista.filter(esDeMiEquipo) : lista;
+// coach de venta técnico en NPPF: ve los números de todo el canal, pero el detalle por cuenta
+// solo trae a su equipo (mismo criterio que los líderes)
+function coachTecnicoEnNppf(){
+  return !!(PERFIL && PERFIL.alcance === "tecnico" && VISTA === "nppf");
 }
-function notaMiEquipo(){ return veTodosLosLideres() ? " · el detalle muestra solo a tu equipo" : ""; }
+function soloMiEquipo(lista){
+  return (lista && (veTodosLosLideres() || coachTecnicoEnNppf())) ? lista.filter(esDeMiEquipo) : lista;
+}
+function notaMiEquipo(){ return (veTodosLosLideres() || coachTecnicoEnNppf()) ? " · el detalle muestra solo a tu equipo" : ""; }
 
 // se llama al inicio de pintar(): si la vista pide otra base, cambia FILAS y rehace lo
 // que se arma a partir de ella (filtros, instalaciones por persona, canal por persona)
@@ -12041,7 +12046,7 @@ function esCobranza(){
 // Cuidado del Cliente), cobranza y el Director Distrital
 function puedeVerNppf(){
   if (!PERFIL) return false;
-  return PERFIL.alcance === "lider" || esCobranza() || puestoEs("GERENTE", "DIRECTOR DISTRITAL");
+  return PERFIL.alcance === "lider" || PERFIL.alcance === "tecnico" || esCobranza() || puestoEs("GERENTE", "DIRECTOR DISTRITAL");
 }
 
 // subir información nueva a BASE DE DATOS: Director Distrital o el número 65068028
@@ -12251,7 +12256,7 @@ function abrirApp(){
   if (esGerenteOperaciones()) permitidas = ["semana", "mes", "nppf", "dias30", "os", "ordenes", "sabana", "dupli", "oprech", "equipos", "buscador"];
   else if (PERFIL.acceso === "os") permitidas = ["os", "dias30", "dupli", "ordenes", "sabana", "buscador"];
   else if (esCobranza()) permitidas = ["dupli", "oprech", "os", "nppf", "buscador"];
-  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "os", "ordenes", "sabana", "buscador"];
+  else if (PERFIL.alcance === "tecnico") permitidas = ["semana", "mes", "vend0", "nppf", "os", "ordenes", "sabana", "buscador"];
 
   // NPPF: líderes de ventas, gerentes, cobranza y Director Distrital
   if (!puedeVerNppf()){
