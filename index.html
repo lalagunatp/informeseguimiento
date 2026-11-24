@@ -712,6 +712,13 @@
           <option value="plan">Plan</option>
         </select>
       </label>
+      <label class="campo" id="cajaEstatusVend" style="display:none">Vendedores
+        <select id="estatusVend">
+          <option value="ambos" selected>Activos y baja</option>
+          <option value="activos">Solo activos (en PLANTILLA)</option>
+          <option value="baja">Solo baja</option>
+        </select>
+      </label>
       <label class="campo">Director
         <div id="fDirector"></div>
       </label>
@@ -2821,12 +2828,106 @@ function metalDeFila(f){
   return CACHE_METAL.mapa.get(normaliza(nombreVendedorDeFila(f))) || "Sin ranking";
 }
 
+// categoría de un valor crudo de la hoja RANKING (sin el ascenso de Oro a Platino
+// por promedio, que no es por mes)
+function catRanking(txt){
+  const n = normaliza(txt);
+  if (!n || n === "-") return "";
+  if (n.indexOf("PLATINO") >= 0) return "PLATINO";
+  if (n.indexOf("ORO") >= 0) return "ORO";
+  if (n.indexOf("PLATA") >= 0) return "PLATA";
+  if (n.indexOf("BRONCE") >= 0) return "BRONCE";
+  if (n.indexOf("CONDICION") >= 0) return "CONDICIONADO";
+  if (n.indexOf("ENTRENAMIENTO") >= 0) return "ENTRENAMIENTO";
+  return n;
+}
+
+// meses seguidos (contando hacia atrás desde el mes más reciente con dato) en que la
+// persona trae el mismo ranking
+function mesesEnRanking(r){
+  if (!r || !r.hist || !r.hist.length) return 0;
+  const cats = r.hist.map(catRanking);
+  let i = cats.length - 1;
+  while (i >= 0 && !cats[i]) i--;
+  if (i < 0) return 0;
+  const ult = cats[i];
+  let n = 0;
+  while (i >= 0 && cats[i] === ult){ n++; i--; }
+  return n;
+}
+
+// "Nombre - Oro (3)"; se arma una vez por nombre y se guarda mientras no cambien
+// PLANTILLA, RANKING ni el umbral de Platino
+let CACHE_ETQ_VEND = { plant:null, rank:null, umbral:null, porNom:null, mapa:new Map() };
+
+function etiquetaVendRanking(nom){
+  const umbral = el("umbralPlatino").value;
+  const c = CACHE_ETQ_VEND;
+  if (c.plant !== PLANTILLA || c.rank !== RANKINGS || c.umbral !== umbral){
+    const porNom = new Map();
+    PLANTILLA.forEach(function(p){
+      const k = normaliza(p.nombre);
+      if (k && !porNom.has(k)) porNom.set(k, p);
+    });
+    CACHE_ETQ_VEND = { plant:PLANTILLA, rank:RANKINGS, umbral:umbral, porNom:porNom, mapa:new Map() };
+  }
+  const k = normaliza(nom);
+  if (CACHE_ETQ_VEND.mapa.has(k)) return CACHE_ETQ_VEND.mapa.get(k);
+  let etq = nom;
+  if (nom !== "SIN ASIGNAR" && (PLANTILLA.length || RANKINGS.size)){
+    // quien ya no está en PLANTILLA (baja) se busca por nombre en RANKING
+    const p = CACHE_ETQ_VEND.porNom.get(k) || { nombre:nom, numero:"" };
+    let metal = "Sin ranking";
+    try { metal = metalDe(p); } catch(e){}
+    const meses = (metal === "Vacante" || metal === "Sin ranking") ? 0 : mesesEnRanking(registroDe(p));
+    etq = nom + " - " + metal + (meses ? " (" + meses + ")" : "");
+  }
+  CACHE_ETQ_VEND.mapa.set(k, etq);
+  return etq;
+}
+
+// Los filtros Vendedor y Ranking solo se muestran al agrupar por vendedor; si están
+// ocultos no filtran (la selección se guarda para cuando se vuelva a agrupar así)
+function filtrosVendAplican(){
+  return el("agrupar").value === "vendedor";
+}
+
 function cumpleRanking(f){
-  if (VISTAS_RANKING.indexOf(VISTA) < 0) return true;
+  if (VISTAS_RANKING.indexOf(VISTA) < 0 || !filtrosVendAplican()) return true;
   const m = MULTI.ranking;
   if (!m || m.sel.size === 0) return true;
   if (m.sel.has("\u0000")) return false;
   return m.sel.has(metalDeFila(f));
+}
+
+// Activos / baja: solo en Semanal y Mensual y solo cuando se agrupa por vendedor.
+// Activo = el nombre (el mismo con el que se agrupa) está en la hoja PLANTILLA del
+// archivo de la base (sin contar vacantes); baja = generó movimiento pero ya no está.
+let CACHE_ACTIVOS = { plant:null, set:null };
+
+function estatusVendAplica(){
+  return (VISTA === "semana" || VISTA === "mes") && el("agrupar").value === "vendedor";
+}
+
+function esVendedorActivo(f){
+  if (CACHE_ACTIVOS.plant !== PLANTILLA){
+    const s = new Set();
+    PLANTILLA.forEach(function(p){
+      if (p.vacante) return;
+      const k = normaliza(p.nombre);
+      if (k) s.add(k);
+    });
+    CACHE_ACTIVOS = { plant:PLANTILLA, set:s };
+  }
+  return CACHE_ACTIVOS.set.has(normaliza(nombreVendedorDeFila(f)));
+}
+
+function cumpleEstatusVend(f){
+  if (!estatusVendAplica()) return true;
+  const v = el("estatusVend").value;
+  if (v === "ambos" || !PLANTILLA.length) return true;
+  const activo = esVendedorActivo(f);
+  return v === "activos" ? activo : !activo;
 }
 
 function esTactil(){
@@ -2878,7 +2979,7 @@ function esInstalada(f){
 
 function pasaFiltros(f){
   return enAlcance(f) && cumple("director", f) && cumple("lider", f) && cumple("coach", f) &&
-         cumple("vendedor", f) && cumple("canal", f) && cumple("plan", f) && cumpleMunicipio(f) && cumpleRanking(f);
+         (!filtrosVendAplican() || cumple("vendedor", f)) && cumple("canal", f) && cumple("plan", f) && cumpleMunicipio(f) && cumpleRanking(f) && cumpleEstatusVend(f);
 }
 
 // filtro por día: en la vista semanal por día de la semana, en la mensual por número de día
@@ -3651,6 +3752,9 @@ async function leerRanking(id, nombreHoja, fuente){
       ranking: rk,
       nombre: cNom >= 0 ? v[cNom] : "",
       inst: inst,
+      // ranking de cada mes, del más viejo al más reciente (para contar los meses
+      // seguidos que la persona lleva en su último ranking)
+      hist: colsRank.map(function(c){ return (v[c.i] || "").trim(); }),
       fuente: fuente
     };
     RANKINGS.set(num, reg);
@@ -5581,7 +5685,7 @@ function grupoDeLaPersona(p, modoGrupo){
   if (modoGrupo === "coach") return p.coach || "SIN COACH";
   if (modoGrupo === "canal") return canalDePersona(p) || "SIN CANAL";
   if (modoGrupo === "ranking") return metalDe(p);
-  if (modoGrupo === "vendedor") return p.nombre || "SIN NOMBRE";
+  if (modoGrupo === "vendedor") return p.nombre ? etiquetaVendRanking(p.nombre) : "SIN NOMBRE";
   return p.lider || "SIN LÍDER";
 }
 
@@ -5930,7 +6034,7 @@ function vendedores0Html(){
 
       const k = modoGrupo === "coach" ? p.coach :
                 (modoGrupo === "ranking" ? metalDe(p) :
-                (modoGrupo === "vendedor" ? p.nombre : p.lider));
+                (modoGrupo === "vendedor" ? etiquetaVendRanking(p.nombre) : p.lider));
       acumula(bolsa(k), n);
       acumula(gran, n);
       guardar(k, Math.min(n, tope), ficha);
@@ -5953,7 +6057,7 @@ function vendedores0Html(){
       const k = modoGrupo === "coach" ? x.coach :
                 (modoGrupo === "ranking" ? "Fuera de HC" :
                 (modoGrupo === "canal" ? canalX :
-                (modoGrupo === "vendedor" ? x.nombre : x.lider)));
+                (modoGrupo === "vendedor" ? etiquetaVendRanking(x.nombre) : x.lider)));
       acumula(bolsa(k), x.n);
       acumula(gran, x.n);
       guardar(k, Math.min(x.n, tope), {
@@ -9135,7 +9239,11 @@ function grupoDe(f, fecha){
   // venta técnico (CRC, SLK y los demás códigos): el vendedor sale del código cruzado
   // con PLANTILLA, no de la columna R de la base; es el mismo criterio que ya usaba el
   // filtro "Vendedor", así que ahora agrupado y filtro coinciden
-  if (campo === "vendedor") return nombreVendedorDeFila(f) || "SIN ASIGNAR";
+  if (campo === "vendedor"){
+    const nom = nombreVendedorDeFila(f) || "SIN ASIGNAR";
+    // Semanal, Mensual y Últimos 30 días: "Nombre - Ranking (meses en ese ranking)"
+    return (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30") ? etiquetaVendRanking(nom) : nom;
+  }
   // el municipio no está en la base: sale del cluster cruzado contra Clusters Colonias
   if (campo === "municipio") return municipioDe(f);
   return f[campo] || "SIN ASIGNAR";
@@ -11666,9 +11774,11 @@ function descargarInstalacionesTec(){
 
 /* ---------- arranque ---------- */
 
-["agrupar","reglaIns","planVista","matrizMetrica"].forEach(function(id){
+["agrupar","reglaIns","planVista","matrizMetrica","estatusVend"].forEach(function(id){
   el(id).addEventListener("change", pintar);
 });
+// Activos/Baja, Vendedor y Ranking solo se ven al agrupar por vendedor
+el("agrupar").addEventListener("change", function(){ ajustaCajasDia(); });
 // estos dos, además, pueden cambiar el "periodo vigente" (checkbox del filtro Vendedor)
 ["semana","periodo0"].forEach(function(id){
   el(id).addEventListener("change", function(){
@@ -11767,10 +11877,11 @@ function ajustaCajasDia(){
   // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
   // Mensual y Últimos 30 días
   el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
-  el("cajaRanking").style.display = VISTAS_RANKING.indexOf(VISTA) >= 0 ? "" : "none";
+  el("cajaRanking").style.display = (VISTAS_RANKING.indexOf(VISTA) >= 0 && filtrosVendAplican()) ? "" : "none";
+  el("cajaEstatusVend").style.display = estatusVendAplica() ? "" : "none";
   el("cajaDiaSem").style.display = VISTA === "semana" ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
-  el("cajaVendedor").style.display = (VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0" || VISTA === "nppf") ? "" : "none";
+  el("cajaVendedor").style.display = ((VISTA === "semana" || VISTA === "mes" || VISTA === "dias30" || VISTA === "vend0" || VISTA === "nppf") && filtrosVendAplican()) ? "" : "none";
   el("cajaMeses").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador) ? "none" : "";
   el("cajaPlanes").style.display = (esOS || esDupli || esAjustes || esOpRech || esBuscador || VISTA === "nppf") ? "none" : "";
 
