@@ -2842,17 +2842,81 @@ function catRanking(txt){
   return n;
 }
 
-// meses seguidos (contando hacia atrás desde el mes más reciente con dato) en que la
-// persona trae el mismo ranking
-function mesesEnRanking(r){
-  if (!r || !r.hist || !r.hist.length) return 0;
-  const cats = r.hist.map(catRanking);
-  let i = cats.length - 1;
-  while (i >= 0 && !cats[i]) i--;
+const CATS_METAL = ["PLATINO", "ORO", "PLATA", "BRONCE", "CONDICIONADO", "ENTRENAMIENTO"];
+
+// el historial por mes de la hoja RANKING: un valor por mes (si el mes trae varias
+// columnas —ranking, meta, nivel— se queda la que sí es un ranking), en orden y con
+// año. Si el encabezado no trae año, se pone por posición: el último mes es el de
+// INFO_EQ.mesRanking (o el mes en curso) y hacia atrás, cada vuelta del mes es un año antes
+function historialRanking(r){
+  if (!r || !r.hist || !r.hist.length) return [];
+  const orden = [], porMes = {};
+  r.hist.forEach(function(h){
+    if (!(h.k in porMes)){ porMes[h.k] = ""; orden.push(h.k); }
+    const c = catRanking(h.v);
+    if (!porMes[h.k] && CATS_METAL.indexOf(c) >= 0) porMes[h.k] = c;
+  });
+  const sinAnio = orden.some(function(k){ return Number(k.slice(0, 4)) < 2000; });
+  if (!sinAnio) return orden.sort().map(function(k){ return { k:k, cat:porMes[k] }; });
+  const ancla = INFO_EQ.mesRanking || "";
+  const hoy = new Date();
+  let anio = /^\d{4}-/.test(ancla) && Number(ancla.slice(0, 4)) >= 2000 ? Number(ancla.slice(0, 4)) : hoy.getFullYear();
+  const ultMes = Number(orden[orden.length - 1].slice(5));
+  if (!(Number(ancla.slice(0, 4)) >= 2000) && ultMes > hoy.getMonth() + 1) anio--;
+  const salida = [];
+  let sig = null;
+  for (let i = orden.length - 1; i >= 0; i--){
+    const m = Number(orden[i].slice(5));
+    if (sig !== null && m >= sig) anio--;
+    sig = m;
+    salida.unshift({ k: anio + "-" + String(m).padStart(2, "0"), cat: porMes[orden[i]] });
+  }
+  return salida;
+}
+
+// promedio de instalaciones en los 3 meses anteriores a un mes de ranking (el mismo
+// criterio y la misma fuente —hoja, base o automático— que usa metalDe)
+function promedioAntesDe(p, clave){
+  const y = Number(clave.slice(0, 4)), m = Number(clave.slice(5)) - 1;
+  const meses = [];
+  for (let i = 3; i >= 1; i--){
+    const d = new Date(y, m - i, 1);
+    meses.push(d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"));
+  }
+  const origen = el("origenPromedio").value;
+  const r = registroDe(p);
+  const hoja = promedioDe(r ? r.inst : null, meses);
+  if (origen === "hoja") return hoja.prom;
+  const base = promedioDe(instBaseDe(p), meses, true);
+  if (origen === "base") return base.prom;
+  return hoja.hay ? hoja.prom : base.prom;
+}
+
+// meses seguidos (hacia atrás desde el mes más reciente con dato) en el ranking
+// actual. Cada mes cuenta como Platino si la hoja lo trae Platino, o si lo trae Oro Y su
+// promedio de los 3 meses anteriores a ese mes llega al umbral (20); si no, es Oro. El
+// mes más reciente toma el ranking que ya se muestra (metalDe), para que no se contradigan
+function mesesEnRanking(p, metal){
+  const h = historialRanking(registroDe(p));
+  let i = h.length - 1;
+  while (i >= 0 && !h[i].cat) i--;
   if (i < 0) return 0;
-  const ult = cats[i];
+  const umbral = Number(el("umbralPlatino").value || 20) - 0.001;
+  const actual = normaliza(metal);
+  if (CATS_METAL.indexOf(actual) < 0) return 0;
   let n = 0;
-  while (i >= 0 && cats[i] === ult){ n++; i--; }
+  for (; i >= 0; i--){
+    let c = h[i].cat;
+    if (n > 0 && c === "ORO"){
+      try { if (promedioAntesDe(p, h[i].k) >= umbral) c = "PLATINO"; } catch(e){}
+    }
+    if (n === 0){
+      // el mes más reciente: debe ser el mismo ranking de la hoja (Oro cuenta para Platino)
+      const ok = c === actual || (actual === "PLATINO" && c === "ORO");
+      if (!ok) return 0;
+    } else if (c !== actual) break;
+    n++;
+  }
   return n;
 }
 
@@ -2861,15 +2925,15 @@ function mesesEnRanking(r){
 let CACHE_ETQ_VEND = { plant:null, rank:null, umbral:null, porNom:null, mapa:new Map() };
 
 function etiquetaVendRanking(nom){
-  const umbral = el("umbralPlatino").value;
+  const umbral = el("umbralPlatino").value + "|" + el("origenPromedio").value;
   const c = CACHE_ETQ_VEND;
-  if (c.plant !== PLANTILLA || c.rank !== RANKINGS || c.umbral !== umbral){
+  if (c.plant !== PLANTILLA || c.rank !== RANKINGS || c.umbral !== umbral || c.inst !== INST_BASE){
     const porNom = new Map();
     PLANTILLA.forEach(function(p){
       const k = normaliza(p.nombre);
       if (k && !porNom.has(k)) porNom.set(k, p);
     });
-    CACHE_ETQ_VEND = { plant:PLANTILLA, rank:RANKINGS, umbral:umbral, porNom:porNom, mapa:new Map() };
+    CACHE_ETQ_VEND = { plant:PLANTILLA, rank:RANKINGS, umbral:umbral, inst:INST_BASE, porNom:porNom, mapa:new Map() };
   }
   const k = normaliza(nom);
   if (CACHE_ETQ_VEND.mapa.has(k)) return CACHE_ETQ_VEND.mapa.get(k);
@@ -2879,7 +2943,8 @@ function etiquetaVendRanking(nom){
     const p = CACHE_ETQ_VEND.porNom.get(k) || { nombre:nom, numero:"" };
     let metal = "Sin ranking";
     try { metal = metalDe(p); } catch(e){}
-    const meses = (metal === "Vacante" || metal === "Sin ranking") ? 0 : mesesEnRanking(registroDe(p));
+    let meses = 0;
+    try { meses = mesesEnRanking(p, metal); } catch(e){}
     etq = nom + " - " + metal + (meses ? " (" + meses + ")" : "");
   }
   CACHE_ETQ_VEND.mapa.set(k, etq);
@@ -3754,7 +3819,7 @@ async function leerRanking(id, nombreHoja, fuente){
       inst: inst,
       // ranking de cada mes, del más viejo al más reciente (para contar los meses
       // seguidos que la persona lleva en su último ranking)
-      hist: colsRank.map(function(c){ return (v[c.i] || "").trim(); }),
+      hist: colsRank.map(function(c){ return { k:c.mes.clave, v:(v[c.i] || "").trim() }; }),
       fuente: fuente
     };
     RANKINGS.set(num, reg);
