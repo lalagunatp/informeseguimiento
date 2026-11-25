@@ -5994,6 +5994,9 @@ function vendedores0Html(){
 
   const filtroLider = MULTI.lider && MULTI.lider.sel.size && !MULTI.lider.sel.has("\u0000") ? MULTI.lider.sel : null;
   const filtroCoach = MULTI.coach && MULTI.coach.sel.size && !MULTI.coach.sel.has("\u0000") ? MULTI.coach.sel : null;
+  // Ranking: siempre visible y aplica en Vend X Eventos (con cualquier "Agrupar por")
+  const mRank = MULTI.ranking;
+  const filtroRank = mRank && mRank.sel.size ? mRank.sel : null;
 
   // si hay filtro de canal, plan o director, la plantilla se acota a los equipos
   // que aparecen en la base con esos filtros
@@ -6016,7 +6019,8 @@ function vendedores0Html(){
     if (!personaEnAlcance(p)) return false;
     if (filtroLider && !filtroLider.has(p.lider)) return false;
     if (filtroCoach && !filtroCoach.has(p.coach)) return false;
-    if (equipos && !equipos[normaliza(p.coach)] && !equipos[normaliza(p.lider)]) return false;
+    if (filtroRank && (filtroRank.has("\u0000") || !filtroRank.has(metalDe(p) || "Sin ranking"))) return false;
+    if (equipos &&!equipos[normaliza(p.coach)] && !equipos[normaliza(p.lider)]) return false;
     return true;
   });
   if (!gente.length){
@@ -11942,7 +11946,8 @@ function ajustaCajasDia(){
   // el municipio (cluster cruzado contra Clusters Colonias) solo aplica en Semanal,
   // Mensual y Últimos 30 días
   el("cajaMunicipio").style.display = VISTAS_MUNICIPIO.indexOf(VISTA) >= 0 ? "" : "none";
-  el("cajaRanking").style.display = (VISTAS_RANKING.indexOf(VISTA) >= 0 && filtrosVendAplican()) ? "" : "none";
+  // Vend X Eventos: el filtro Ranking siempre visible (sin importar "Agrupar por")
+  el("cajaRanking").style.display = (VISTA === "vend0" || (VISTAS_RANKING.indexOf(VISTA) >= 0 && filtrosVendAplican())) ? "" : "none";
   el("cajaEstatusVend").style.display = estatusVendAplica() ? "" : "none";
   el("cajaDiaSem").style.display = VISTA === "semana" ? "" : "none";
   el("cajaDiaMes").style.display = VISTA === "mes" ? "" : "none";
